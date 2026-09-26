@@ -128,16 +128,22 @@ describe("requestLog", () => {
 
 describe("Metrics", () => {
   const chain: ChainLike = {
-    network: "hedera:testnet",
-    operatorId: "0.0.1",
-    settlementClient: null as never,
-    describeTopics: () => ({ registry: null, heartbeat: null, receipts: null }),
-    counts: () => ({ registry: 2, heartbeat: 7, receipts: 5 }),
+    network: "eip155:10143",
+    ledgerAddress: null,
+    writerAddress: null,
+    mode: () => "off",
+    counts: () => ({ registrations: 2, heartbeats: 7, receipts: 5, ratings: 1 }),
+    pendingReceipts: () => 3,
     lastPublishError: () => null,
-    publishRegistration: async () => null,
-    publishHeartbeat: async () => null,
-    publishReceipt: async () => null,
-    close: () => {},
+    registerProvider: async () => null,
+    heartbeat: async () => null,
+    recordJob: async () => null,
+    rateJob: async () => {
+      throw new Error("no ledger");
+    },
+    verifyTypedDataOnChain: async () => false,
+    flush: async () => {},
+    close: async () => {},
   };
 
   function render(m: Metrics) {
@@ -186,8 +192,10 @@ describe("Metrics", () => {
     expect(render(m)).toContain("xorv_job_duration_seconds_count 1000");
   });
 
-  it("reports HCS message counts per topic", () => {
+  it("reports ledger writes per feed and the receipt backlog", () => {
     const out = render(new Metrics());
-    expect(out).toContain('xorv_hcs_messages_total{topic="receipts"} 5');
+    expect(out).toContain('xorv_ledger_writes_total{kind="receipts"} 5');
+    expect(out).toContain('xorv_ledger_writes_total{kind="ratings"} 1');
+    expect(out).toContain("xorv_ledger_pending_receipts 3");
   });
 });

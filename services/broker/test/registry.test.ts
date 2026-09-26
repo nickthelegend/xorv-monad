@@ -6,8 +6,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Registry } from "../src/registry.js";
-import type { Capability, RegisterRequest } from "@xorv/protocol";
+import { Registry, providerIdFor, type VerifiedRegistration } from "../src/registry.js";
+import type { Capability } from "@xorv/protocol";
+
+/** A distinct, valid payout address per small integer. */
+function addr(n: number): string {
+  return `0x${n.toString(16).padStart(40, "0")}`;
+}
 
 function capability(over: Partial<Capability> = {}): Capability {
   return {
@@ -21,10 +26,11 @@ function capability(over: Partial<Capability> = {}): Capability {
   };
 }
 
-function registration(over: Partial<RegisterRequest> = {}): RegisterRequest {
+function registration(over: Partial<VerifiedRegistration> = {}): VerifiedRegistration {
   return {
     label: "node-a",
-    accountId: "0.0.1001",
+    address: addr(1001),
+    agentId: null,
     endpoint: "http://localhost:1",
     capabilities: [capability()],
     version: "0.1.0",
@@ -77,9 +83,30 @@ describe("register", () => {
     expect(registry.byAuthToken("nonsense")).toBeUndefined();
   });
 
+  it("derives a stable provider id from the node id, across broker restarts", () => {
+    // The id is hashed into ledger events and baked into the agent URI, so a
+    // fresh Registry (a restarted broker) must hand the same node the same id.
+    const first = new Registry().register(registration({ nodeId: "stable" }));
+    const second = new Registry().register(registration({ nodeId: "stable" }));
+    expect(first.id).toBe(second.id);
+    expect(first.id).toBe(providerIdFor("stable"));
+    expect(first.id).toMatch(/^prv_[A-Za-z0-9_-]{12}$/);
+    // …without revealing the node id, which doubles as a credential.
+    expect(first.id).not.toContain("stable");
+  });
+
+  it("stores the agent id it was given, and drops a stale registry tx when the payee changes", () => {
+    const registry = new Registry();
+    const first = registry.register(registration({ agentId: "42" }));
+    expect(first.agentId).toBe("42");
+    registry.setRegistryTx(first.id, "0xabc");
+    expect(registry.register(registration({ agentId: "42" })).registryTxHash).toBe("0xabc");
+    expect(registry.register(registration({ agentId: "42", address: addr(9) })).registryTxHash).toBeNull();
+  });
+
   it("keeps distinct nodeIds as distinct providers", () => {
     registry.register(registration({ nodeId: "a" }));
-    registry.register(registration({ nodeId: "b", accountId: "0.0.2002" }));
+    registry.register(registration({ nodeId: "b", address: addr(2002) }));
     expect(registry.list()).toHaveLength(2);
   });
 });
@@ -119,6 +146,14 @@ describe("liveness", () => {
     expect(registry.byAuthToken(provider.token)).toBeUndefined();
   });
 
+  it("still finds a reaped provider, as offline, for its public pages", () => {
+    const provider = registry.register(registration());
+    vi.advanceTimersByTime(11 * 60_000);
+    registry.reap();
+    expect(registry.get(provider.id)).toBeUndefined();
+    expect(registry.find(provider.id)?.status).toBe("offline");
+  });
+
   it("ignores heartbeats for a provider that no longer exists", () => {
     expect(registry.heartbeat("prv_missing", { activeJobs: 0, uptimeSeconds: 0, available: {} }))
       .toBeUndefined();
@@ -143,17 +178,17 @@ describe("match", () => {
 
   it("picks the cheapest matching provider", () => {
     registry.register(
-      registration({ nodeId: "pricey", accountId: "0.0.1", capabilities: [capability({ priceUsdMicros: 20_000 })] }),
+      registration({ nodeId: "pricey", address: addr(1), capabilities: [capability({ priceUsdMicros: 20_000 })] }),
     );
     const cheap = registry.register(
-      registration({ nodeId: "cheap", accountId: "0.0.2", capabilities: [capability({ priceUsdMicros: 5_000 })] }),
+      registration({ nodeId: "cheap", address: addr(2), capabilities: [capability({ priceUsdMicros: 5_000 })] }),
     );
     expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(cheap.id);
   });
 
   it("breaks a price tie toward the better track record", () => {
-    const good = registry.register(registration({ nodeId: "good", accountId: "0.0.1" }));
-    const bad = registry.register(registration({ nodeId: "bad", accountId: "0.0.2" }));
+    const good = registry.register(registration({ nodeId: "good", address: addr(1) }));
+    const bad = registry.register(registration({ nodeId: "bad", address: addr(2) }));
 
     registry.jobStarted(good.id);
     registry.jobFinished(good.id, { ok: true, durationMs: 100 });
@@ -165,12 +200,12 @@ describe("match", () => {
 
   it("honours an adapter requirement", () => {
     registry.register(
-      registration({ nodeId: "claude", accountId: "0.0.1", capabilities: [capability()] }),
+      registration({ nodeId: "claude", address: addr(1), capabilities: [capability()] }),
     );
     const codex = registry.register(
       registration({
         nodeId: "codex",
-        accountId: "0.0.2",
+        address: addr(2),
         capabilities: [capability({ id: "codex", adapter: "codex", priceUsdMicros: 30_000 })],
       }),
     );
@@ -196,6 +231,16 @@ describe("match", () => {
     );
     registry.jobStarted(provider.id);
     expect(registry.match({ maxPriceUsdMicros: 100_000 })).toBeNull();
+  });
+
+  it("never hands a job back to a provider it excluded", () => {
+    const a = registry.register(registration({ nodeId: "a", address: addr(1) }));
+    const b = registry.register(
+      registration({ nodeId: "b", address: addr(2), capabilities: [capability({ priceUsdMicros: 20_000 })] }),
+    );
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(a.id);
+    expect(registry.match({ maxPriceUsdMicros: 100_000, exclude: [a.id] })!.provider.id).toBe(b.id);
+    expect(registry.match({ maxPriceUsdMicros: 100_000, exclude: [a.id, b.id] })).toBeNull();
   });
 
   it("considers every capability on a multi-capability node", () => {
@@ -229,13 +274,24 @@ describe("stats", () => {
     expect(registry.get(provider.id)!.activeJobs).toBe(0);
   });
 
-  it("accumulates USDC and HBAR earnings separately", () => {
+  it("credits earnings to the provider that was paid, not the one that finished", () => {
+    const registry = new Registry();
+    const paid = registry.register(registration({ nodeId: "paid", address: addr(1) }));
+    const finisher = registry.register(registration({ nodeId: "finisher", address: addr(2) }));
+    registry.jobFinished(finisher.id, { ok: true, durationMs: 5, usdcMicros: 0 });
+    registry.creditEarnings(paid.id, 10_000);
+    expect(registry.get(paid.id)!.stats.earnedUsdcMicros).toBe(10_000);
+    expect(registry.get(finisher.id)!.stats.earnedUsdcMicros).toBe(0);
+    expect(registry.get(finisher.id)!.stats.jobsCompleted).toBe(1);
+  });
+
+  it("frees a slot on a buyer cancel without counting a failure", () => {
     const registry = new Registry();
     const provider = registry.register(registration());
-    registry.jobFinished(provider.id, { ok: true, durationMs: 1, usdcMicros: 10_000 });
-    registry.jobFinished(provider.id, { ok: true, durationMs: 1, tinybars: 1_462_167 });
-    const stats = registry.get(provider.id)!.stats;
-    expect(stats.earnedUsdcMicros).toBe(10_000);
-    expect(stats.earnedTinybars).toBe(1_462_167);
+    registry.jobStarted(provider.id);
+    registry.jobReleased(provider.id);
+    const after = registry.get(provider.id)!;
+    expect(after.activeJobs).toBe(0);
+    expect(after.stats.jobsFailed).toBe(0);
   });
 });

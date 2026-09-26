@@ -13,8 +13,11 @@ import os from "node:os";
 import path from "node:path";
 import { MemoryPersistence, openPersistence, type Persistence } from "../src/store.js";
 import { JobStore } from "../src/jobs.js";
-import { Registry } from "../src/registry.js";
-import type { RegisterRequest } from "@xorv/protocol";
+import { Registry, type VerifiedRegistration } from "../src/registry.js";
+
+const PAYEE = "0x1111111111111111111111111111111111111111";
+const PAYER = "0x2222222222222222222222222222222222222222";
+const TX = `0x${"ab".repeat(32)}`;
 
 let dir: string;
 let file: string;
@@ -42,19 +45,21 @@ function quoteInput(price = 1_000) {
     request: { prompt: "persisted prompt", maxPriceUsdMicros: 50_000 },
     providerId: "prv_1",
     providerLabel: "node-a",
-    providerAccountId: "0.0.1001",
+    providerAddress: PAYEE,
+    providerAgentId: null,
     capabilityId: "echo",
     capabilityName: "Echo (test)",
+    capabilityAdapter: "echo" as const,
     priceUsdMicros: price,
     usdcAmount: String(price),
-    hbarAmount: "1462167",
   };
 }
 
-function registration(over: Partial<RegisterRequest> = {}): RegisterRequest {
+function registration(over: Partial<VerifiedRegistration> = {}): VerifiedRegistration {
   return {
     label: "node-a",
-    accountId: "0.0.1001",
+    address: PAYEE,
+    agentId: null,
     endpoint: "http://localhost:1",
     capabilities: [
       {
@@ -102,16 +107,17 @@ describe("jobs survive a restart", () => {
     const job = first.createJob(first.createQuote(quoteInput()));
     first.patch(job.id, {
       payment: {
-        asset: "hbar",
-        assetId: "0.0.0",
-        amount: "1462167",
-        network: "hedera:testnet",
-        transactionId: "0.0.9842030@1785475549.131327424",
-        payer: "0.0.9848440",
-        payTo: "0.0.9848438",
+        asset: "usdc",
+        assetAddress: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+        amount: "1000",
+        network: "eip155:10143",
+        txHash: TX,
+        payer: PAYER,
+        payTo: PAYEE,
         settledAt: Date.now(),
-        hashscanUrl: "https://hashscan.io/testnet/transaction/x",
+        explorerUrl: `https://testnet.monadscan.com/tx/${TX}`,
       },
+      receiptTxHash: `0x${"cd".repeat(32)}`,
     });
     first.addEvent(job.id, { at: Date.now(), kind: "message", text: "working" });
     first.complete(job.id, "the durable answer", "hash123");
@@ -124,8 +130,10 @@ describe("jobs survive a restart", () => {
     expect(restored.status).toBe("completed");
     expect(restored.result).toBe("the durable answer");
     expect(restored.resultHash).toBe("hash123");
-    expect(restored.payment!.transactionId).toBe("0.0.9842030@1785475549.131327424");
-    expect(restored.payment!.payTo).toBe("0.0.9848438");
+    expect(restored.payment!.txHash).toBe(TX);
+    expect(restored.payment!.payTo).toBe(PAYEE);
+    expect(restored.receiptTxHash).toBe(`0x${"cd".repeat(32)}`);
+    expect(restored.quotedProviderId).toBe("prv_1");
     expect(restored.events.length).toBeGreaterThan(0);
     expect(second.restoredCount).toBe(1);
   });
@@ -194,16 +202,59 @@ describe("earnings survive a restart", () => {
     expect(newcomer.stats.earnedUsdcMicros).toBe(0);
   });
 
-  it("keeps HBAR and USDC earnings separate across a restart", () => {
+  it("keeps the payout address with the stats", () => {
     const first = new Registry(store());
     const provider = first.register(registration());
     first.jobFinished(provider.id, { ok: true, durationMs: 1, usdcMicros: 3_000 });
-    first.jobFinished(provider.id, { ok: true, durationMs: 1, tinybars: 1_462_167 });
+    const restored = store().loadStats().get("stable-node-id")!;
+    expect(restored.address).toBe(PAYEE);
+    expect(restored.earnedUsdcMicros).toBe(3_000);
+  });
+});
 
-    const second = new Registry(store());
-    const again = second.register(registration());
-    expect(again.stats.earnedUsdcMicros).toBe(3_000);
-    expect(again.stats.earnedTinybars).toBe(1_462_167);
+describe("rows from an older build", () => {
+  it("upgrades a Hedera-era job row instead of losing its payment", () => {
+    const p = store();
+    p.saveJob({
+      id: "job_legacy",
+      createdAt: Date.now(),
+      status: "completed",
+      request: { prompt: "old", maxPriceUsdMicros: 1_000 },
+      providerAccountId: "0.0.1001",
+      receiptConsensusAt: "0.0.9842030@1785475549.1",
+      payment: {
+        asset: "usdc",
+        assetId: "0.0.429274",
+        amount: "1000",
+        transactionId: "0.0.9842030@1785475549.2",
+        hashscanUrl: "https://hashscan.io/testnet/transaction/x",
+        payer: "0.0.2",
+        payTo: "0.0.1001",
+      },
+      events: [],
+    } as never);
+
+    const job = new JobStore(store()).get("job_legacy")!;
+    expect(job.providerAddress).toBe("0.0.1001");
+    expect(job.receiptTxHash).toBe("0.0.9842030@1785475549.1");
+    expect(job.payment!.txHash).toBe("0.0.9842030@1785475549.2");
+    expect(job.payment!.assetAddress).toBe("0.0.429274");
+    expect(job.payment!.explorerUrl).toContain("hashscan");
+    expect(job as unknown as Record<string, unknown>).not.toHaveProperty("providerAccountId");
+  });
+
+  it("drops stats fields that no longer exist", () => {
+    const p = store();
+    p.saveStats("legacy-node", "old", "0.0.1001", {
+      jobsCompleted: 2,
+      jobsFailed: 1,
+      earnedUsdcMicros: 7,
+      earnedTinybars: 99,
+      avgDurationMs: 10,
+    } as never);
+    const row = store().loadStats().get("legacy-node")!;
+    expect(row).toMatchObject({ jobsCompleted: 2, earnedUsdcMicros: 7, address: "0.0.1001" });
+    expect(row).not.toHaveProperty("earnedTinybars");
   });
 });
 

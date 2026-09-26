@@ -9,17 +9,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JobStore, type Quote } from "../src/jobs.js";
 
+const PAYEE = "0x1111111111111111111111111111111111111111";
+
 function quoteInput(over: Partial<Omit<Quote, "id" | "createdAt" | "expiresAt">> = {}) {
   return {
     request: { prompt: "hello", maxPriceUsdMicros: 50_000 },
     providerId: "prv_1",
     providerLabel: "node-a",
-    providerAccountId: "0.0.1001",
+    providerAddress: PAYEE,
+    providerAgentId: null,
     capabilityId: "echo",
     capabilityName: "Echo (test)",
+    capabilityAdapter: "echo" as const,
     priceUsdMicros: 1_000,
     usdcAmount: "1000",
-    hbarAmount: "1462167",
     ...over,
   };
 }
@@ -35,10 +38,8 @@ describe("quotes", () => {
     const a = store.getQuote(quote.id)!;
     const b = store.getQuote(quote.id)!;
     expect(a.usdcAmount).toBe("1000");
-    expect(a.hbarAmount).toBe("1462167");
     expect(b.usdcAmount).toBe(a.usdcAmount);
-    expect(b.hbarAmount).toBe(a.hbarAmount);
-    expect(b.providerAccountId).toBe(a.providerAccountId);
+    expect(b.providerAddress).toBe(a.providerAddress);
   });
 
   it("expires after its TTL and stops resolving", () => {
@@ -56,9 +57,17 @@ describe("quotes", () => {
     expect(store.getQuote(quote.id)!.jobId).toBe(job.id);
   });
 
-  it("carries a null hbarAmount when no rate was available", () => {
-    const quote = store.createQuote(quoteInput({ hbarAmount: null }));
-    expect(store.getQuote(quote.id)!.hbarAmount).toBeNull();
+  it("stays resolvable past its TTL while a payment for it is settling", () => {
+    // Money that moved must always find its quote, even if the TTL ran out
+    // between the buyer signing and the settlement landing.
+    vi.useFakeTimers();
+    const quote = store.createQuote(quoteInput());
+    quote.paying = true;
+    vi.advanceTimersByTime(301_000);
+    expect(store.getQuote(quote.id)).toBeDefined();
+    quote.paying = false;
+    expect(store.getQuote(quote.id)).toBeUndefined();
+    vi.useRealTimers();
   });
 
   it("returns undefined for an unknown quote", () => {
@@ -75,7 +84,9 @@ describe("job lifecycle", () => {
   it("starts paid and carries the quote's provider and price", () => {
     const job = store.createJob(store.createQuote(quoteInput()));
     expect(job.status).toBe("paid");
-    expect(job.providerAccountId).toBe("0.0.1001");
+    expect(job.providerAddress).toBe(PAYEE);
+    expect(job.quoteId).toBeTruthy();
+    expect(job.quotedProviderId).toBe("prv_1");
     expect(job.priceUsdMicros).toBe(1_000);
     expect(job.events).toEqual([]);
   });
@@ -115,6 +126,36 @@ describe("job lifecycle", () => {
     expect(store.get(job.id)!.error).toBe("provider exploded");
   });
 
+  it("carries the settlement it was bought with from the moment it exists", () => {
+    const payment = {
+      asset: "usdc" as const,
+      assetAddress: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+      amount: "1000",
+      network: "eip155:10143",
+      txHash: `0x${"ab".repeat(32)}`,
+      payer: "0x2222222222222222222222222222222222222222",
+      payTo: PAYEE,
+      settledAt: Date.now(),
+      explorerUrl: "https://testnet.monadscan.com/tx/0xab",
+    };
+    const job = store.createJob(store.createQuote(quoteInput()), { payment, cancelTokenHash: "h" });
+    expect(store.get(job.id)!.payment).toEqual(payment);
+    expect(store.get(job.id)!.cancelTokenHash).toBe("h");
+  });
+
+  it("will not resurrect a terminal job", () => {
+    // A cancel marks the job failed; a result (or error) that arrives after
+    // must not flip it back — that is how a cancelled job used to come back.
+    const job = store.createJob(store.createQuote(quoteInput()));
+    store.fail(job.id, "cancelled by the buyer");
+    expect(store.complete(job.id, "late answer", "h")).toBeUndefined();
+    expect(store.fail(job.id, "late error")).toBeUndefined();
+    const after = store.get(job.id)!;
+    expect(after.status).toBe("failed");
+    expect(after.error).toBe("cancelled by the buyer");
+    expect(after.result).toBeUndefined();
+  });
+
   it("is a no-op on unknown job ids rather than throwing", () => {
     expect(store.setStatus("job_nope", "running")).toBeUndefined();
     expect(store.addEvent("job_nope", { at: 1, kind: "status", text: "x" })).toBeUndefined();
@@ -139,6 +180,42 @@ describe("overdue sweeping", () => {
     const overdue = store.overdue();
     expect(overdue.map((j) => j.id)).toEqual([running.id]);
     vi.useRealTimers();
+  });
+});
+
+describe("reassignment", () => {
+  it("restarts the clock and remembers every provider that had the job", () => {
+    vi.useFakeTimers();
+    const store = new JobStore();
+    const job = store.createJob(store.createQuote(quoteInput()));
+    store.setStatus(job.id, "assigned");
+    store.addEvent(job.id, { at: Date.now(), kind: "status", text: "started" });
+
+    vi.advanceTimersByTime(9 * 60_000);
+    store.reassign(job.id, { providerId: "prv_2", providerLabel: "node-b", capabilityId: "echo", capabilityAdapter: "echo" });
+    const moved = store.get(job.id)!;
+    expect(moved.providerId).toBe("prv_2");
+    expect(moved.status).toBe("assigned");
+    expect(moved.startedAt).toBeNull();
+    expect(store.runtimeMs(moved)).toBe(0);
+    expect(moved.attemptedProviders).toEqual(["prv_1", "prv_2"]);
+    // The payee does not move with the work.
+    expect(moved.quotedProviderId).toBe("prv_1");
+    expect(moved.providerAddress).toBe(PAYEE);
+
+    // The new provider gets the full timeout, not what was left of the old one.
+    vi.advanceTimersByTime(2 * 60_000);
+    expect(store.overdue()).toHaveLength(0);
+    vi.useRealTimers();
+  });
+
+  it("refuses to reassign a job that is already over", () => {
+    const store = new JobStore();
+    const job = store.createJob(store.createQuote(quoteInput()));
+    store.complete(job.id, "done", "h");
+    expect(
+      store.reassign(job.id, { providerId: "prv_2", providerLabel: "b", capabilityId: "echo", capabilityAdapter: "echo" }),
+    ).toBeUndefined();
   });
 });
 
