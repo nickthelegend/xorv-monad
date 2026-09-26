@@ -25,7 +25,16 @@
  */
 
 import type { Job, ProviderStats } from "@xorv/protocol";
-import { MemoryPersistence, type PersistedProviderStats, type Persistence } from "./store.js";
+import {
+  MemoryPersistence,
+  upgradeJob,
+  upgradeStats,
+  type PersistedProviderStats,
+  type Persistence,
+} from "./store.js";
+
+/** Used when no database name is configured; distinct from the Hedera-era "xorv". */
+const DEFAULT_DB = "xorv_monad";
 
 interface MongoLike {
   db(name?: string): {
@@ -112,7 +121,7 @@ export class LayeredPersistence implements Persistence {
       this.client = client;
       this.connected = true;
 
-      const db = client.db(this.options.dbName ?? "xorv");
+      const db = client.db(this.options.dbName ?? DEFAULT_DB);
       await db.collection("jobs").createIndex({ createdAt: -1 });
       await db.collection("jobs").createIndex({ id: 1 }, { unique: true });
       await db.collection("providerStats").createIndex({ nodeId: 1 }, { unique: true });
@@ -122,16 +131,28 @@ export class LayeredPersistence implements Persistence {
         .find({})
         .sort({ createdAt: -1 })
         .limit(500)
-        .toArray()) as Array<{ job?: Job }>;
-      this.restoredJobs = jobRows.map((row) => row.job).filter((j): j is Job => Boolean(j));
+        .toArray()) as Array<{ job?: unknown }>;
+      // Rows written by an older build carry older field names; upgrade them
+      // on the way in rather than dropping the history.
+      this.restoredJobs = jobRows.map((row) => upgradeJob(row.job)).filter((j): j is Job => Boolean(j));
 
       const statRows = (await db
         .collection("providerStats")
         .find({})
         .sort({ nodeId: 1 })
         .limit(1_000)
-        .toArray()) as Array<PersistedProviderStats>;
-      this.restoredStats = new Map(statRows.map((row) => [row.nodeId, row]));
+        .toArray()) as Array<Record<string, unknown>>;
+      this.restoredStats = new Map();
+      for (const row of statRows) {
+        if (typeof row.nodeId !== "string") continue;
+        this.restoredStats.set(row.nodeId, {
+          nodeId: row.nodeId,
+          label: typeof row.label === "string" ? row.label : "",
+          // `accountId` is the Hedera-era name for the same column.
+          address: typeof row.address === "string" ? row.address : typeof row.accountId === "string" ? row.accountId : "",
+          ...upgradeStats(row),
+        });
+      }
 
       return {
         ok: true,
@@ -171,9 +192,9 @@ export class LayeredPersistence implements Persistence {
     void this.flushJob(job);
   }
 
-  saveStats(nodeId: string, label: string, accountId: string, stats: ProviderStats): void {
-    this.local.saveStats(nodeId, label, accountId, stats);
-    const row: PersistedProviderStats = { nodeId, label, accountId, ...stats };
+  saveStats(nodeId: string, label: string, address: string, stats: ProviderStats): void {
+    this.local.saveStats(nodeId, label, address, stats);
+    const row: PersistedProviderStats = { nodeId, label, address, ...stats };
     this.pendingStats.set(nodeId, row);
     void this.flushStats(row);
   }
@@ -190,7 +211,7 @@ export class LayeredPersistence implements Persistence {
   // -- background ------------------------------------------------------------
 
   private collection(name: string) {
-    return this.client?.db(this.options.dbName ?? "xorv").collection(name);
+    return this.client?.db(this.options.dbName ?? DEFAULT_DB).collection(name);
   }
 
   private async flushJob(job: Job): Promise<void> {

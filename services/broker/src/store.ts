@@ -21,7 +21,57 @@ import type { Job, ProviderStats } from "@xorv/protocol";
 export interface PersistedProviderStats extends ProviderStats {
   nodeId: string;
   label: string;
-  accountId: string;
+  /** The provider's payout address (0x…) when these stats were last saved. */
+  address: string;
+}
+
+/**
+ * Bring a stored job up to the current shape.
+ *
+ * Rows are JSON blobs, so a field rename is a read-time upgrade rather than a
+ * migration. The broker only ever writes the current names, but a row can
+ * come from an older build (a Mongo restore, an operator pointing XORV_DB at
+ * an old file), and a job that loses its payment record on the way in is a
+ * job whose receipt can never be written. Legacy names map as:
+ *
+ *   providerAccountId  → providerAddress
+ *   receiptConsensusAt → receiptTxHash
+ *   payment.transactionId / assetId / hashscanUrl → txHash / assetAddress / explorerUrl
+ */
+export function upgradeJob(raw: unknown): Job | null {
+  if (!raw || typeof raw !== "object") return null;
+  const job = { ...(raw as Record<string, unknown>) };
+  if (typeof job.id !== "string" || typeof job.createdAt !== "number" || typeof job.status !== "string") {
+    return null;
+  }
+  if (!("providerAddress" in job) && "providerAccountId" in job) job.providerAddress = job.providerAccountId;
+  if (!("receiptTxHash" in job) && "receiptConsensusAt" in job) job.receiptTxHash = job.receiptConsensusAt;
+  delete job.providerAccountId;
+  delete job.receiptConsensusAt;
+  if (job.payment && typeof job.payment === "object") {
+    const payment = { ...(job.payment as Record<string, unknown>) };
+    if (!("txHash" in payment) && "transactionId" in payment) payment.txHash = payment.transactionId;
+    if (!("assetAddress" in payment) && "assetId" in payment) payment.assetAddress = payment.assetId;
+    if (!("explorerUrl" in payment) && "hashscanUrl" in payment) payment.explorerUrl = payment.hashscanUrl;
+    delete payment.transactionId;
+    delete payment.assetId;
+    delete payment.hashscanUrl;
+    job.payment = payment;
+  }
+  if (!Array.isArray(job.events)) job.events = [];
+  if (!job.request || typeof job.request !== "object") return null;
+  return job as unknown as Job;
+}
+
+/** Stats as stored, minus fields that no longer exist (Hedera-era `earnedTinybars`). */
+export function upgradeStats(raw: Record<string, unknown>): ProviderStats {
+  const num = (key: string) => (typeof raw[key] === "number" && Number.isFinite(raw[key]) ? (raw[key] as number) : 0);
+  return {
+    jobsCompleted: num("jobsCompleted"),
+    jobsFailed: num("jobsFailed"),
+    earnedUsdcMicros: num("earnedUsdcMicros"),
+    avgDurationMs: num("avgDurationMs"),
+  };
 }
 
 export interface Persistence {
@@ -32,7 +82,7 @@ export interface Persistence {
   saveJob(job: Job): void;
   /** Lifetime stats keyed by the node's stable id, so a restart keeps earnings. */
   loadStats(): Map<string, PersistedProviderStats>;
-  saveStats(nodeId: string, label: string, accountId: string, stats: ProviderStats): void;
+  saveStats(nodeId: string, label: string, address: string, stats: ProviderStats): void;
   /** Drop jobs older than the retention window; returns how many went. */
   prune(olderThanMs: number): number;
   close(): void;
@@ -67,6 +117,7 @@ interface JobRow {
 interface StatsRow {
   node_id: string;
   label: string;
+  /** Holds the payout address. Named for its Hedera-era contents; kept so old files still open. */
   account_id: string;
   body: string;
 }
@@ -153,7 +204,8 @@ class SqlitePersistence implements Persistence {
     const jobs: Job[] = [];
     for (const row of rows) {
       try {
-        jobs.push(JSON.parse(row.body) as Job);
+        const job = upgradeJob(JSON.parse(row.body));
+        if (job) jobs.push(job);
       } catch {
         // One unreadable row must not lose the rest of the history.
       }
@@ -185,8 +237,8 @@ class SqlitePersistence implements Persistence {
         out.set(row.node_id, {
           nodeId: row.node_id,
           label: row.label,
-          accountId: row.account_id,
-          ...(JSON.parse(row.body) as ProviderStats),
+          address: row.account_id,
+          ...upgradeStats(JSON.parse(row.body) as Record<string, unknown>),
         });
       } catch {
         /* skip a corrupt row */
@@ -195,7 +247,7 @@ class SqlitePersistence implements Persistence {
     return out;
   }
 
-  saveStats(nodeId: string, label: string, accountId: string, stats: ProviderStats): void {
+  saveStats(nodeId: string, label: string, address: string, stats: ProviderStats): void {
     this.db
       .prepare(
         `INSERT INTO provider_stats (node_id, label, account_id, body, updated_at)
@@ -206,7 +258,7 @@ class SqlitePersistence implements Persistence {
            body = excluded.body,
            updated_at = excluded.updated_at`,
       )
-      .run(nodeId, label, accountId, JSON.stringify(stats), Date.now());
+      .run(nodeId, label, address, JSON.stringify(stats), Date.now());
   }
 
   prune(olderThanMs: number): number {
