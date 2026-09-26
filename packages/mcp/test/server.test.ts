@@ -100,7 +100,11 @@ class Client {
     this.child.stdin?.write(`${JSON.stringify(message)}\n`);
   }
 
-  async waitFor(id: number, timeoutMs = 25_000): Promise<Rpc> {
+  // 45s rather than 25s: the first reply includes tsx compiling the server from
+  // cold, which under a loaded machine (the whole workspace testing in
+  // parallel, or a slow CI runner) was measured to exceed 25s. Still inside the
+  // 60s testTimeout, so a genuinely hung server fails with this message.
+  async waitFor(id: number, timeoutMs = 45_000): Promise<Rpc> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const found = this.replies.find((r) => r.id === id);
