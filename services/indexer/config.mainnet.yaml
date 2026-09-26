@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+#
+# Xorv indexer, Monad MAINNET (chain 143). Same schema, ABIs and handlers as
+# config.yaml; only the chain id, RPC and ERC-8004 singleton addresses differ.
+#
+#   pnpm codegen:mainnet && pnpm dev:mainnet        (local, WSL/Linux/macOS)
+#   Envio Cloud: add a second indexer with "Config file" = config.mainnet.yaml
+#
+# Keep the contract list and event list identical to config.yaml: the handlers are
+# shared, and codegen types every handler against whichever config it was run with.
+name: xorv-indexer
+description: Xorv x402 job receipts, provider registry and ERC-8004 identity/reputation on Monad
+
+address_format: lowercase
+
+contracts:
+  - name: XorvLedger
+    abi_file_path: ./abis/XorvLedger.json
+    events:
+      - event: ProviderRegistered
+      - event: ProviderHeartbeat
+      - event: JobRecorded
+      - event: JobRated
+      - event: BrokerSet
+      - event: OwnershipTransferred
+  - name: IdentityRegistry
+    abi_file_path: ./abis/IdentityRegistry.json
+    events:
+      - event: Registered
+      - event: URIUpdated
+      - event: MetadataSet
+      - event: Transfer
+  - name: ReputationRegistry
+    abi_file_path: ./abis/ReputationRegistry.json
+    events:
+      - event: NewFeedback
+      - event: FeedbackRevoked
+      - event: ResponseAppended
+
+chains:
+  - id: 143 # Monad mainnet, HyperSync https://monad.hypersync.xyz (first-class)
+    start_block: 0
+    rpc:
+      - url: ${ENVIO_MONAD_RPC_URL:-https://rpc.monad.xyz}
+        for: fallback
+    contracts:
+      - name: XorvLedger
+        # From packages/contracts/deployments/monad.json (address, blockNumber).
+        address: "${ENVIO_XORV_LEDGER_ADDRESS:-0x0000000000000000000000000000000000000000}"
+        start_block: ${ENVIO_XORV_LEDGER_START_BLOCK:-null}
+      - name: IdentityRegistry
+        address: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+        start_block: ${ENVIO_ERC8004_START_BLOCK:-null}
+      - name: ReputationRegistry
+        address: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63"
+        start_block: ${ENVIO_ERC8004_START_BLOCK:-null}
