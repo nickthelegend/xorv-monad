@@ -22,6 +22,7 @@ const NAV = [
   { href: "/", label: "Jobs" },
   { href: "/providers", label: "Providers" },
   { href: "/network", label: "Network" },
+  { href: "/private", label: "Private" },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
