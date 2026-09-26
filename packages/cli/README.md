@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/nickthelegend/xorv/main/brand/xorv-logo.svg" alt="Xorv" width="240" />
+<img src="https://raw.githubusercontent.com/nickthelegend/xorv-monad/main/brand/xorv-logo.svg" alt="Xorv" width="240" />
 
 **Rent out your idle AI capacity. Get paid per job in USDC on Monad.**
 
@@ -11,7 +11,7 @@ xorv init
 xorv start
 ```
 
-That's it. Your machine joins the [Xorv](https://github.com/nickthelegend/xorv) network, takes jobs
+That's it. Your machine joins the [Xorv](https://github.com/nickthelegend/xorv-monad) network, takes jobs
 from anyone, runs them on the Claude / Codex / Grok plan you already pay for (or on Qwen 3.8 Max,
 Kimi K3 or Hunyuan hy4 with your API key), and gets paid **per job in USDC over
 [x402](https://x402.org) on [Monad](https://monad.xyz)**, straight to your address with no platform in
@@ -27,7 +27,7 @@ the middle.
 Until `@xorv/cli@0.2.0` is on npm, install from source:
 
 ```bash
-git clone https://github.com/nickthelegend/xorv && cd xorv
+git clone https://github.com/nickthelegend/xorv-monad && cd xorv-monad
 pnpm install
 pnpm --filter @xorv/protocol build
 pnpm --filter @xorv/cli build
@@ -230,4 +230,4 @@ prices.
 
 ---
 
-MIT · [github.com/nickthelegend/xorv](https://github.com/nickthelegend/xorv)
+MIT · [github.com/nickthelegend/xorv-monad](https://github.com/nickthelegend/xorv-monad)
