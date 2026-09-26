@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { EASE, useEntrance } from "@/lib/motion";
-import { Button, LiveDot, Pill } from "@/components/ui/kit";
+import { Button, Pill } from "@/components/ui/kit";
 import { NodePanel } from "@/components/ui/node-panel";
 import { APP_URL, REPO_URL } from "@/lib/links";
 
@@ -32,10 +32,17 @@ export function Hero() {
   return (
     <section className="relative overflow-hidden px-6 pt-32 md:pt-40">
       <div className="relative mx-auto max-w-4xl text-center">
+        {/* No live dot here. Green on this page means "a node is heartbeating
+            right now", and the hero is static markup — the live claim belongs
+            to the ledger section, which actually asks the broker. */}
         <motion.div {...rise(0)}>
           <Pill href={REPO_URL} className="mb-7">
-            <LiveDot />
-            Live on Hedera testnet
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-fg-3" />
+            x402 on Monad
+            <span aria-hidden className="text-fg-4">
+              ·
+            </span>
+            <span className="text-fg-3">ERC-8004</span>
             <span aria-hidden className="text-fg-4">
               ·
             </span>
@@ -56,20 +63,21 @@ export function Hero() {
           {...rise(0.16)}
           className="measure mx-auto mt-7 text-[16.5px] leading-relaxed text-fg-2"
         >
-          Xorv turns that idle quota into income. One command, and the Claude, Codex or Grok plan
-          you already pay for starts taking jobs from the network — settling per job, in USDC,
-          straight to your wallet.
+          Xorv rents it out. One command, and the Claude Code, Codex, Qwen 3.8 Max, Kimi K3 or
+          Hunyuan capacity you already pay for starts taking jobs — paid per job in USDC over x402
+          on Monad, settled in under a second, straight to your wallet. Providers can carry an
+          ERC-8004 identity, and its reputation is built only from jobs someone paid for.
         </motion.p>
 
         <motion.div {...rise(0.24)} className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
           <Button href={APP_URL}>Post a job</Button>
-          <Button href={REPO_URL} variant="secondary" external>
+          <Button href="#earn" variant="secondary">
             Start earning
           </Button>
         </motion.div>
 
         <motion.p {...rise(0.32)} className="mono mt-7 text-[12.5px] text-fg-4">
-          npm i -g @xorv/cli
+          USDC · EIP-3009 · ~300 ms blocks · buyer never needs MON
         </motion.p>
       </div>
 

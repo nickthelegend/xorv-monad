@@ -6,8 +6,11 @@ import { cn } from "@/lib/utils";
 /**
  * A provider node, mid-session.
  *
- * This is a transcript of a real `xorv start` run, replayed line by line the
- * first time it scrolls into view. Static markup would be honest but inert; a
+ * Modelled on what `xorv start` prints, replayed line by line the first time
+ * it scrolls into view. The ids are illustrative — the chrome says "example
+ * session", and there is deliberately no transaction hash in it: a hash on a
+ * marketing page reads as proof, and proof belongs in the ledger section,
+ * where every one is read live from the chain. Static markup would be honest but inert; a
  * looping animation would be a screensaver. Playing once, on arrival, is the
  * closest a page gets to showing you the thing working — and then it stops and
  * lets you read it.
@@ -36,8 +39,8 @@ const LINES: Line[] = [
   {
     render: () => (
       <>
-        <Ok /> <span className="text-fg-2">2/2 capabilities ready</span>{" "}
-        <span className="text-fg-4">— Claude Code, Codex</span>
+        <Ok /> <span className="text-fg-2">3/3 capabilities ready</span>{" "}
+        <span className="text-fg-4">— Claude Code, Codex, Qwen 3.8 Max</span>
       </>
     ),
     after: 160,
@@ -54,8 +57,18 @@ const LINES: Line[] = [
   {
     render: () => (
       <>
-        <Ok /> <span className="text-fg-2">registration on HCS</span>{" "}
-        <span className="text-fg-4">0.0.9848245</span>
+        <Ok /> <span className="text-fg-2">registration recorded on</span>{" "}
+        <span className="text-fg-4">XorvLedger</span>
+      </>
+    ),
+    after: 160,
+  },
+  {
+    render: () => (
+      <>
+        <Ok /> <span className="text-fg-2">ERC-8004 agent</span>{" "}
+        <span className="text-fg">#42</span>{" "}
+        <span className="hidden text-fg-4 sm:inline">— receipts and ratings bind to it</span>
       </>
     ),
     after: 380,
@@ -106,16 +119,8 @@ const LINES: Line[] = [
     render: () => (
       <>
         <Ok /> <span className="text-fg-2">done in 8.4s — earned</span>{" "}
-        <span className="tnum font-medium text-fg">$0.2500</span>
-      </>
-    ),
-    after: 240,
-  },
-  {
-    render: () => (
-      <>
-        <Ok /> <span className="text-fg-2">settled</span>{" "}
-        <span className="text-fg-4">0.0.9842030@1785477682.129117457</span>
+        <span className="tnum font-medium text-fg">$0.2500</span>{" "}
+        <span className="hidden text-fg-4 sm:inline">· paid before it ran</span>
       </>
     ),
   },
