@@ -3,22 +3,32 @@
  *
  * Reads the local append-only ledger written as each job settles, so it works
  * with the broker down and with no network at all. The authoritative record is
- * the receipts topic on Hedera; this is the operator's own copy.
+ * on Monad — the USDC transfer to the payout address, and the XorvLedger
+ * receipt that names it; this is the operator's own copy, and the balance at
+ * the bottom is read live from the chain.
  */
 
 import {
+  explorerAddress,
   fetchBalances,
   formatDuration,
+  formatMon,
   formatUsd,
-  hashscanAccount,
+  formatUsdc,
   networkLabel,
-  usdcTokenId,
 } from "@xorv/protocol";
-import { loadConfig, readEarnings, type EarningRow } from "../config.js";
+import { loadConfig, readEarnings, type EarningRow, type NodeConfig } from "../config.js";
 import * as ui from "../ui.js";
 
 export async function earningsCommand(opts: { json?: boolean; limit?: string }): Promise<void> {
-  const config = loadConfig();
+  // The local ledger outlives any one config: a Hedera-era config should not
+  // stop an operator reading what they earned under it.
+  let config: NodeConfig | null = null;
+  try {
+    config = loadConfig();
+  } catch {
+    config = null;
+  }
   const rows = readEarnings(Number(opts.limit ?? 500) || 500);
 
   if (opts.json) {
@@ -124,6 +134,11 @@ export async function earningsCommand(opts: { json?: boolean; limit?: string }):
     );
   }
 
+  const legacyRows = rows.filter((r) => r.asset === "hbar").length;
+  if (legacyRows > 0) {
+    ui.muted(`  includes ${legacyRows} job(s) from the Hedera prototype, paid in HBAR — totals are in USD either way`);
+  }
+
   // -- recent ---------------------------------------------------------------
 
   ui.heading("recent jobs");
@@ -151,27 +166,26 @@ export async function earningsCommand(opts: { json?: boolean; limit?: string }):
 
   // -- on-chain balance -----------------------------------------------------
 
-  if (config?.accountId) {
+  if (config?.address) {
     ui.heading("on-chain");
-    const spin = ui.spinner(`checking ${config.accountId}…`);
+    const spin = ui.spinner(`checking ${config.address}…`);
     try {
-      const balances = await fetchBalances(config.network, config.accountId);
+      const balances = await fetchBalances(config.network, config.address);
       spin.stop();
       console.log(
         ui.box(
           ui.kv([
-            ["account", `${config.accountId} ${ui.c.muted(`(${networkLabel(config.network)})`)}`],
-            ["usdc", ui.c.money(formatUsd(Number(balances.usdcUnits)))],
-            ["hbar", `${(Number(balances.hbarTinybars) / 1e8).toFixed(4)} ℏ`],
-            ["token", ui.c.muted(usdcTokenId(config.network))],
-            ["hashscan", ui.c.muted(hashscanAccount(config.network, config.accountId))],
+            ["address", `${config.address} ${ui.c.muted(`(Monad ${networkLabel(config.network)})`)}`],
+            ["usdc", ui.c.money(formatUsdc(balances.usdcUnits))],
+            ["mon", formatMon(balances.monWei)],
+            ["explorer", ui.c.muted(explorerAddress(config.network, config.address))],
           ]),
           { title: "wallet", color: ui.BRAND.mint },
         ),
       );
     } catch {
       spin.stop();
-      ui.warn("  couldn't reach the mirror node for the live balance");
+      ui.warn("  couldn't reach the Monad RPC for the live balance");
     }
   }
   ui.blank();

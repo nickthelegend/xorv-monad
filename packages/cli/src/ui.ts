@@ -184,7 +184,7 @@ export function box(lines: string[], opts: BoxOptions = {}): string {
  * Wrap on word boundaries, hard-breaking anything that has none.
  *
  * The hard break is not a nicety. Boxes are drawn by padding each line to a
- * fixed width, so a single token wider than the box — a HashScan URL, a
+ * fixed width, so a single token wider than the box — an explorer URL, a
  * transaction id, a sha-256 — pushes the right-hand border out and the frame
  * comes apart. Preferring word boundaries keeps prose readable; falling back to
  * a character break keeps the geometry true regardless of the content.

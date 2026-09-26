@@ -6,44 +6,36 @@
  * with?") rather than the one their own process could answer alone.
  */
 
-import { formatAgo, formatUsd, networkLabel } from "@xorv/protocol";
-import { loadConfig, resolveBrokerUrl } from "../config.js";
+import {
+  explorerAddress,
+  formatAgo,
+  formatUsd,
+  networkLabel,
+  shortHex,
+  type LedgerEventKind,
+  type NetworkInfo,
+  type PublicProvider,
+} from "@xorv/protocol";
+import { loadConfig, resolveBrokerUrl, type NodeConfig } from "../config.js";
 import * as ui from "../ui.js";
 
-interface NetworkInfo {
-  network: string;
-  facilitator: { mode: string; description: string; feePayer: string };
-  operator: { accountId: string; url: string };
-  usdc: string;
-  topics: Record<string, { id: string; url: string } | null>;
-  hcsPublished: { registry: number; heartbeat: number; receipts: number };
-  hbarRate: { centsPerHbar: number } | null;
-  stats: {
-    providersLive: number;
-    providersConnected: number;
-    capacity: number;
-    jobsTotal: number;
-    jobsCompleted: number;
-    paidUsdMicros: number;
-  };
-}
-
-interface ProviderInfo {
-  id: string;
-  label: string;
-  accountId: string;
-  status: string;
-  connected: boolean;
-  activeJobs: number;
-  capabilities: Array<{ displayName: string; priceUsdMicros: number; adapter: string }>;
-  lastHeartbeatAt: number;
-  uptimeSeconds: number;
-  region: string | null;
-  stats: { jobsCompleted: number; jobsFailed: number; earnedUsdcMicros: number };
-}
+/** The feeds XorvLedger publishes, in the order an operator reads them. */
+const FEEDS: Array<[LedgerEventKind, string]> = [
+  ["registrations", "ProviderRegistered"],
+  ["heartbeats", "ProviderHeartbeat"],
+  ["receipts", "JobRecorded"],
+  ["ratings", "JobRated"],
+];
 
 export async function statusCommand(opts: { broker?: string; json?: boolean }): Promise<void> {
-  const config = loadConfig();
+  // Status reads the broker, not the node; a stale (e.g. Hedera-era) config
+  // should not stop anyone from looking at the network.
+  let config: NodeConfig | null = null;
+  try {
+    config = loadConfig();
+  } catch {
+    config = null;
+  }
   const brokerUrl = (opts.broker ?? (config ? resolveBrokerUrl(config) : "http://localhost:8402")).replace(
     /\/+$/,
     "",
@@ -51,7 +43,7 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
 
   const spin = opts.json ? null : ui.spinner(`reading ${brokerUrl}…`);
   let network: NetworkInfo;
-  let providers: ProviderInfo[];
+  let providers: PublicProvider[];
   try {
     const [networkRes, providersRes] = await Promise.all([
       fetch(`${brokerUrl}/api/network`, { signal: AbortSignal.timeout(10_000) }),
@@ -59,7 +51,7 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
     ]);
     if (!networkRes.ok) throw new Error(`broker returned ${networkRes.status}`);
     network = (await networkRes.json()) as NetworkInfo;
-    providers = ((await providersRes.json()) as { providers: ProviderInfo[] }).providers;
+    providers = ((await providersRes.json()) as { providers: PublicProvider[] }).providers;
   } catch (err) {
     spin?.fail(`could not reach the broker at ${brokerUrl}`);
     if (opts.json) {
@@ -83,47 +75,54 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
 
   // -- the network ----------------------------------------------------------
 
-  console.log(
-    ui.box(
-      ui.kv([
-        ["network", `${network.network} ${ui.c.muted(`· USDC ${network.usdc}`)}`],
-        ["facilitator", `${network.facilitator.description} ${ui.c.muted(`· gas paid by ${network.facilitator.feePayer}`)}`],
+  const rows: Array<[string, string]> = [
+    ["network", `Monad ${network.label ?? networkLabel(network.network)} ${ui.c.muted(`· ${network.network}`)}`],
+    ["usdc", `${network.usdc.address} ${ui.c.muted(explorerAddress(network.network, network.usdc.address))}`],
+    [
+      "facilitator",
+      `${network.facilitator.description}${network.facilitator.address ? ` ${ui.c.muted(`· gas paid by ${shortHex(network.facilitator.address)}`)}` : ""}`,
+    ],
+    ["identity", ui.c.muted(`ERC-8004 registry ${network.erc8004.identity}`)],
+  ];
+  const ai = network.ai
+    ? (
         [
-          "hbar rate",
-          network.hbarRate
-            ? `${ui.c.money(`$${(network.hbarRate.centsPerHbar / 100).toFixed(4)}`)} ${ui.c.muted("per ℏ, from the mirror node")}`
-            : ui.c.muted("unavailable"),
-        ],
-        ["providers", `${ui.c.ok(String(network.stats.providersLive))} live ${ui.c.muted(`· ${network.stats.providersConnected} connected · ${network.stats.capacity} capabilities`)}`],
-        ["jobs", `${network.stats.jobsCompleted} completed ${ui.c.muted(`of ${network.stats.jobsTotal}`)}`],
-        ["settled", ui.c.money(formatUsd(network.stats.paidUsdMicros))],
-      ]),
-      { title: "network" },
-    ),
+          ["router", network.ai.router],
+          ["screener", network.ai.screener],
+          ["verifier", network.ai.verifier],
+        ] as const
+      )
+        .filter(([, role]) => role)
+        .map(([name, role]) => `${name} ${ui.c.bold(role!.model)}`)
+    : [];
+  if (ai.length) rows.push(["ai", ai.join(ui.c.muted(" · "))]);
+  rows.push(
+    ["providers", `${ui.c.ok(String(network.stats.providersLive))} live ${ui.c.muted(`· ${network.stats.providersConnected} connected · ${network.stats.capacity} capabilities`)}`],
+    ["jobs", `${network.stats.jobsCompleted} completed ${ui.c.muted(`of ${network.stats.jobsTotal}`)}`],
+    ["settled", ui.c.money(formatUsd(network.stats.paidUsdMicros))],
   );
+  console.log(ui.box(ui.kv(rows), { title: "network" }));
 
   // -- the audit trail ------------------------------------------------------
 
-  ui.heading("hedera consensus service");
-  const topicRows = Object.entries(network.topics).map(([kind, topic]) => [
-    topic ? ui.glyph.chain() : ui.glyph.off(),
-    kind,
-    topic ? ui.c.bold(topic.id) : ui.c.muted("not configured"),
-    String(network.hcsPublished[kind as keyof NetworkInfo["hcsPublished"]] ?? 0),
-    topic ? ui.c.muted(topic.url) : "",
-  ]);
-  console.log(
-    ui.table(
-      [
-        { header: "" },
-        { header: "topic" },
-        { header: "id" },
-        { header: "sent", align: "right" },
-        { header: "hashscan" },
-      ],
-      topicRows,
-    ),
-  );
+  ui.heading("on-chain audit log");
+  if (!network.ledger) {
+    ui.muted("  this broker has no XorvLedger configured — payments settle on-chain, receipts stay off-chain");
+  } else {
+    ui.muted(`  XorvLedger ${network.ledger.address}  ${network.ledger.url}`);
+    console.log(
+      ui.table(
+        [{ header: "" }, { header: "feed" }, { header: "event" }, { header: "sent", align: "right" }],
+        FEEDS.map(([kind, event]) => [
+          ui.glyph.chain(),
+          kind,
+          ui.c.muted(event),
+          String(network.published?.[kind] ?? 0),
+        ]),
+      ),
+    );
+    if (network.lastPublishError) ui.warn(`  last ledger write failed: ${network.lastPublishError}`);
+  }
 
   // -- providers ------------------------------------------------------------
 
@@ -146,6 +145,7 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
     return [
       dot,
       label,
+      p.agentId ? ui.c.accent(`#${p.agentId}`) : ui.c.muted("—"),
       ui.c.muted(p.capabilities.map((c) => c.adapter).join(", ").slice(0, 30)),
       Number.isFinite(cheapest) ? ui.c.money(formatUsd(cheapest)) : ui.c.muted("—"),
       String(p.stats.jobsCompleted),
@@ -159,6 +159,7 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
       [
         { header: "" },
         { header: "provider" },
+        { header: "agent" },
         { header: "sells" },
         { header: "from", align: "right" },
         { header: "jobs", align: "right" },

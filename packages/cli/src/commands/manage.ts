@@ -18,7 +18,14 @@ import {
 } from "../config.js";
 import { createAdapter, detectAvailable } from "../adapters/index.js";
 import { makeJobDir, removeJobDir } from "../adapters/base.js";
-import { formatDuration, formatUsd, parseUsd } from "@xorv/protocol";
+import {
+  explorerAddress,
+  explorerAgent,
+  formatDuration,
+  formatUsd,
+  parseUsd,
+  type PaymentRecord,
+} from "@xorv/protocol";
 import * as ui from "../ui.js";
 
 /**
@@ -73,7 +80,7 @@ interface BrokerJob {
   startedAt: number | null;
   priceUsdMicros: number | null;
   providerLabel: string | null;
-  payment: { transactionId: string; asset: string; hashscanUrl: string } | null;
+  payment: PaymentRecord | null;
 }
 
 export async function jobsCommand(opts: { json?: boolean; limit?: string; all?: boolean }): Promise<void> {
@@ -81,7 +88,7 @@ export async function jobsCommand(opts: { json?: boolean; limit?: string; all?: 
   const brokerUrl = resolveBrokerUrl(config);
   const limit = Number(opts.limit ?? 20) || 20;
 
-  const query = opts.all || !config.providerId ? "" : `&providerId=${config.providerId}`;
+  const query = opts.all || !config.providerId ? "" : `&providerId=${encodeURIComponent(config.providerId)}`;
   const res = await fetch(`${brokerUrl}/api/jobs?limit=${limit}${query}`, {
     signal: AbortSignal.timeout(15_000),
   });
@@ -113,6 +120,7 @@ export async function jobsCommand(opts: { json?: boolean; limit?: string; all?: 
         { header: "prompt" },
         { header: "took", align: "right" },
         { header: "earned", align: "right" },
+        { header: "settlement" },
       ],
       jobs.map((job) => {
         const took =
@@ -131,6 +139,7 @@ export async function jobsCommand(opts: { json?: boolean; limit?: string; all?: 
           job.status === "completed"
             ? ui.c.money(formatUsd(job.priceUsdMicros ?? 0))
             : ui.c.muted("—"),
+          job.payment?.explorerUrl ? ui.c.muted(job.payment.explorerUrl) : ui.c.muted("—"),
         ];
       }),
     ),
@@ -363,7 +372,7 @@ export async function logsCommand(opts: { json?: boolean; limit?: string }): Pro
     );
   }
   ui.blank();
-  ui.muted(`  ${rows.length} entries · this file is local; the ledger of record is on Hedera`);
+  ui.muted(`  ${rows.length} entries · this file is local; the record of payment is the USDC transfer on Monad`);
   ui.blank();
 }
 
@@ -384,8 +393,9 @@ export async function configCommand(opts: { json?: boolean; path?: boolean }): P
   }
   if (opts.json) {
     // The private key never goes to stdout — this output gets pasted into
-    // issues and chat windows.
-    console.log(JSON.stringify({ ...config, privateKey: "[redacted]" }, null, 2));
+    // issues and chat windows. An address-only node has nothing to redact,
+    // and says so rather than implying a key exists.
+    console.log(JSON.stringify({ ...config, privateKey: config.privateKey ? "[redacted]" : null }, null, 2));
     return;
   }
 
@@ -398,8 +408,19 @@ export async function configCommand(opts: { json?: boolean; path?: boolean }): P
         ["node id", config.nodeId],
         ["network", config.network],
         ["broker", config.brokerUrl],
-        ["payout", config.accountId],
-        ["key", ui.c.muted("[stored locally, 0600]")],
+        ["payout", `${config.address || ui.c.bad("not set")} ${config.address ? ui.c.muted(explorerAddress(config.network, config.address)) : ""}`],
+        [
+          "key",
+          process.env.XORV_PRIVATE_KEY?.trim()
+            ? ui.c.muted("from XORV_PRIVATE_KEY")
+            : config.privateKey
+              ? ui.c.muted("[stored locally, 0600]")
+              : ui.c.muted("none — address-only node"),
+        ],
+        [
+          "identity",
+          config.agentId ? `agent #${config.agentId} ${ui.c.muted(explorerAgent(config.network, config.agentId))}` : ui.c.muted("none"),
+        ],
         ["region", config.region ?? ui.c.muted("not set")],
         ["sandbox", config.sandboxDir],
         ["tunnel", config.tunnel.enabled ? ui.c.ok("enabled") : ui.c.muted("disabled")],
@@ -429,6 +450,7 @@ const COMMANDS = [
   "doctor",
   "run",
   "wallet",
+  "identity",
   "jobs",
   "price",
   "test",
@@ -436,6 +458,8 @@ const COMMANDS = [
   "config",
   "pause",
   "resume",
+  "cancel",
+  "skills",
   "completion",
 ];
 
@@ -483,7 +507,7 @@ export async function cancelCommand(jobId: string, opts: { broker?: string }): P
     opts.broker ?? (config ? resolveBrokerUrl(config) : "http://localhost:8402")
   ).replace(/\/+$/, "");
 
-  const res = await fetch(`${brokerUrl}/api/jobs/${jobId}/cancel`, {
+  const res = await fetch(`${brokerUrl}/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
     method: "POST",
     signal: AbortSignal.timeout(15_000),
   });
