@@ -74,9 +74,13 @@ const CLI_ENTRY = path.join(REPO, "packages", "cli", "dist", "index.js");
 const MCP_ENTRY = path.join(REPO, "packages", "mcp", "dist", "index.js");
 const PROTOCOL_ENTRY = path.join(REPO, "packages", "protocol", "dist", "index.js");
 
+// The harness's own options, read before the scrub below.
+const RUN_ROOT = process.env.XORV_E2E_DIR?.trim() || null;
+const KEEP_RUN = process.env.XORV_E2E_KEEP?.trim() === "1";
+
 // The protocol reads XORV_RPC_URL / XORV_STABLECOIN from the environment on every call. The harness
 // wants the built-in testnet table (the fork has the real addresses), whatever the shell says.
-for (const key of Object.keys(process.env)) if (key.startsWith("XORV_") && key !== "XORV_E2E_DIR") delete process.env[key];
+for (const key of Object.keys(process.env)) if (key.startsWith("XORV_")) delete process.env[key];
 
 const NETWORK = MONAD_TESTNET;
 const NET = networkConfig(NETWORK);
@@ -131,7 +135,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 function makeRunDir(): string {
-  const root = process.env.XORV_E2E_DIR?.trim() || path.join(E2E_DIR, ".runs");
+  const root = RUN_ROOT ?? path.join(E2E_DIR, ".runs");
   fs.mkdirSync(root, { recursive: true });
   return fs.mkdtempSync(path.join(root, `${new Date().toISOString().replace(/[:.]/g, "-")}-`));
 }
@@ -582,6 +586,18 @@ async function main(): Promise<void> {
     const token = answerToken(privatePrompt);
     const opened = openResult(inbox.secretKey, envelope, paid.jobId);
     report.check("the buyer's inbox key opens it to the provider's answer", opened.includes(token), token);
+    // Only that key, and only as that job: another passkey's inbox key, or the right key with the
+    // envelope replayed under a different job id, fails GCM authentication.
+    const refuses = (secretKey: Uint8Array, jobId: string): string => {
+      try {
+        openResult(secretKey, envelope, jobId);
+        return "opened";
+      } catch (err) {
+        return (err as { code?: string }).code ?? "threw";
+      }
+    };
+    report.equal("another inbox key cannot open it", refuses(deriveInboxKeys(new Uint8Array(32).fill(0x07)).secretKey, paid.jobId), "DECRYPT_FAILED");
+    report.equal("it is bound to its job id", refuses(inbox.secretKey, cliRun.jobId), "DECRYPT_FAILED");
 
     const withEvents = (await api.get<{ job: PublicJob }>(`/api/jobs/${paid.jobId}`)).job;
     report.check("the plaintext answer is nowhere in the broker's API", !JSON.stringify(withEvents).includes(token));
@@ -775,6 +791,21 @@ async function main(): Promise<void> {
     report.equal("no receipts left queued", info.pendingReceipts, 0);
   });
 
+  await report.step("the provider's own log is a record of its jobs", async () => {
+    // `xorv start` runs here with its output piped, as it does under a service manager or in a
+    // container: the log should say what the node did, once per event, not repaint a dashboard.
+    const log = group.list().find((p) => p.name === "provider")?.stdout ?? "";
+    for (const [which, job] of [
+      ["cli", jobs.cli],
+      ["mcp", jobs.mcp],
+      ["private", jobs.private],
+    ] as const) {
+      const done = log.match(new RegExp(`Z ok +job ${job.id.slice(0, 12)} done in `, "g")) ?? [];
+      report.equal(`${which}: logged once, as done`, done.length, 1);
+    }
+    report.equal("the status footer is printed once, not once a second", (log.match(/ctrl-c to stop/g) ?? []).length, 1);
+  });
+
   await report.step("the private answer never touched the broker's disk", async () => {
     const bytes = fs.existsSync(dbFile) ? fs.readFileSync(dbFile) : Buffer.alloc(0);
     const wal = fs.existsSync(`${dbFile}-wal`) ? fs.readFileSync(`${dbFile}-wal`) : Buffer.alloc(0);
@@ -820,16 +851,18 @@ const markdown = report.markdown({
     ["node", process.version],
     ["platform", `${process.platform} ${os.release()}`],
     ["duration", `${((Date.now() - started) / 1000).toFixed(1)} s`],
-    ["logs", report.passed ? "(removed after a passing run)" : path.join(runDir, "logs")],
+    ["logs", report.passed && !KEEP_RUN ? "(removed after a passing run)" : "kept in the run directory"],
   ],
 });
 const outFile = path.join(E2E_DIR, "last-run.md");
 fs.writeFileSync(outFile, markdown);
 process.stderr.write(`\n${bold(report.summaryLine())}\n${dim(`report: ${path.relative(process.cwd(), outFile)}`)}\n`);
-if (report.passed) {
+if (report.passed && !KEEP_RUN) {
   fs.rmSync(runDir, { recursive: true, force: true });
 } else {
   process.stderr.write(`${dim(`logs kept in ${path.join(runDir, "logs")}`)}\n`);
+}
+if (!report.passed) {
   for (const proc of group.list()) {
     if (proc.output.trim()) process.stderr.write(`\n--- ${proc.name} (last lines) ---\n${tail(proc.output, 25)}\n`);
   }

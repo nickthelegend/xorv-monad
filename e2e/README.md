@@ -66,6 +66,8 @@ The last green run's report is committed as [last-run.md](last-run.md).
 |---|---|---|
 | `MONAD_FORK_URL` | `https://testnet-rpc.monad.xyz` | RPC to fork from (e.g. a private Monad testnet endpoint). |
 | `MONAD_FORK_BLOCK` | latest | Pin the fork block for a reproducible run. |
+| `XORV_E2E_KEEP` | unset | `1` keeps the run directory (every process's log, the broker's database) after a passing run too. |
+| `XORV_E2E_DIR` | `e2e/.runs` | Where run directories go. |
 
 Nothing else from your environment reaches the processes under test: every `XORV_*`, model key, Mongo URI
 or indexer URL in your shell or the repo-root `.env` is dropped or blanked (see `src/env.ts`), so the run
