@@ -143,14 +143,22 @@ jobs:
       - name: Scan for committed key material
         run: |
           # A private key in a repo that handles money is the one mistake worth
-          # failing the build over.
+          # failing the build over. GitHub tokens, DER-encoded keys, JSON
+          # "privateKey" fields, and env-file lines assigning 32 bytes of hex to
+          # a *KEY / *SECRET variable (a pasted XORV_OPERATOR_KEY=0x…).
           if grep -rIn --exclude-dir=node_modules --exclude-dir=.git \
                -E '(ghp_[A-Za-z0-9]{30,}|30740201010420[0-9a-f]{40,}|"privateKey"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{60,}")' .; then
             echo "::error::possible secret committed"
             exit 1
           fi
-          if git ls-files | grep -E '(^|/)\.env$'; then
-            echo "::error::.env is tracked"
+          if grep -rIn --exclude-dir=node_modules --exclude-dir=.git \
+               -E '^[[:space:]]*(export[[:space:]]+)?[A-Z0-9_]*(KEY|SECRET)[A-Z0-9_]*=["'"'"']?(0x)?[0-9a-fA-F]{64}["'"'"']?[[:space:]]*$' .; then
+            echo "::error::possible private key in an env file"
+            exit 1
+          fi
+          # .env, .env.local, .env.production … but never .env.example.
+          if git ls-files | grep -E '(^|/)\.env(\.[A-Za-z0-9_-]+)?$' | grep -vE '\.env\.example$'; then
+            echo "::error::an .env file is tracked"
             exit 1
           fi
           echo "clean"
