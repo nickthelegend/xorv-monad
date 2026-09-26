@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -34,6 +37,17 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
 
+      # Hardhat downloads solc 0.8.24 on the first compile (the contracts'
+      # typecheck and tests both compile). The version is pinned in the config,
+      # so that file is the key; an older cache still restores and Hardhat
+      # only fetches what's missing.
+      - name: Cache solc
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/hardhat-nodejs
+          key: solc-${{ runner.os }}-${{ hashFiles('packages/contracts/hardhat.config.ts') }}
+          restore-keys: solc-${{ runner.os }}-
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
@@ -49,11 +63,52 @@ jobs:
       # and the XorvLedger writer are stubbed, the contracts run on Hardhat's
       # in-process chain against the vendored ERC-8004 registries, so CI proves
       # the logic without spending testnet MON or depending on an RPC being up.
+      # The root "test" script covers packages/*, services/* and both apps
+      # (xorv-app, xorv-landing); the indexer has its own job.
       - name: Test
         run: pnpm test
 
       - name: Build the frontends
         run: pnpm build:all
+
+  indexer:
+    name: Envio indexer
+    # envio ships no Windows binary, which is why services/indexer sits outside
+    # the root workspace with its own lockfile. Linux is where it's checked.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/indexer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          cache: pnpm
+          cache-dependency-path: services/indexer/pnpm-lock.yaml
+
+      # Its own pnpm-workspace.yaml makes this folder a workspace root, so the
+      # install reads services/indexer/pnpm-lock.yaml, not the monorepo's.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Types for the handlers (.envio/); no HyperSync token needed.
+      - name: Codegen
+        run: pnpm codegen
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # No database, no HyperSync token: the handlers run against Envio's
+      # createTestIndexer. test/abis.test.ts also compares abis/XorvLedger.json
+      # byte for byte with packages/contracts/abi, which the checkout has.
+      - name: Test
+        run: pnpm test
 
   cli-node-floor:
     name: CLI runs on its minimum Node
