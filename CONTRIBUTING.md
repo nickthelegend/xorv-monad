@@ -2,7 +2,7 @@
 
 ## Setup
 
-Node 22.5+ (the broker uses `node:sqlite`; the CLI alone runs on 20.11+) and pnpm 10
+Node 22.18+ for the workspace (the broker needs 22.13+ for `node:sqlite`; the CLI and MCP server alone run on 20.19+) and pnpm 10
 (`corepack enable`).
 
 ```bash

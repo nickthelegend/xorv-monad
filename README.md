@@ -456,7 +456,7 @@ Other buyers: the MCP server ([`packages/mcp/README.md`](packages/mcp/README.md)
 
 ### Deploying
 
-There is no separate deploy guide yet. The steps are:
+The full order of operations, with faucets, env lines and the Oct 10–13 indexer redeploy, is in [DEPLOY.md](DEPLOY.md). In short:
 
 1. **Ledger.** `XORV_BROKER_ADDRESS=<operator address> pnpm deploy:ledger` deploys `XorvLedger` to
    Monad testnet (about 0.2 MON plus Monad's 10 MON account reserve). It checks that the registries
