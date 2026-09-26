@@ -31,7 +31,8 @@
     "deploy:ledger": "pnpm --filter @xorv/contracts deploy:testnet",
     "verify:ledger": "pnpm --filter @xorv/contracts verify:testnet",
     "privy:setup": "pnpm --filter @xorv/mcp privy:setup",
-    "usdc": "pnpm --filter @xorv/broker usdc"
+    "usdc": "pnpm --filter @xorv/broker usdc",
+    "nansen:probe": "pnpm --filter @xorv/broker nansen:probe"
   },
   "keywords": [
     "x402",

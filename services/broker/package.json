@@ -15,6 +15,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "setup": "tsx src/scripts/setup.ts",
+    "nansen:probe": "tsx src/scripts/nansen-probe.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "usdc": "tsx src/scripts/usdc.ts"

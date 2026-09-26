@@ -41,6 +41,7 @@ import {
   type WalletLinks,
 } from "../src/trust/index.js";
 import { Registry } from "../src/registry.js";
+import { probe } from "../src/scripts/nansen-probe.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const NOW = Date.parse("2026-09-26T12:00:00Z");
@@ -838,5 +839,53 @@ describe("trust as a matching tie-breaker", () => {
     registry.register(registration("unknown", "0x0000000000000000000000000000000000000010", 1_000));
     registry.setTrustScorer((a) => (a === known.address ? 40 : null));
     expect(registry.candidates({ maxPriceUsdMicros: 5_000 })[0]!.provider.label).toBe("unknown");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The demo probe
+// ---------------------------------------------------------------------------
+
+describe("nansen:probe", () => {
+  it("prints a fixture signal with attribution and no payment", async () => {
+    const lines: string[] = [];
+    const result = await probe({
+      addresses: [WALLET],
+      config: { ...NANSEN_OFF, mode: "fixture" },
+      print: (line) => lines.push(line),
+    });
+    const out = lines.join("\n");
+    expect(out).toContain(`score         ${result.signal.score}/100`);
+    expect(out).toContain("no payments (fixture data)");
+    expect(out).toContain("Powered by Nansen");
+    expect(out).not.toMatch(/smart/i);
+    expect(result.check).toBeNull();
+  });
+
+  it("prints the Monad mainnet payments that bought a live signal, and the related check", async () => {
+    const lines: string[] = [];
+    const nansen = mockNansen();
+    const result = await probe({
+      addresses: [WALLET, OTHER],
+      config: { ...NANSEN_OFF, mode: "live", payer: privateKeyToAccount(generatePrivateKey()) },
+      fetch: nansen.fetch,
+      print: (line) => lines.push(line),
+    });
+    // Three calls for the provider, two for the buyer; no smart-money list.
+    expect(nansen.calls.filter((c) => c.payment).map((c) => c.path).sort()).toEqual(
+      [
+        NANSEN_PATHS.firstFunder,
+        NANSEN_PATHS.firstFunder,
+        NANSEN_PATHS.relatedWallets,
+        NANSEN_PATHS.relatedWallets,
+        NANSEN_PATHS.transactions,
+      ].sort(),
+    );
+    expect(result.signal.paidUsdc).toBe("0.03");
+    expect(result.status).toMatchObject({ auth: "x402", paidCallsToday: 5, spentTodayUsdc: "0.05" });
+    const out = lines.join("\n");
+    expect(out).toContain("Xorv paid Nansen $0.05 over x402 on Monad:");
+    expect(out).toMatch(/\$0\.01 {2}profiler\/address\/first-funder {2}https:\/\/monadscan\.com\/tx\/0x/);
+    expect(result.check).toMatchObject({ related: false });
   });
 });
