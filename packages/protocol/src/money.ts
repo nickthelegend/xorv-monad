@@ -6,16 +6,26 @@
  * floating point starts lying. A `number` holds micro-USD losslessly well past
  * any price this network will ever see, and JSON carries it without ceremony.
  *
- * USDC on Hedera also has 6 decimals, so micro-USD and USDC's smallest unit are
- * the same integer. That is a happy coincidence, not a law, so the conversion
- * still goes through a named function — if this ever runs against a token with
- * different precision, there's one place to fix.
+ * Circle's USDC on Monad has 6 decimals, so micro-USD and USDC's smallest unit
+ * are the same integer. That is a happy coincidence, not a law, so the
+ * conversion still goes through a named function — if this ever runs against a
+ * token with different precision, there's one place to fix.
+ *
+ * There is deliberately no native-token (MON) pricing here. x402's `exact`
+ * scheme on EVM moves ERC-20s only (EIP-3009 or Permit2), so there is no way to
+ * pay a job in MON, and quoting one would need a price oracle for a figure
+ * nobody can act on.
  */
-
-import { HBAR_DECIMALS, HEDERA_USDC_DECIMALS, mirrorNodeUrl } from "./constants.js";
 
 /** One US dollar, in micro-USD. */
 export const USD_MICROS = 1_000_000;
+
+/**
+ * USDC's decimals on Monad (mainnet and testnet alike — confirmed on-chain via
+ * `decimals()`). Also the EIP-712 domain is `name: "USDC", version: "2"`; see
+ * `NetworkConfig.usdc` for where that lives.
+ */
+export const USDC_DECIMALS = 6;
 
 /** Parse a human price like "$0.01", "0.01" or 0.01 into micro-USD. */
 export function parseUsd(input: string | number): number {
@@ -40,109 +50,31 @@ export function formatUsd(micros: number, opts: { compact?: boolean } = {}): str
   return `$${dollars.toFixed(4)}`;
 }
 
-/** micro-USD → USDC smallest units, as the integer string x402 wants. */
+/**
+ * micro-USD → USDC smallest units, as the integer string x402 wants.
+ *
+ * Done in bigint so the result can never come out in exponent notation, and so
+ * the one place a token with more decimals would plug in is already exact.
+ */
 export function usdMicrosToUsdcUnits(micros: number): string {
-  const scale = 10 ** (HEDERA_USDC_DECIMALS - 6);
-  return String(Math.round(micros * scale));
+  if (!Number.isFinite(micros) || micros < 0) {
+    throw new Error(`invalid micro-USD amount: ${String(micros)}`);
+  }
+  const whole = BigInt(Math.round(micros));
+  return (whole * 10n ** BigInt(USDC_DECIMALS - 6)).toString();
 }
 
-/** USDC smallest units → micro-USD. */
-export function usdcUnitsToUsdMicros(units: string | number): number {
-  const scale = 10 ** (HEDERA_USDC_DECIMALS - 6);
+/**
+ * USDC smallest units → micro-USD.
+ *
+ * Accepts a bigint too, because that is what viem hands back from `balanceOf`.
+ */
+export function usdcUnitsToUsdMicros(units: string | number | bigint): number {
+  const scale = 10 ** (USDC_DECIMALS - 6);
   return Math.round(Number(units) / scale);
 }
 
 /** Render USDC smallest units as a dollar string. */
-export function formatUsdc(units: string | number): string {
+export function formatUsdc(units: string | number | bigint): string {
   return formatUsd(usdcUnitsToUsdMicros(units));
-}
-
-/** Render tinybars as an ℏ string. */
-export function formatHbar(tinybars: string | number): string {
-  const hbar = Number(tinybars) / 10 ** HBAR_DECIMALS;
-  return `${hbar.toFixed(hbar >= 1 ? 4 : 8).replace(/0+$/, "").replace(/\.$/, "")} ℏ`;
-}
-
-/**
- * The network's own HBAR/USD rate, straight from the Mirror Node.
- *
- * Hedera publishes the exchange rate it charges fees at, so the HBAR price of a
- * job comes from the ledger rather than from a third-party oracle we'd have to
- * trust and keep alive. The shape is `cent_equivalent / hbar_equivalent` cents
- * per HBAR.
- */
-export interface HbarRate {
-  /** US cents per 1 HBAR. */
-  centsPerHbar: number;
-  /** Epoch seconds this rate expires; Hedera rotates it hourly. */
-  expiresAt: number;
-  fetchedAt: number;
-}
-
-interface MirrorExchangeRate {
-  current_rate: { cent_equivalent: number; hbar_equivalent: number; expiration_time: number };
-}
-
-/** Fetch the current HBAR/USD rate for a network. Throws on a bad response. */
-export async function fetchHbarRate(network: string): Promise<HbarRate> {
-  const url = `${mirrorNodeUrl(network)}/api/v1/network/exchangerate`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-  if (!res.ok) throw new Error(`mirror node exchangerate → ${res.status}`);
-  const body = (await res.json()) as MirrorExchangeRate;
-  const { cent_equivalent, hbar_equivalent, expiration_time } = body.current_rate;
-  if (!cent_equivalent || !hbar_equivalent) throw new Error("mirror node returned an empty rate");
-  return {
-    centsPerHbar: cent_equivalent / hbar_equivalent,
-    expiresAt: expiration_time,
-    fetchedAt: Date.now(),
-  };
-}
-
-/**
- * micro-USD → tinybars at a given rate, rounded up.
- *
- * Rounding up rather than to-nearest is deliberate: the provider quoted a price
- * in dollars, and a half-tinybar rounded down is the provider silently eating
- * the difference on every single job.
- */
-export function usdMicrosToTinybars(micros: number, rate: HbarRate): string {
-  const cents = micros / 10_000; // 1 cent = 10_000 micro-USD
-  const hbar = cents / rate.centsPerHbar;
-  return String(BigInt(Math.ceil(hbar * 10 ** HBAR_DECIMALS)));
-}
-
-/** tinybars → micro-USD at a given rate. */
-export function tinybarsToUsdMicros(tinybars: string | number, rate: HbarRate): number {
-  const hbar = Number(tinybars) / 10 ** HBAR_DECIMALS;
-  return Math.round(hbar * rate.centsPerHbar * 10_000);
-}
-
-/**
- * A rate cache that survives a burst of quotes without hammering the Mirror
- * Node, and refuses to serve a rate old enough to misprice a job.
- */
-export class HbarRateCache {
-  private cached: HbarRate | null = null;
-  private inflight: Promise<HbarRate> | null = null;
-
-  constructor(
-    private readonly network: string,
-    private readonly maxAgeMs = 60_000,
-  ) {}
-
-  async get(): Promise<HbarRate> {
-    const fresh = this.cached && Date.now() - this.cached.fetchedAt < this.maxAgeMs;
-    if (fresh && this.cached) return this.cached;
-    // Collapse concurrent misses onto one request; a burst of quotes at startup
-    // would otherwise open a dozen sockets for the same number.
-    this.inflight ??= fetchHbarRate(this.network)
-      .then((rate) => {
-        this.cached = rate;
-        return rate;
-      })
-      .finally(() => {
-        this.inflight = null;
-      });
-    return this.inflight;
-  }
 }
