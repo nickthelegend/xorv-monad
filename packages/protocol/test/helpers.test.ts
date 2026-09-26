@@ -112,6 +112,12 @@ describe("entry points", () => {
       "buyerX402Client",
       "usdcPaymentOption",
       "formatUsd",
+      "sealResult",
+      "openResult",
+      "deriveInboxKeys",
+      "deriveVaultKey",
+      "deriveVaultAuth",
+      "verifyVaultWrite",
     ]) {
       expect(web).toHaveProperty(name);
     }
@@ -141,7 +147,22 @@ describe("entry points", () => {
       expect(spec).not.toMatch(/facilitator|server/);
     }
     expect([...external].sort()).toEqual(
-      ["@x402/core/client", "@x402/core/http", "@x402/core/types", "@x402/evm", "@x402/evm/exact/client", "viem", "viem/accounts", "viem/chains"].sort(),
+      [
+        "@x402/core/client",
+        "@x402/core/http",
+        "@x402/core/types",
+        "@x402/evm",
+        "@x402/evm/exact/client",
+        "viem",
+        "viem/accounts",
+        "viem/chains",
+        // Private jobs: pure-JS, audited, and the same code on a provider and in a tab.
+        "@noble/ciphers/aes.js",
+        "@noble/curves/ed25519.js",
+        "@noble/hashes/hkdf.js",
+        "@noble/hashes/sha2.js",
+        "@noble/hashes/utils.js",
+      ].sort(),
     );
   });
 });

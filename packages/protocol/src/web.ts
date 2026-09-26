@@ -3,10 +3,11 @@
  *
  * Everything a Next.js page needs to agree with the broker — the domain and
  * wire types, money math, Monad chain config and explorer links, address
- * helpers, the XorvLedger ABI and rating typed data, ERC-8004 file shapes, and
- * the buyer-side x402 client a Privy wallet pays with — and nothing that drags
- * Node built-ins or server code into a client bundle: no `node:crypto`, no
- * in-process facilitator, no LLM client (API keys have no business in a
+ * helpers, the XorvLedger ABI and rating typed data, ERC-8004 file shapes, the
+ * buyer-side x402 client a Privy wallet pays with, and the private-job crypto
+ * (sealed results, passkey-derived keys, the history vault) — and nothing that
+ * drags Node built-ins or server code into a client bundle: no `node:crypto`,
+ * no in-process facilitator, no LLM client (API keys have no business in a
  * browser tab).
  *
  * The Node entry (`@xorv/protocol`) re-exports all of this, so server code can
@@ -24,3 +25,5 @@ export * from "./evm.js";
 export * from "./ledger.js";
 export * from "./erc8004.js";
 export * from "./x402-client.js";
+export * from "./sealed.js";
+export * from "./vault.js";
