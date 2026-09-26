@@ -35,6 +35,10 @@ const FAQ = [
     a: "The job is reassigned to another live provider at no extra cost to the buyer. The failure is recorded on-chain as a failed receipt and counts against the original provider's success rate, which is what the matcher sorts on. There is no refund path today: the protection is that a provider who fails stops winning jobs, in public.",
   },
   {
+    q: "Can a provider fake its own reputation?",
+    a: "Not cheaply. Only the wallet that paid for a job can rate it, and before relaying a rating the broker asks Nansen whether buyer and provider are the same party — one funded the other, both were first funded by the same non-exchange wallet, or Nansen lists them as related. If so the rating is refused and nothing reaches ERC-8004. A lookup that fails never counts against anyone.",
+  },
+  {
     q: "What does the chain record — and what doesn't it?",
     a: "XorvLedger records provider registrations, sampled heartbeats, one receipt per job — job id, ERC-8004 agent, buyer, payee, amount, settlement transaction, duration, success, and keccak-256 hashes of the prompt and the result — and every rating. Never the prompt or the result themselves: a hash lets anyone holding the text prove it matches, and tells everyone else nothing.",
   },

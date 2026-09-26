@@ -3,6 +3,7 @@ import { Hunyuan, Kimi, Qwen } from "@lobehub/icons";
 import { Reveal } from "@/components/ui/reveal";
 import { Section, SectionHeading } from "@/components/ui/kit";
 import { ERC8004_URL, MONAD_URL } from "@/lib/links";
+import { cn } from "@/lib/utils";
 
 /**
  * What Xorv is built with.
@@ -57,6 +58,12 @@ const ITEMS: Item[] = [
     body: "Providers mint an agent on Monad's Identity Registry. A receipt binds to it only when the payee is the agent's own wallet, and ratings land in the Reputation Registry, where any marketplace can read them.",
   },
   {
+    name: "Nansen",
+    role: "wallet trust",
+    href: "https://nansen.ai",
+    body: "The broker buys Nansen wallet data per call — a cent of USDC over x402 on Monad — to score each provider's payout wallet by age, funding and activity. The score breaks matching ties, and a rating between wallets Nansen links is refused as a wash rating.",
+  },
+  {
     name: "Qwen 3.8 Max",
     role: "router",
     href: "https://www.qwencloud.com/models/qwen3.8-max-0902",
@@ -97,8 +104,15 @@ export function Stack() {
 
       <Reveal delay={0.06}>
         <ul className="mx-auto mt-14 grid max-w-5xl gap-px overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--line)] sm:grid-cols-2 lg:grid-cols-3">
-          {ITEMS.map((item) => (
-            <li key={item.name} className="flex flex-col bg-black p-6">
+          {ITEMS.map((item, i) => (
+            <li
+              key={item.name}
+              className={cn(
+                "flex flex-col bg-black p-6",
+                // A lone last item on the three-column grid spans the row rather than leaving two empty cells.
+                i === ITEMS.length - 1 && ITEMS.length % 3 === 1 && "lg:col-span-3",
+              )}
+            >
               <div className="flex items-baseline justify-between gap-3">
                 <a
                   href={item.href}
