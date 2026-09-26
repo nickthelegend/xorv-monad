@@ -1,39 +1,25 @@
-export const REPO_URL = "https://github.com/nickthelegend/xorv";
-/** Public broker the live-stats strip reads. Optional: the page works without it. */
+export const REPO_URL = "https://github.com/nickthelegend/xorv-monad";
+/** Public broker the live ledger section reads. Optional: the page works without it. */
 export const BROKER_URL = (
-  process.env.NEXT_PUBLIC_XORV_BROKER_URL ?? "http://localhost:8402"
+  process.env.NEXT_PUBLIC_XORV_BROKER_URL?.trim() || "http://localhost:8402"
 ).replace(/\/+$/, "");
-export const APP_URL = process.env.NEXT_PUBLIC_XORV_APP_URL ?? "http://localhost:3002";
+/** The buyer app (Privy sign-in, pay per job). Falls back to its dev port. */
+export const APP_URL = (process.env.NEXT_PUBLIC_XORV_APP_URL?.trim() || "http://localhost:3002").replace(
+  /\/+$/,
+  "",
+);
 export const LOOM_URL = "https://loompad.tech";
 export const X402_URL = "https://x402.org";
-export const HEDERA_URL = "https://hedera.com";
-export const NPM_URL = "https://www.npmjs.com/package/xorv";
-
-/**
- * The live testnet ids this site links to.
- *
- * Every number quoted on the page resolves to something a reader can open on
- * HashScan. A marketing site for a payments network that can't show you the
- * payments is just a claim.
- */
-export const CHAIN = {
-  network: "hedera:testnet",
-  usdc: "0.0.429274",
-  usdcUrl: "https://hashscan.io/testnet/token/0.0.429274",
-  topics: {
-    registry: "0.0.9848245",
-    heartbeat: "0.0.9848246",
-    receipts: "0.0.9848247",
-  },
-  topicUrl: (id: string) => `https://hashscan.io/testnet/topic/${id}`,
-};
+export const MONAD_URL = "https://monad.xyz";
+export const ERC8004_URL = "https://eips.ethereum.org/EIPS/eip-8004";
+/** Where a provider guide lives until `@xorv/cli@0.2.0` is on npm. */
+export const CLI_GUIDE_URL = `${REPO_URL}/tree/main/packages/cli#readme`;
 
 export const NAV = [
   { label: "How it works", href: "#how" },
-  { label: "The network", href: "#bento" },
   { label: "Earn", href: "#earn" },
   { label: "Adapters", href: "#adapters" },
-  { label: "Receipts", href: "#ledger" },
+  { label: "Ledger", href: "#ledger" },
   { label: "Security", href: "#security" },
   { label: "FAQ", href: "#faq" },
 ];

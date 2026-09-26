@@ -1,14 +1,31 @@
 import Link from "next/link";
 import { Mark } from "@/components/ui/logo";
-import { CHAIN, HEDERA_URL, LOOM_URL, NPM_URL, REPO_URL, X402_URL } from "@/lib/links";
+import { CHAIN, explorer } from "@/lib/chain";
+import { APP_URL, CLI_GUIDE_URL, ERC8004_URL, LOOM_URL, MONAD_URL, REPO_URL, X402_URL } from "@/lib/links";
 
-const COLUMNS = [
+interface FooterLink {
+  label: string;
+  href: string;
+  external?: boolean;
+}
+
+// The on-chain column lists what a reader can open right now. XorvLedger is
+// only listed when the build was told its address — a link to an empty
+// address would be the kind of proof this column exists to avoid.
+const ON_CHAIN: FooterLink[] = [
+  { label: "USDC", href: explorer.token(CHAIN.usdc), external: true },
+  ...(CHAIN.ledger ? [{ label: "XorvLedger", href: explorer.address(CHAIN.ledger), external: true }] : []),
+  { label: "ERC-8004 identity", href: explorer.address(CHAIN.erc8004.identity), external: true },
+  { label: "ERC-8004 reputation", href: explorer.address(CHAIN.erc8004.reputation), external: true },
+];
+
+const COLUMNS: Array<{ title: string; links: FooterLink[] }> = [
   {
     title: "Product",
     links: [
+      { label: "Open the app", href: APP_URL, external: true },
       { label: "How it works", href: "#how" },
       { label: "For providers", href: "#earn" },
-      { label: "Adapters", href: "#adapters" },
       { label: "Receipts", href: "#ledger" },
     ],
   },
@@ -16,20 +33,13 @@ const COLUMNS = [
     title: "Build",
     links: [
       { label: "GitHub", href: REPO_URL, external: true },
-      { label: "CLI on npm", href: NPM_URL, external: true },
+      { label: "Provider guide", href: CLI_GUIDE_URL, external: true },
       { label: "x402", href: X402_URL, external: true },
-      { label: "Hedera", href: HEDERA_URL, external: true },
+      { label: "ERC-8004", href: ERC8004_URL, external: true },
+      { label: "Monad", href: MONAD_URL, external: true },
     ],
   },
-  {
-    title: "On-chain",
-    links: [
-      { label: "USDC token", href: CHAIN.usdcUrl, external: true },
-      { label: "Registry topic", href: CHAIN.topicUrl(CHAIN.topics.registry), external: true },
-      { label: "Heartbeat topic", href: CHAIN.topicUrl(CHAIN.topics.heartbeat), external: true },
-      { label: "Receipts topic", href: CHAIN.topicUrl(CHAIN.topics.receipts), external: true },
-    ],
-  },
+  { title: "On-chain", links: ON_CHAIN },
 ];
 
 export function Footer() {
@@ -44,7 +54,7 @@ export function Footer() {
             </div>
             <p className="mt-4 max-w-[26ch] text-[13.5px] leading-relaxed text-fg-3">
               A decentralized AI capacity network. Idle subscriptions in, paid jobs out — settled
-              per request in USDC on Hedera.
+              per job in USDC over x402 on Monad.
             </p>
           </div>
 
@@ -56,9 +66,7 @@ export function Footer() {
                   <li key={link.label}>
                     <Link
                       href={link.href}
-                      {...("external" in link && link.external
-                        ? { target: "_blank", rel: "noopener noreferrer" }
-                        : {})}
+                      {...(link.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                       className="text-[13.5px] text-fg-3 transition-colors hover:text-fg"
                     >
                       {link.label}
@@ -82,7 +90,9 @@ export function Footer() {
               Loompad
             </Link>
           </p>
-          <p className="mono text-[12px] text-fg-4">{CHAIN.network}</p>
+          <p className="mono text-[12px] text-fg-4">
+            {CHAIN.name} · {CHAIN.network}
+          </p>
         </div>
       </div>
     </footer>
