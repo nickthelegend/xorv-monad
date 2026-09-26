@@ -14,6 +14,8 @@ import WebSocket from "ws";
 import {
   HEARTBEAT_INTERVAL_MS,
   formatUsd,
+  isValidEncryptTo,
+  sealResult,
   type Capability,
   type DispatchedJob,
   type JobEvent,
@@ -52,7 +54,12 @@ export interface RunningJob {
   priceUsdMicros: number;
   controller: AbortController;
   lastEvent?: string;
+  /** A private job: its result is sealed to the buyer's passkey before it leaves this node. */
+  sealed?: boolean;
 }
+
+/** How often a private job may send the broker a coarse progress line. */
+const PRIVATE_PROGRESS_MS = 2_000;
 
 export interface NodeStats {
   jobsCompleted: number;
@@ -292,12 +299,28 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
    * Results are reported over the socket when it's up and over HTTP when it
    * isn't: the work is already done and the provider has already been paid, so
    * a dropped socket must not be the reason a poster never gets their answer.
+   *
+   * A private job (`encryptTo` set) runs the same adapter, but what leaves
+   * this machine changes: the result is sealed to the buyer's passkey-derived
+   * inbox key before it is reported, the broker hears only coarse status
+   * lines while it runs (no reasoning, no streamed text, no tool calls), and a
+   * failure is reported without the adapter's own message, which can quote the
+   * prompt or a partial answer. The operator's own live view still shows
+   * everything: the provider necessarily sees the job it runs; the point is
+   * that the broker, its database and its public API never see the result.
    */
   private async runJob(dispatched: DispatchedJob): Promise<void> {
     const capability = this.config.capabilities.find((c) => c.id === dispatched.capabilityId);
     const adapter = this.adapters.get(dispatched.capabilityId);
     if (!capability || !adapter) {
       this.reportError(dispatched.jobId, `this node has no capability "${dispatched.capabilityId}"`, 0);
+      return;
+    }
+    const sealTo = dispatched.encryptTo ?? null;
+    if (sealTo !== null && !isValidEncryptTo(sealTo)) {
+      // Refuse before running: a private job we cannot seal must not produce a
+      // plaintext result that then has nowhere safe to go.
+      this.reportError(dispatched.jobId, "private job carries an invalid encryptTo key, so it was not run", 0);
       return;
     }
 
@@ -309,11 +332,16 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       startedAt: Date.now(),
       priceUsdMicros: dispatched.priceUsdMicros,
       controller,
+      sealed: sealTo !== null,
     };
     this.running.set(job.jobId, job);
     this.send({ type: "job.accepted", jobId: job.jobId });
     this.emit("jobStarted", job);
-    this.log("info", `job ${short(job.jobId)} → ${capability.displayName} (${formatUsd(dispatched.priceUsdMicros)})`);
+    this.log(
+      "info",
+      `job ${short(job.jobId)} → ${capability.displayName} (${formatUsd(dispatched.priceUsdMicros)})` +
+        (sealTo ? " · private, result sealed to the buyer" : ""),
+    );
 
     const timeout = setTimeout(() => controller.abort(), dispatched.timeoutMs);
     timeout.unref?.();
@@ -321,12 +349,32 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     fs.mkdirSync(this.config.sandboxDir, { recursive: true, mode: 0o700 });
     const cwd = makeJobDir(this.config.sandboxDir, job.jobId);
 
+    const forward = (event: JobEvent): void => {
+      if (!this.send({ type: "job.event", jobId: job.jobId, event })) {
+        void this.postJson(`/api/jobs/${job.jobId}/events`, event);
+      }
+    };
+    const status = (text: string): JobEvent => ({ kind: "status", text, at: Date.now() });
+
+    // For a private job the broker gets a step counter, at most every couple
+    // of seconds: enough for the buyer to see it is alive, nothing about what
+    // it is doing.
+    let privateSteps = 0;
+    let lastProgressAt = 0;
+    if (sealTo) forward(status("private job: the result is sealed to the buyer's passkey before it leaves the provider"));
+
     const emit = (event: Omit<JobEvent, "at">): void => {
       const full: JobEvent = { ...event, at: Date.now() };
       job.lastEvent = event.text.slice(0, 120);
       this.emit("jobEvent", { jobId: job.jobId, event: full });
-      if (!this.send({ type: "job.event", jobId: job.jobId, event: full })) {
-        void this.postJson(`/api/jobs/${job.jobId}/events`, full);
+      if (!sealTo) {
+        forward(full);
+      } else {
+        privateSteps += 1;
+        if (full.at - lastProgressAt >= PRIVATE_PROGRESS_MS) {
+          lastProgressAt = full.at;
+          forward(status(`working privately · ${privateSteps} step${privateSteps === 1 ? "" : "s"}`));
+        }
       }
       this.emit("state");
     };
@@ -341,12 +389,18 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
         model: capability.model ?? null,
       });
 
+      // Sealed here, on the provider, the moment the adapter returns: the
+      // plaintext never crosses the wire, and the broker's receipt hash
+      // commits to exactly these ciphertext bytes.
+      const reported = sealTo ? sealResult(sealTo, result, job.jobId) : result;
+      if (sealTo) forward(status("result sealed to the buyer (X25519 → AES-256-GCM)"));
+
       const durationMs = Date.now() - job.startedAt;
       this.stats.jobsCompleted += 1;
       this.stats.earnedUsdMicros += dispatched.priceUsdMicros;
 
-      if (!this.send({ type: "job.result", jobId: job.jobId, result, durationMs })) {
-        await this.postJson(`/api/jobs/${job.jobId}/result`, { result, durationMs });
+      if (!this.send({ type: "job.result", jobId: job.jobId, result: reported, durationMs })) {
+        await this.postJson(`/api/jobs/${job.jobId}/result`, { result: reported, durationMs });
       }
 
       appendEarning({
@@ -372,7 +426,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       const durationMs = Date.now() - job.startedAt;
       const message = err instanceof Error ? err.message : String(err);
       this.stats.jobsFailed += 1;
-      this.reportError(job.jobId, message, durationMs);
+      this.reportError(job.jobId, sealTo ? privateFailure(controller.signal) : message, durationMs);
       this.log("bad", `job ${short(job.jobId)} failed: ${message.slice(0, 160)}`);
       this.emit("jobFinished", {
         jobId: job.jobId,
@@ -434,6 +488,18 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
 
 function short(id: string): string {
   return id.length > 12 ? id.slice(0, 12) : id;
+}
+
+/**
+ * What the broker is told when a private job fails. An adapter's error text
+ * can quote the prompt, a partial answer or a tool's output, all of which the
+ * buyer asked to keep off the broker, so only the kind of failure travels;
+ * the full message stays in the operator's own log.
+ */
+export function privateFailure(signal: AbortSignal): string {
+  return signal.aborted
+    ? "private job stopped (cancelled or timed out)"
+    : "private job failed on the provider (details stay on the provider for private jobs)";
 }
 
 /** Kept in sync with package.json; sent in the registration and shown by `--version`. */
