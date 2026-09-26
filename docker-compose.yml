@@ -39,10 +39,13 @@ services:
       XORV_STABLECOIN: ${XORV_STABLECOIN:-}
       XORV_MONGO_URI: ${XORV_MONGO_URI:-}
       XORV_MONGO_DB: ${XORV_MONGO_DB:-xorv_monad}
-      # AI roles (phase 3) — off unless switched on and keyed.
-      XORV_ROUTER: ${XORV_ROUTER:-off}
-      XORV_SCREENER: ${XORV_SCREENER:-off}
-      XORV_VERIFIER: ${XORV_VERIFIER:-off}
+      # AI roles — each on when its key is set (auto); see .env.example.
+      XORV_ROUTER: ${XORV_ROUTER:-auto}
+      XORV_SCREENER: ${XORV_SCREENER:-auto}
+      XORV_VERIFIER: ${XORV_VERIFIER:-auto}
+      XORV_SCREENER_FAIL: ${XORV_SCREENER_FAIL:-open}
+      # Signs the verifier's ERC-8004 feedback; defaults to the operator key.
+      XORV_VERIFIER_KEY: ${XORV_VERIFIER_KEY:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       TOKENHUB_API_KEY: ${TOKENHUB_API_KEY:-}

@@ -440,6 +440,7 @@ A few decisions that aren't obvious:
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Setup, and how to write an adapter |
 | [CHANGELOG.md](CHANGELOG.md) | What shipped |
 | [packages/cli/README.md](packages/cli/README.md) | Full CLI reference |
+| [services/broker/README.md](services/broker/README.md) | The AI roles: Hunyuan screens, Qwen routes, Kimi verifies and writes ERC-8004 feedback (and the verifier key the indexer's `ENVIO_XORV_VERIFIER_ADDRESSES` must list) |
 
 ---
 

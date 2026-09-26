@@ -3,7 +3,8 @@
  * what it has.
  *
  * Read-only and idempotent: it never sends a transaction or edits a file. It
- * reports the operator and facilitator EOAs and their MON/USDC balances, says
+ * reports the operator, facilitator and verifier EOAs and their MON/USDC
+ * balances, which AI roles will run (and why the others won't), says
  * where to get more, checks the XorvLedger deployment (or prints the exact
  * command that makes one), and ends with the env lines to paste into `.env`.
  *
@@ -31,6 +32,7 @@ import {
   sameAddress,
 } from "@xorv/protocol";
 import { loadConfig } from "../config.js";
+import { createAiHooks, describeAiRoles } from "../ai/index.js";
 
 /** Monad holds back ~10 MON per EOA as a reserve for in-flight gas. */
 const MON_RESERVE_WEI = 10n * 10n ** 18n;
@@ -118,6 +120,24 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         ? "XORV_FACILITATOR=self but no key — payments are disabled"
         : `no key — payments settle through the hosted facilitator (${cfg.facilitatorUrl})`,
     );
+  }
+
+  // -- AI roles: Hunyuan screens, Qwen routes, Kimi verifies -----------------
+  // Built exactly as the broker builds them (no model is called here).
+  const ai = createAiHooks({
+    ai: config.ai,
+    network: config.network,
+    verifierAccount: config.verifierAccount ?? null,
+    log: () => undefined,
+  });
+  describeAiRoles(ai).forEach((role, i) => line(i === 0 ? "ai roles" : "", role));
+  const verifier = ai.report?.().verifier.feedback;
+  if (verifier?.onChain && verifier.address) {
+    const shared = config.operator && sameAddress(config.operator.address, verifier.address);
+    if (!shared) {
+      await balanceLine(config.network, verifier.address, "mon");
+      line("", "a separate verifier key: add it to the indexer's ENVIO_XORV_VERIFIER_ADDRESSES");
+    }
   }
   console.log("");
   if (cfg.faucets.mon || cfg.faucets.usdc) {
