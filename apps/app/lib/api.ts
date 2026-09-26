@@ -30,8 +30,13 @@ export const BROKER_URL = (process.env.NEXT_PUBLIC_XORV_BROKER_URL?.trim() || "h
   "",
 );
 
-export type Job = PublicJob;
-export type Provider = PublicProvider;
+/**
+ * The broker adds its Nansen related-wallet check to a job and its Nansen
+ * trust signal to a provider (read them with lib/trust.ts — a broker without
+ * Nansen sends neither).
+ */
+export type Job = PublicJob & { trustCheck?: unknown };
+export type Provider = PublicProvider & { trust?: unknown };
 export type Quote = QuoteResponse;
 export type { JobEvent, JobRouting, JobScreening, JobVerification, JobRating, PaymentRecord } from "@xorv/protocol/web";
 export type { LedgerEvent, LedgerEventKind, NetworkInfo, Leaderboard, LedgerFeed };
@@ -52,6 +57,8 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   network: () => get<NetworkInfo>("/api/network"),
   providers: () => get<{ providers: Provider[] }>("/api/providers").then((r) => r.providers),
+  provider: (id: string) =>
+    get<{ provider: Provider }>(`/api/providers/${encodeURIComponent(id)}`).then((r) => r.provider),
   jobs: (limit = 25) => get<{ jobs: Job[] }>(`/api/jobs?limit=${limit}`).then((r) => r.jobs),
   job: (id: string) => get<{ job: Job }>(`/api/jobs/${encodeURIComponent(id)}`).then((r) => r.job),
   /** XorvLedger events — from the Envio indexer when the broker has one, else an RPC log scan. */

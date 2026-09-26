@@ -18,6 +18,8 @@ import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import { valueToStars } from "@/lib/rating";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
+import { NansenPanel } from "@/components/trust";
+import { readNansenStatus } from "@/lib/trust";
 
 /**
  * The network, as the chain sees it.
@@ -42,6 +44,7 @@ export function NetworkView() {
   if (error && !info) return <Empty title="Can't reach the broker" hint="The network page reads everything through it." />;
 
   const indexed = Boolean(info?.indexer);
+  const nansen = readNansenStatus(info);
   const via = indexed ? "Envio HyperIndex" : "an RPC log scan";
 
   return (
@@ -129,6 +132,8 @@ export function NetworkView() {
       </Panel>
 
       {info ? <AiRoles info={info} /> : null}
+
+      {nansen ? <NansenPanel status={nansen} /> : null}
 
       <section>
         <div className="mb-3 flex items-center justify-between">

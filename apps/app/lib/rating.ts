@@ -46,11 +46,26 @@ export interface RatingSigner {
 
 export class RatingError extends Error {
   readonly rejected: boolean;
-  constructor(message: string, opts: { rejected?: boolean } = {}) {
+  /**
+   * The broker's machine-readable reason, when it gave one — `related_wallets`
+   * is the Nansen wash-rating guard refusing a rating between wallets
+   * controlled by the same party.
+   */
+  readonly code: string | null;
+  /** The broker's related-wallet check behind a `related_wallets` refusal. */
+  readonly trustCheck: unknown;
+  constructor(message: string, opts: { rejected?: boolean; code?: string | null; trustCheck?: unknown } = {}) {
     super(message);
     this.name = "RatingError";
     this.rejected = opts.rejected ?? false;
+    this.code = opts.code ?? null;
+    this.trustCheck = opts.trustCheck ?? null;
   }
+}
+
+/** True when the broker refused the rating because buyer and provider are related wallets (Nansen). */
+export function isRelatedWalletRefusal(err: unknown): err is RatingError {
+  return err instanceof RatingError && err.code === "related_wallets";
 }
 
 export interface RatingRequest {
@@ -168,7 +183,10 @@ export async function submitRating(opts: RatingCall & { deadline: string; signat
   });
   const body = (await res.json().catch(() => ({}))) as Loose;
   if (!res.ok) {
-    throw new RatingError(typeof body.error === "string" ? body.error : `The broker couldn't relay the rating (${res.status}).`);
+    throw new RatingError(typeof body.error === "string" ? body.error : `The broker couldn't relay the rating (${res.status}).`, {
+      code: typeof body.code === "string" ? body.code : null,
+      trustCheck: body.trustCheck,
+    });
   }
   const nested = isObject(body.rating) ? body.rating : {};
   const pick = (...values: unknown[]) => values.find((v): v is string => typeof v === "string" && v.length > 0) ?? null;

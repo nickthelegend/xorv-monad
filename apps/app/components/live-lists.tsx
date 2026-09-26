@@ -12,6 +12,8 @@ import type { LeaderboardRow } from "@/lib/wire";
 import { Empty, Ext, Skeleton, Status } from "@/components/ui";
 import { PrivateTag } from "@/components/passkey-panel";
 import { valueToStars } from "@/lib/rating";
+import { readTrust } from "@/lib/trust";
+import { TrustBadge, TrustSummary } from "@/components/trust";
 
 /** Match a live provider to its leaderboard row: by broker id when known, else by payout address. */
 function rowFor(provider: Provider, board: Leaderboard | null): LeaderboardRow | null {
@@ -29,7 +31,8 @@ function rowFor(provider: Provider, board: Leaderboard | null): LeaderboardRow |
  * `detailed` (the providers page) adds what a buyer weighs before trusting a
  * stranger's machine: the ERC-8004 identity, reputation from buyer ratings,
  * success rate and lifetime USDC earned — joined from the leaderboard, which
- * the Envio indexer serves when the broker has one.
+ * the Envio indexer serves when the broker has one — and the payout wallet's
+ * Nansen trust signal, when the broker has Nansen on.
  */
 export function ProviderList({ detailed = false }: { detailed?: boolean }) {
   const { data: providers, error } = usePoll<Provider[]>(useCallback(() => api.providers(), []));
@@ -75,6 +78,7 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
         const rank = detailed ? rowFor(p, board) : null;
         const jobs = p.stats.jobsCompleted + p.stats.jobsFailed;
         const successRate = rank?.successRate ?? (jobs > 0 ? p.stats.jobsCompleted / jobs : null);
+        const trust = readTrust(p.trust);
         return (
           <li
             key={p.id}
@@ -82,8 +86,14 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
           >
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
-                <span className="truncate text-[14px] font-medium text-fg">{p.label}</span>
+                <Link
+                  href={`/providers/${encodeURIComponent(p.id)}`}
+                  className="truncate text-[14px] font-medium text-fg underline-offset-4 hover:underline"
+                >
+                  {p.label}
+                </Link>
                 <Status status={p.status} />
+                {trust && !detailed ? <TrustBadge trust={trust} /> : null}
               </div>
               <p className="mt-1 truncate text-[12.5px] text-fg-3">
                 {p.capabilities.map((c) => c.displayName).join(" · ")}
@@ -119,6 +129,7 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
                   ) : null}
                 </p>
               ) : null}
+              {detailed && trust ? <TrustSummary trust={trust} providerHref={`/providers/${encodeURIComponent(p.id)}`} /> : null}
             </div>
             <div className="shrink-0 text-right">
               <p className="tnum text-[14px] font-medium text-fg">

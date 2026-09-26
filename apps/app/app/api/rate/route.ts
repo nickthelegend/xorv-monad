@@ -16,7 +16,7 @@ import { NextResponse } from "next/server";
 import type { NetworkInfo, PublicJob } from "@xorv/protocol/web";
 import { sameAddress } from "@xorv/protocol/web";
 import { loadDemoPayer } from "@/lib/server/demo-payer";
-import { RatingError, rateJob } from "@/lib/rating";
+import { RatingError, isRelatedWalletRefusal, rateJob } from "@/lib/rating";
 import { errorMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -66,6 +66,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
     return NextResponse.json({ ...receipt, demo: true });
   } catch (err) {
+    // The broker's wash-rating guard: pass its refusal through as-is.
+    if (isRelatedWalletRefusal(err)) {
+      return NextResponse.json({ error: err.message, code: err.code, trustCheck: err.trustCheck }, { status: 403 });
+    }
     const status = err instanceof RatingError ? 409 : 502;
     return NextResponse.json({ error: errorMessage(err) }, { status });
   }
