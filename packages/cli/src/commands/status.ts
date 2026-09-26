@@ -75,7 +75,7 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
 
   // -- the network ----------------------------------------------------------
 
-  const rows: Array<[string, string]> = [
+  const summary: Array<[string, string]> = [
     ["network", `Monad ${network.label ?? networkLabel(network.network)} ${ui.c.muted(`· ${network.network}`)}`],
     ["usdc", `${network.usdc.address} ${ui.c.muted(explorerAddress(network.network, network.usdc.address))}`],
     [
@@ -95,13 +95,13 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
         .filter(([, role]) => role)
         .map(([name, role]) => `${name} ${ui.c.bold(role!.model)}`)
     : [];
-  if (ai.length) rows.push(["ai", ai.join(ui.c.muted(" · "))]);
-  rows.push(
+  if (ai.length) summary.push(["ai", ai.join(ui.c.muted(" · "))]);
+  summary.push(
     ["providers", `${ui.c.ok(String(network.stats.providersLive))} live ${ui.c.muted(`· ${network.stats.providersConnected} connected · ${network.stats.capacity} capabilities`)}`],
     ["jobs", `${network.stats.jobsCompleted} completed ${ui.c.muted(`of ${network.stats.jobsTotal}`)}`],
     ["settled", ui.c.money(formatUsd(network.stats.paidUsdMicros))],
   );
-  console.log(ui.box(ui.kv(rows), { title: "network" }));
+  console.log(ui.box(ui.kv(summary), { title: "network" }));
 
   // -- the audit trail ------------------------------------------------------
 

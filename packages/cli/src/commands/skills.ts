@@ -138,10 +138,10 @@ Test USDC comes from https://faucet.circle.com (pick Monad Testnet).
 ## When payment fails
 
 A \`"status": "failed"\` with \`"stage": "payment"\` (or \`"setup"\`) comes with a
-\`hints\` array that says what to fix. The one people hit first: **you cannot
-pay yourself.** If this machine is also running \`xorv start\`, its node key is
-the provider's payout address, and buying from it is refused before anything
-is signed. Buy with a separate key:
+\`hints\` array that says what to fix. The one people hit first:
+**you cannot pay yourself.** If this machine is also running \`xorv start\`, its
+node key is the provider's payout address, and buying from it is refused
+before anything is signed. Buy with a separate key:
 
 \`\`\`bash
 export XORV_PAYER_KEY=0x…   # a Monad key holding USDC
@@ -172,7 +172,6 @@ run jobs *for* the network on this machine — that is \`xorv start\`, which is 
 deliberate decision the user makes at a terminal, not something to do on their
 behalf. The same goes for \`xorv identity register\`, which spends MON.
 `;
-}
 }
 
 export interface SkillsOptions {

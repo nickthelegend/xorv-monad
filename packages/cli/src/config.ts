@@ -27,6 +27,7 @@ import {
   normalizeAddress,
   parsePrivateKey,
   type AdapterKind,
+  type Address,
   type Capability,
 } from "@xorv/protocol";
 
@@ -244,7 +245,7 @@ function normalizeAgentId(value: unknown): string | null {
  * The payout address, checksummed. Throws with the fix when there is none —
  * which only happens to a hand-edited config.
  */
-export function payoutAddress(config: NodeConfig): string {
+export function payoutAddress(config: Pick<NodeConfig, "address">): Address {
   if (!config.address) {
     throw new Error("no payout address configured — run `xorv init`");
   }
