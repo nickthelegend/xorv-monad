@@ -211,8 +211,9 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     ///         to validate receipts before submitting them.
     function recordJobs(JobReceipt[] calldata receipts) external onlyBroker {
         // The same provider usually appears several times in one batch. getAgentWallet cannot change
-        // within this transaction (it is a staticcall into a contract we never call mutably), so a
-        // pair that already passed is not checked again.
+        // within this transaction (nothing here writes to the registry; the lookup is a staticcall),
+        // so when a receipt repeats the (agentId, payTo) pair checked just before it, the external
+        // call is skipped. Grouping a batch by provider makes every repeat a hit.
         uint256 checkedAgentId = NO_AGENT;
         address checkedPayTo;
 
@@ -227,7 +228,7 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
             // A zero buyer would be stored as "no such job": undetectable duplicates, unratable job.
             // A zero payTo is never a real provider (see _checkAgentWallet for why it matters there).
             if (buyer == address(0) || payTo == address(0)) revert ZeroAddress();
-            // Only the first word is read: an existing job always has a non-zero buyer.
+            // An existing job always has a non-zero buyer (enforced just above).
             if (jobs[jobId].buyer != address(0)) revert DuplicateJob(jobId);
 
             uint64 storedAgentId;
