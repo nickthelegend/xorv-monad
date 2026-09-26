@@ -429,7 +429,7 @@ script, and runs the built broker (self-hosted facilitator, ledger writer, ratin
 `xorv` provider node that registers its identity with `xorv identity register`, `xorv run --json`,
 the MCP server over stdio and a private job. Only the three models are stand-ins: a local
 OpenAI-compatible server behind each preset's base URL, so the roles' real request, parsing and
-feedback code runs. Every claim is then read back off the fork: 188 checks, last green run in
+feedback code runs. Every claim is then read back off the fork: 189 checks, last green run in
 [e2e/last-run.md](e2e/last-run.md). It found three bugs the unit suites could not: Hardhat dropped
 the fork's hardfork history (a chain-type mismatch); `xorv start` off a terminal printed its status
 footer once a second instead of its jobs; and a provider's earnings ledger carried no settlement
