@@ -53,7 +53,7 @@ import {
   type QuoteResponse,
 } from "@xorv/protocol";
 import type { PrivateKeyAccount } from "viem";
-import { loadConfig, type NodeConfig } from "../config.js";
+import { LegacyConfigError, loadConfig, type NodeConfig } from "../config.js";
 import * as ui from "../ui.js";
 
 interface RunOptions {
@@ -299,9 +299,22 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<void
   let network = DEFAULT_NETWORK as string;
   let account: PrivateKeyAccount;
   try {
-    config = loadConfig();
+    // Buying needs no node config. A Hedera-era one is only in the way when
+    // it was also going to be the source of the key, so it is surfaced then
+    // and not otherwise.
+    let legacy: LegacyConfigError | null = null;
+    try {
+      config = loadConfig();
+    } catch (err) {
+      if (!(err instanceof LegacyConfigError)) throw err;
+      legacy = err;
+    }
     network = buyerNetwork(config);
-    account = resolveBuyerAccount(config);
+    try {
+      account = resolveBuyerAccount(config);
+    } catch (err) {
+      throw legacy ?? err;
+    }
   } catch (err) {
     if (!opts.json) ui.bad(err instanceof Error ? err.message : String(err));
     await failOut(opts.json, "setup", err, err instanceof RunRefusal ? err.hints : []);
