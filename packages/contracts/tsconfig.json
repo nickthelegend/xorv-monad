@@ -1,7 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // Typecheck only: Hardhat runs the TypeScript itself, and there is nothing to publish. Without
+    // declaration output, helpers may return viem's (very large) inferred contract types unannotated.
     "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
     "types": ["node"]
   },
   "include": ["hardhat.config.ts", "scripts/**/*.ts", "test/**/*.ts", "artifacts/**/*.d.ts"]
