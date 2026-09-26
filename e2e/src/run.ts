@@ -37,6 +37,7 @@ import {
   REPUTATION_ABI,
   capabilityString,
   deriveInboxKeys,
+  formatUsdc,
   jobIdHash,
   networkConfig,
   openResult,
@@ -285,8 +286,8 @@ async function main(): Promise<void> {
     const funding = await fundUsdc(fork, USDC, parties.buyer.address, BUYER_USDC);
     note(
       funding.method === "masterMinter"
-        ? `minted ${formatUsdc(BUYER_USDC)} USDC through the token's masterMinter ${funding.masterMinter} (configureMinter ${funding.txHashes[0]}, mint ${funding.txHashes[1]})`
-        : `wrote ${formatUsdc(BUYER_USDC)} USDC into the buyer's balance slot`,
+        ? `minted ${formatUsdc(BUYER_USDC)} of USDC through the token's masterMinter ${funding.masterMinter} (configureMinter ${funding.txHashes[0]}, mint ${funding.txHashes[1]})`
+        : `wrote ${formatUsdc(BUYER_USDC)} of USDC into the buyer's balance slot`,
     );
     report.fact("buyer USDC funding", funding.method === "masterMinter" ? `minted via masterMinter ${funding.masterMinter}` : "balance slot write", "chain");
     report.equal("buyer USDC balance after funding", await usdcBalance(fork.client, USDC, parties.buyer.address), BUYER_USDC);
@@ -595,6 +596,18 @@ async function main(): Promise<void> {
     const rateText = rate.content.map((c) => c.text ?? "").join("\n");
     if (rate.isError) throw new Error(`xorv_rate_job failed: ${rateText}`);
     note(rateText.split("\n")[1] ?? rateText);
+
+    // The agent's view of its own wallet, read over the fork's RPC like everything else.
+    const wallet = (await mcpClient.callTool({ name: "xorv_wallet", arguments: {} }, undefined, { timeout: 60_000 })) as {
+      content: Array<{ type: string; text?: string }>;
+    };
+    const walletText = wallet.content.map((c) => c.text ?? "").join("\n");
+    const balance = await usdcBalance(fork.client, USDC, parties.buyer.address);
+    report.check(
+      "xorv_wallet shows the buyer's address and on-chain USDC balance",
+      walletText.includes(parties.buyer.address) && walletText.includes(`USDC: ${formatUsdc(balance)}`),
+      walletText.split("\n").find((line) => line.startsWith("USDC:")) ?? walletText.slice(0, 120),
+    );
     await mcpClient.close();
     mcpClient = null;
     return { jobId };
@@ -895,10 +908,6 @@ function rand(): string {
 
 function definedEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
-}
-
-function formatUsdc(units: bigint): string {
-  return (Number(units) / 1e6).toFixed(2);
 }
 
 // -----------------------------------------------------------------------------
