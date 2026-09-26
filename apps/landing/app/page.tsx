@@ -4,6 +4,7 @@ import { How } from "@/components/sections/how";
 import { Bento } from "@/components/sections/bento";
 import { Earn } from "@/components/sections/earn";
 import { Adapters } from "@/components/sections/adapters";
+import { Stack } from "@/components/sections/stack";
 import { Ledger } from "@/components/sections/ledger";
 import { Security } from "@/components/sections/security";
 import { Faq } from "@/components/sections/faq";
@@ -20,6 +21,7 @@ export default function Home() {
         <Bento />
         <Earn />
         <Adapters />
+        <Stack />
         <Ledger />
         <Security />
         <Faq />

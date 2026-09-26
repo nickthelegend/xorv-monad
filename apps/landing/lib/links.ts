@@ -19,6 +19,7 @@ export const NAV = [
   { label: "How it works", href: "#how" },
   { label: "Earn", href: "#earn" },
   { label: "Adapters", href: "#adapters" },
+  { label: "Built with", href: "#stack" },
   { label: "Ledger", href: "#ledger" },
   { label: "Security", href: "#security" },
   { label: "FAQ", href: "#faq" },
