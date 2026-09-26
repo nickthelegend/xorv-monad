@@ -11,6 +11,9 @@ import { useNetworkInfo } from "@/lib/hooks";
 import { Button, Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { ResultMarkdown } from "@/components/result-markdown";
 import { RateJob } from "@/components/rate-job";
+import { PrivateTag } from "@/components/passkey-panel";
+import { PrivatePrompt, SealedResultSection } from "@/components/private-result";
+import { receiptMatchesCiphertext } from "@/lib/private/result";
 import { cn } from "@/lib/utils";
 
 /**
@@ -138,16 +141,27 @@ export function JobView({
       <div className="min-w-0 space-y-6">
         <div>
           <div className="flex items-center justify-between gap-3">
-            <Status status={job.status} />
+            <span className="flex items-center gap-2.5">
+              <Status status={job.status} />
+              {job.private ? <PrivateTag /> : null}
+            </span>
             <span className="mono text-[11.5px] text-fg-4">{job.id}</span>
           </div>
-          <p className="mt-3 whitespace-pre-wrap text-[14.5px] leading-relaxed text-fg">
-            {job.prompt}
-          </p>
+          {job.private ? (
+            <PrivatePrompt jobId={job.id} />
+          ) : (
+            <p className="mt-3 whitespace-pre-wrap text-[14.5px] leading-relaxed text-fg">
+              {job.prompt}
+            </p>
+          )}
         </div>
 
+        {/* A private job's result is an envelope; SealedResultSection decides
+            whether this viewer can open it. */}
+        {job.private ? <SealedResultSection job={job} /> : null}
+
         <AnimatePresence>
-          {job.result ? (
+          {job.result && !job.private ? (
             <motion.section
               key="result"
               initial={animate ? { opacity: 0, y: 8 } : false}
@@ -290,6 +304,13 @@ export function JobView({
               {job.resultHash ? (
                 <p className="mono mt-3 break-all text-[10.5px] leading-relaxed text-fg-4">
                   keccak256 {job.resultHash}
+                </p>
+              ) : null}
+              {job.private && job.result && job.resultHash ? (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-fg-4">
+                  {receiptMatchesCiphertext(job.result, job.resultHash)
+                    ? "✓ the sealed envelope hashes to this value — the receipt commits to ciphertext only the buyer can open"
+                    : "✕ the envelope served does not hash to this value"}
                 </p>
               ) : null}
             </>

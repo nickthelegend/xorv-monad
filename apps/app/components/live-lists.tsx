@@ -10,6 +10,7 @@ import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import type { LeaderboardRow } from "@/lib/wire";
 import { Empty, Ext, Skeleton, Status } from "@/components/ui";
+import { PrivateTag } from "@/components/passkey-panel";
 import { valueToStars } from "@/lib/rating";
 
 /** Match a live provider to its leaderboard row: by broker id when known, else by payout address. */
@@ -177,9 +178,17 @@ export function JobList({ limit = 15 }: { limit?: number }) {
                 <Status status={job.status} />
                 <span className="mono truncate text-[11.5px] text-fg-4">{job.id}</span>
               </div>
-              <p className="mt-1.5 line-clamp-2 text-[13.5px] leading-relaxed text-fg-2">
-                {job.prompt}
-              </p>
+              {job.private ? (
+                // The broker redacts a private job's prompt; say so rather than
+                // render an empty line.
+                <p className="mt-1.5 flex items-center gap-2 text-[13px] leading-relaxed text-fg-3">
+                  <PrivateTag /> sealed to the buyer&rsquo;s passkey
+                </p>
+              ) : (
+                <p className="mt-1.5 line-clamp-2 text-[13.5px] leading-relaxed text-fg-2">
+                  {job.prompt}
+                </p>
+              )}
               <p className="mt-1 truncate text-[11.5px] text-fg-4">
                 {job.providerLabel ?? "unassigned"} · {formatAgo(job.createdAt)}
                 {job.payment ? " · paid in USDC" : ""}
