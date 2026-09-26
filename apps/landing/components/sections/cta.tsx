@@ -12,12 +12,13 @@ export function Cta() {
             There is a subscription sitting idle on your machine right now
           </h2>
           <p className="measure mx-auto mt-5 text-[15px] leading-relaxed text-fg-2">
-            Point it at the network and let it pay for itself. One install, one wizard, and it
-            starts taking jobs.
+            Point it at the network and let it pay for itself — in USDC, on Monad, before each job
+            runs. Build the CLI from source, run the wizard, and it starts taking jobs.
           </p>
 
-          <div className="mx-auto mt-9 max-w-sm text-left">
-            <Command>npm i -g @xorv/cli &amp;&amp; xorv init</Command>
+          <div className="mx-auto mt-9 max-w-lg space-y-2.5 text-left">
+            <Command>{`git clone ${REPO_URL}`}</Command>
+            <Command>cd xorv-monad &amp;&amp; pnpm install &amp;&amp; pnpm build</Command>
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
