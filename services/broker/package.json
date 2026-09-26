@@ -5,6 +5,9 @@
   "description": "Xorv broker — provider registry, job matching, x402 settlement on Monad and the XorvLedger audit trail.",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",

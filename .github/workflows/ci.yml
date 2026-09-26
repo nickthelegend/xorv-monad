@@ -13,8 +13,10 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    # The broker's persistence layer uses node:sqlite, which is only present
-    # from 22.5. The CLI itself still supports 20.11 — that's checked below.
+    # Node 22 is the workspace floor: the broker's persistence uses node:sqlite
+    # (unflagged from 22.13), the contracts run on Hardhat 3, and the MetaMask
+    # plugin's host needs 22.18. The published CLI and MCP server go lower —
+    # that floor is checked in its own job below.
     strategy:
       fail-fast: false
       matrix:
@@ -61,15 +63,22 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10.29.2
+      # The engines floor of @xorv/cli and @xorv/mcp. It is set by their
+      # runtime dependencies, not their own code: @xorv/protocol's
+      # @noble/{hashes,curves,ciphers} 2.x declare >= 20.19.0.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20.11"
+          node-version: "20.19"
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --filter @xorv/cli... --filter @xorv/mcp...
       - run: pnpm --filter @xorv/protocol build
-      - run: pnpm --filter @xorv/cli build
-      # The floor that matters for `npm i -g @xorv/cli`: it has to at least start.
+      - run: pnpm --filter @xorv/cli --filter @xorv/mcp build
+      # The floor that matters for `npm i -g @xorv/cli`: it has to at least
+      # start. Every command module is imported eagerly, so --help loads the
+      # whole graph (viem, @x402/*, the noble ciphers).
       - run: node packages/cli/dist/index.js --version
+      - run: node packages/cli/dist/index.js --help
+      - run: node packages/mcp/dist/scripts/privy-setup.js --help
 
   secrets:
     name: No keys in the tree

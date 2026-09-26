@@ -36,7 +36,7 @@ node packages/cli/dist/index.js --version     # 0.2.0
 
 To get a `xorv` command on your PATH, run `pnpm link --global` inside `packages/cli` (after
 `pnpm setup` once, so pnpm has a global bin directory), or alias it to
-`node <repo>/packages/cli/dist/index.js`. Node 20.11 or newer. Once published,
+`node <repo>/packages/cli/dist/index.js`. Node 20.19 or newer. Once published,
 `npm i -g @xorv/cli` does the same.
 
 ---

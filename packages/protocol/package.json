@@ -4,6 +4,9 @@
   "description": "Shared Xorv protocol: domain types, money math, Monad chain config, XorvLedger + ERC-8004 helpers, x402 (EVM exact) wiring and OpenAI-compatible LLM presets.",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

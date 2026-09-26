@@ -88,7 +88,7 @@ pnpm build && pnpm typecheck && pnpm test
 ```
 
 CI runs exactly that on Node 22 and 24, builds the frontends, checks that the CLI still starts on
-its declared floor of Node 20.11, and scans for committed key material. Never commit `.env`, keys,
+its declared floor of Node 20.19, and scans for committed key material. Never commit `.env`, keys,
 `node_modules` or build output.
 
 ## Commit style
