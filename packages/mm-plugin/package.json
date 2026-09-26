@@ -1,0 +1,103 @@
+{
+  "name": "@xorv/mm-plugin",
+  "version": "0.1.0",
+  "description": "MetaMask Agent Wallet plugin for Xorv: `mm xorv run` buys an AI job from a stranger's idle subscription and pays the provider in USDC over x402 on Monad, signed by the wallet under MetaMask policy.",
+  "license": "MIT",
+  "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
+  "homepage": "https://github.com/nickthelegend/xorv/tree/main/packages/mm-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv.git",
+    "directory": "packages/mm-plugin"
+  },
+  "type": "module",
+  "keywords": [
+    "oclif-plugin",
+    "metamask",
+    "agent-wallet",
+    "x402",
+    "monad",
+    "usdc",
+    "ai-agents"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "dist",
+    "oclif.manifest.json",
+    "skills",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && oclif manifest",
+    "prepack": "tsc -p tsconfig.json && oclif manifest",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "oclif": {
+    "bin": "mm",
+    "commands": "./dist/commands",
+    "topicSeparator": " ",
+    "topics": {
+      "xorv": {
+        "description": "Buy AI jobs on the Xorv network, paid in USDC over x402 on Monad"
+      }
+    }
+  },
+  "mm": {
+    "schemaVersion": 1,
+    "minCliVersion": "^7.0.0",
+    "capabilities": [],
+    "commands": [
+      {
+        "id": "xorv:providers",
+        "capabilities": [],
+        "dataAccess": [],
+        "targetChains": [10143, 143]
+      },
+      {
+        "id": "xorv:quote",
+        "capabilities": [],
+        "dataAccess": [],
+        "targetChains": [10143, 143]
+      },
+      {
+        "id": "xorv:run",
+        "capabilities": ["wallet-read", "wallet-submit"],
+        "dataAccess": ["accounts", "balances"],
+        "targetChains": [10143, 143]
+      },
+      {
+        "id": "xorv:job",
+        "capabilities": [],
+        "dataAccess": [],
+        "targetChains": [10143, 143]
+      },
+      {
+        "id": "xorv:rate",
+        "capabilities": ["wallet-read", "wallet-submit"],
+        "dataAccess": ["accounts"],
+        "targetChains": [10143, 143]
+      }
+    ]
+  },
+  "dependencies": {
+    "@x402/core": "~2.27.0",
+    "@x402/evm": "~2.27.0",
+    "@x402/fetch": "~2.27.0",
+    "@xorv/protocol": "workspace:*",
+    "viem": "^2.56.9"
+  },
+  "peerDependencies": {
+    "@metamask/agent-wallet": "^7.0.0"
+  },
+  "devDependencies": {
+    "@metamask/agent-wallet": "^7.0.0",
+    "@types/node": "^22.13.4",
+    "oclif": "^4",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.4"
+  }
+}
