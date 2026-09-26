@@ -326,18 +326,28 @@ export async function runJob(deps: RunDeps, inputs: RunInputs): Promise<RunResul
   report.line(`Paid: ${paid.settlement.explorerUrl ?? "settled (no transaction hash reported)"}`);
   report.line(`Job ${jobId} is ${paid.response.status} on ${paid.response.provider?.label ?? quote.provider.label}`);
 
-  // 5. Watch it run.
-  const job = await watchJob({
-    broker: deps.broker,
-    jobId,
-    timeoutMs: inputs.timeoutSeconds * 1000,
-    signal: deps.signal,
-    onStatus: (status) => report.progress(`Job ${status}…`),
-    onEvent: (event) => {
-      const line = eventLine(event);
-      if (line) report.line(line);
-    },
-  });
+  // 5. Watch it run. From here on the job is paid for, so every failure
+  // carries the settlement link — the buyer's proof, whatever happens next.
+  let job: PublicJob;
+  try {
+    job = await watchJob({
+      broker: deps.broker,
+      jobId,
+      timeoutMs: inputs.timeoutSeconds * 1000,
+      signal: deps.signal,
+      onStatus: (status) => report.progress(`Job ${status}…`),
+      onEvent: (event) => {
+        const line = eventLine(event);
+        if (line) report.line(line);
+      },
+    });
+  } catch (err) {
+    report.progress(undefined);
+    if (err instanceof XorvPluginError && paid.settlement.explorerUrl) {
+      throw new XorvPluginError(err.code, `${err.message} (payment ${paid.settlement.explorerUrl})`, err.hint);
+    }
+    throw err;
+  }
   report.progress(undefined);
 
   const txHash = paid.settlement.txHash ?? job.payment?.txHash ?? null;

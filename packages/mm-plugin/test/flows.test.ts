@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BrokerClient } from "../src/lib/broker.js";
+import { runJob } from "../src/lib/flows.js";
 import { watchJob } from "../src/lib/job.js";
 import { rateJob, verifyRatingRequest } from "../src/lib/rate.js";
 import { activeEvmAddress } from "../src/lib/wallet.js";
@@ -14,6 +15,7 @@ import {
   job,
   networkInfo,
   ratingRequestFor,
+  SETTLE_TX,
 } from "./helpers.js";
 
 const client = (broker: ReturnType<typeof fakeBroker>) => new BrokerClient({ baseUrl: BROKER_URL, fetch: broker.fetch });
@@ -72,6 +74,29 @@ describe("watchJob", () => {
         },
       }),
     ).rejects.toMatchObject({ code: "XORV_JOB_TIMEOUT", hint: expect.stringContaining(`mm xorv job ${JOB_ID}`) });
+  });
+});
+
+describe("runJob after payment", () => {
+  it("keeps the settlement link when the wait times out", async () => {
+    const broker = fakeBroker({ stream: "fail", polls: [job({ status: "running", result: null })] });
+    const mm = fakeMetaMask();
+    await expect(
+      runJob(
+        {
+          broker: client(broker),
+          executor: async () => mm.executor,
+          walletState: () => ({ byokWallets: [{ address: PAYER.address }] }),
+          publicClient: () => null,
+        },
+        { prompt: "x", maxPriceUsdMicros: 50_000, timeoutSeconds: 0.001 },
+      ),
+    ).rejects.toMatchObject({
+      code: "XORV_JOB_TIMEOUT",
+      message: expect.stringContaining(`https://testnet.monadscan.com/tx/${SETTLE_TX}`),
+      hint: expect.stringContaining(`mm xorv job ${JOB_ID}`),
+    });
+    expect(broker.payments).toHaveLength(1);
   });
 });
 
