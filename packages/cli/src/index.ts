@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * xorv — rent out idle AI capacity, get paid per job in USDC over x402 on Hedera.
+ * xorv — rent out idle AI capacity, get paid per job in USDC over x402 on Monad.
  */
 
 import { Command } from "commander";
@@ -11,7 +11,9 @@ import { earningsCommand } from "./commands/earnings.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { skillsCommand } from "./commands/skills.js";
 import { runCommand } from "./commands/run.js";
-import { walletAssociate, walletNew, walletShow } from "./commands/wallet.js";
+import { walletNew, walletShow } from "./commands/wallet.js";
+import { identityRegisterCommand, identityShowCommand } from "./commands/identity.js";
+import { VERSION } from "./node.js";
 import {
   cancelCommand,
   completionCommand,
@@ -25,8 +27,6 @@ import {
 } from "./commands/manage.js";
 import * as ui from "./ui.js";
 
-const VERSION = "0.1.0";
-
 ui.installCursorGuard();
 
 const program = new Command();
@@ -34,13 +34,13 @@ const program = new Command();
 program
   .name("xorv")
   .description(
-    "Rent out your idle Claude / Codex / Grok subscription and get paid per job in USDC over x402 on Hedera.",
+    "Rent out your idle Claude / Codex / Grok / Qwen / Kimi / Hunyuan capacity and get paid per job in USDC over x402 on Monad.",
   )
   .version(VERSION, "-v, --version")
   .configureHelp({ sortSubcommands: false })
   .addHelpText(
     "beforeAll",
-    ui.banner("decentralized AI capacity network · x402 on Hedera"),
+    ui.banner("decentralized AI capacity network · x402 on Monad"),
   )
   .addHelpText(
     "afterAll",
@@ -50,6 +50,7 @@ program
       `    ${ui.c.accent("xorv init")}          set this machine up`,
       `    ${ui.c.accent("xorv start")}         go live and take jobs`,
       `    ${ui.c.accent("xorv earnings")}      what you've made`,
+      `    ${ui.c.accent("xorv identity")}      your ERC-8004 agent identity`,
       "",
       `  ${ui.c.bold("buyer — spend")}`,
       `    ${ui.c.accent('xorv run "…"')}       post a job and pay for it`,
@@ -105,13 +106,10 @@ program
 
 program
   .command("run <prompt>")
-  .description("post a job to the network and pay for it over x402")
+  .description("post a job and pay for it in USDC over x402 (key: XORV_PAYER_KEY, XORV_PRIVATE_KEY or the node config)")
   .option("--broker <url>", "broker to post to")
   .option("--max <usd>", "most you'll pay for this job", "0.05")
-  .option("--adapter <kind>", "require a specific adapter (claude-code, codex, grok, …)")
-  .option("--account <id>", "Hedera account to pay from")
-  .option("--key <key>", "private key for that account")
-  .option("--hbar", "pay in HBAR instead of USDC")
+  .option("--adapter <kind>", "require a specific adapter (claude-code, qwen, kimi, hunyuan, …)")
   .option("-y, --yes", "skip the confirmation")
   .option("--json", "machine-readable output")
   .action(wrap(runCommand));
@@ -172,19 +170,29 @@ program
   .description("print shell completions (bash, zsh, fish)")
   .action(wrap(completionCommand));
 
-const wallet = program.command("wallet").description("the payout account");
+const wallet = program.command("wallet").description("the payout address");
 wallet
   .command("show", { isDefault: true })
-  .description("balances and USDC association status")
+  .description("USDC and MON balances, explorer and faucet links")
   .action(wrap(walletShow));
-wallet
-  .command("associate")
-  .description("opt this account into receiving USDC (required, one-time)")
-  .action(wrap(walletAssociate));
 wallet
   .command("new")
   .description("generate a fresh payout keypair")
   .action(wrap(walletNew));
+
+const identity = program.command("identity").description("this node's ERC-8004 agent identity");
+identity
+  .command("show", { isDefault: true })
+  .description("read the identity back from the registry and check it matches the payout address")
+  .option("--json", "machine-readable output")
+  .action(wrap(identityShowCommand));
+identity
+  .command("register")
+  .description("register an ERC-8004 agent from the payout key (one transaction, needs a little MON)")
+  .option("--uri <url>", "agentURI to register (default: <broker>/agents/<nodeId>.json)")
+  .option("--force", "register a new identity even if this node has one")
+  .option("-y, --yes", "skip the confirmation")
+  .action(wrap(identityRegisterCommand));
 
 /**
  * Turn a thrown error into one clear line instead of a stack trace.
