@@ -47,6 +47,18 @@ export interface MatchOptions {
 /** A registration whose address is already normalized and whose agent id is verified (or null). */
 export type VerifiedRegistration = RegisterRequest & { agentId: string | null };
 
+/** A wallet's trust score, 0–100, or null for "no opinion" (see src/trust/). */
+export type TrustScorer = (address: string) => number | null;
+
+/**
+ * How far a Nansen trust score can move a provider's reliability rank: at
+ * most ±0.1 on the 0–1 success scale, at a score of 100 or 0. Enough to
+ * order two equally priced, equally proven nodes; never enough to beat a
+ * cheaper node, or to outrank a real track record (a node that finished
+ * every job still beats an unproven one with a perfect wallet).
+ */
+export const TRUST_TIEBREAK_WEIGHT = 0.1;
+
 /**
  * The public provider id for a node: stable across broker restarts, and not
  * reversible to the node id.
@@ -86,10 +98,28 @@ export class Registry {
    * should not see it reset because we deployed.
    */
   private restoredStats: Map<string, PersistedProviderStats>;
+  private trustScore: TrustScorer | null = null;
 
   constructor(persistence: Persistence = new MemoryPersistence()) {
     this.persistence = persistence;
     this.restoredStats = persistence.loadStats();
+  }
+
+  /** Let the matcher weigh payout-wallet trust (Nansen) when it breaks ties. */
+  setTrustScorer(scorer: TrustScorer | null): void {
+    this.trustScore = scorer;
+  }
+
+  /**
+   * The rank ties are broken on: reliability, nudged by wallet trust. A
+   * provider the scorer knows nothing about is neutral, not penalised.
+   */
+  private rankScore(provider: ProviderRecord): number {
+    const reliability = successScore(provider);
+    const trust = this.trustScore?.(provider.address);
+    if (trust === null || trust === undefined || !Number.isFinite(trust)) return reliability;
+    const clamped = Math.max(0, Math.min(100, trust));
+    return reliability + (TRUST_TIEBREAK_WEIGHT * (clamped - 50)) / 50;
   }
 
   /** How many providers' lifetime stats came back from disk. */
@@ -220,8 +250,10 @@ export class Registry {
    *
    * Cheapest-first, because the poster set a ceiling and any provider under it
    * is acceptable — competing on price is the point of a capacity market. Ties
-   * break toward the node with the better track record, then the emptier one,
-   * so a reliable provider is rewarded and load still spreads.
+   * break toward the node with the better track record — nudged by its payout
+   * wallet's Nansen trust score when one is known (`TRUST_TIEBREAK_WEIGHT`) —
+   * then the emptier one, so a reliable provider is rewarded and load still
+   * spreads.
    *
    * `exclude` is for reassignment: a job never goes back to a provider that
    * already had it.
@@ -256,8 +288,8 @@ export class Registry {
       if (a.capability.priceUsdMicros !== b.capability.priceUsdMicros) {
         return a.capability.priceUsdMicros - b.capability.priceUsdMicros;
       }
-      const aScore = successScore(a.provider);
-      const bScore = successScore(b.provider);
+      const aScore = this.rankScore(a.provider);
+      const bScore = this.rankScore(b.provider);
       if (aScore !== bScore) return bScore - aScore;
       return a.provider.activeJobs - b.provider.activeJobs;
     });

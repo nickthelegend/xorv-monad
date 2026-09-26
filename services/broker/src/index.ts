@@ -64,7 +64,7 @@ const jobs = new JobStore(persistence);
 const vaults = new VaultStore(persistence);
 
 let hub: Hub | null = null;
-const { app, hubHandlers, sweep, settlement } = createApp({
+const { app, hubHandlers, sweep, settlement, trust } = createApp({
   config,
   chain,
   registry,
@@ -110,6 +110,17 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   );
   line("mongodb", mongoStatus);
   describeAiRoles(ai).forEach((role, i) => line(i === 0 ? "ai roles" : "", role));
+  const nansen = trust.status();
+  line(
+    "nansen",
+    nansen.mode === "off"
+      ? "off (XORV_NANSEN_MODE=fixture|live for provider trust + the wash-rating guard)"
+      : nansen.mode === "fixture"
+        ? "fixture data — deterministic, no network, no payments"
+        : nansen.auth === "api-key"
+          ? "live, NANSEN_API_KEY"
+          : `live, x402 on Monad mainnet from ${nansen.payer?.address} (≤ ${nansen.perCallCapUsdc}/call, ${nansen.budgetUsdc}/day)`,
+  );
   console.log("");
 });
 

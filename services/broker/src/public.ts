@@ -23,6 +23,7 @@ import {
   type PublicProvider,
 } from "@xorv/protocol";
 import type { StoredJob } from "./jobs.js";
+import { publicRelatedCheck, type PublicRelatedCheck, type PublicTrustSignal } from "./trust/index.js";
 import type { ProviderRecord } from "./registry.js";
 import { toBigIntString, toNumber, type IndexerLeaderboardRow } from "./indexer.js";
 
@@ -43,7 +44,10 @@ export function stripSecrets<T extends { token?: string }>(record: T): Omit<T, "
  * The broker still holds the prompt internally, because routing, screening
  * and a free reassignment all need it.
  */
-export function publicJob(job: StoredJob, opts: { events?: boolean } = {}): PublicJob {
+export function publicJob(
+  job: StoredJob,
+  opts: { events?: boolean } = {},
+): PublicJob & { trustCheck: PublicRelatedCheck | null } {
   const sealed = Boolean(job.request.encryptTo);
   return {
     id: job.id,
@@ -75,10 +79,22 @@ export function publicJob(job: StoredJob, opts: { events?: boolean } = {}): Publ
       : null,
     eventCount: job.events.length,
     events: opts.events ? job.events : undefined,
+    // The Nansen related-wallet check run before relaying the rating, if one ran.
+    trustCheck: job.trustCheck ? publicRelatedCheck(job.trustCheck) : null,
   };
 }
 
-export function publicProvider(network: string, p: ProviderRecord, connected: boolean): PublicProvider {
+/**
+ * A provider as the world sees it, with its payout wallet's Nansen trust
+ * signal (public view: no smart-money data, no related-wallet addresses,
+ * attribution attached) when the broker has one.
+ */
+export function publicProvider(
+  network: string,
+  p: ProviderRecord,
+  connected: boolean,
+  trust: PublicTrustSignal | null = null,
+): PublicProvider & { trust: PublicTrustSignal | null } {
   return {
     id: p.id,
     label: p.label,
@@ -98,6 +114,7 @@ export function publicProvider(network: string, p: ProviderRecord, connected: bo
     region: p.region ?? null,
     stats: p.stats,
     registryTxHash: p.registryTxHash ?? null,
+    trust,
   };
 }
 
@@ -173,6 +190,8 @@ export interface LeaderboardEntry {
   avgRating: number | null;
   /** ERC-8004 reputation, when the indexer has it. */
   reputation: { feedbackCount: number; feedbackAvg: number | null; verifiedScore: number | null } | null;
+  /** The payout wallet's Nansen trust signal (public view), when the broker has one. */
+  trust?: PublicTrustSignal | null;
 }
 
 export function leaderboardFromIndexer(

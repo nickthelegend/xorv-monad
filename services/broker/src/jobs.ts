@@ -10,6 +10,7 @@
 
 import { MemoryPersistence, type Persistence } from "./store.js";
 import type { RoutingRecord, ScreeningRecord, VerificationRecord } from "./ai/types.js";
+import type { RelatedCheck } from "./trust/service.js";
 import {
   JOB_TIMEOUT_MS,
   QUOTE_TTL_SECONDS,
@@ -99,6 +100,8 @@ export interface StoredJob extends Job {
   screening?: ScreeningRecord | null;
   /** The verifier's (Kimi) score, with the bookkeeping that rebuilds its ERC-8004 feedback file. */
   verification?: VerificationRecord | null;
+  /** The Nansen related-wallet check run before relaying the buyer's rating (src/trust/). */
+  trustCheck?: RelatedCheck | null;
 }
 
 type Listener = (job: StoredJob, event: JobEvent | null) => void;

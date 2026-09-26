@@ -97,6 +97,7 @@ import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/fee
 import { verifiable } from "./ai/verifier.js";
 import type { RouteCandidate, RoutingRecord, ScreeningRecord, VerificationRecord } from "./ai/types.js";
 import { VaultStore } from "./vaults.js";
+import { createNansenTrust, publicRelatedCheck, refusalMessage, type NansenTrust } from "./trust/index.js";
 import {
   RATING_TTL_SECONDS,
   feedbackFor,
@@ -150,11 +151,21 @@ export interface AppDeps {
   ai?: AiHooks;
   /** Private-job history vaults; defaults to an in-memory store. */
   vaults?: VaultStore;
+  /**
+   * Nansen trust signals (src/trust/). Defaults to one built from
+   * `config.nansen` — off unless XORV_NANSEN_MODE says otherwise. Tests pass
+   * a fixture-backed one.
+   */
+  trust?: NansenTrust;
 }
 
 export function createApp(deps: AppDeps) {
   const { config, chain, registry, jobs } = deps;
   const vaults = deps.vaults ?? new VaultStore();
+  const trust =
+    deps.trust ?? createNansenTrust(config.nansen, { log: (line) => console.log(`[broker] ${line}`) });
+  // The matcher breaks price ties on reliability nudged by wallet trust.
+  registry.setTrustScorer((address) => trust.matchScore(address));
   const app = new Hono();
   const metrics = deps.metrics ?? new Metrics();
   const net = networkConfig(config.network);
@@ -418,6 +429,8 @@ export function createApp(deps: AppDeps) {
         verifier: deps.ai?.verifier?.info ?? null,
       },
       aiRoles: deps.ai?.report?.() ?? null,
+      // What the broker bought from Nansen today, over x402 on Monad mainnet.
+      nansen: trust.status(),
       feeBps: config.feeBps,
       epoch: deps.getHub()?.epoch ?? bootedAt,
       stats: {
@@ -436,7 +449,19 @@ export function createApp(deps: AppDeps) {
   app.get("/api/providers", (c) => {
     const hub = deps.getHub();
     return c.json({
-      providers: registry.list().map((p) => publicProvider(config.network, p, hub?.isConnected(p.id) ?? false)),
+      providers: registry
+        .list()
+        .map((p) => publicProvider(config.network, p, hub?.isConnected(p.id) ?? false, trust.publicSignal(p.address))),
+    });
+  });
+
+  /** One provider — live, or recently departed (then `status: "offline"`). */
+  app.get("/api/providers/:id", (c) => {
+    const provider = registry.find(c.req.param("id"));
+    if (!provider) return c.json({ error: "unknown provider" }, 404);
+    const connected = deps.getHub()?.isConnected(provider.id) ?? false;
+    return c.json({
+      provider: publicProvider(config.network, provider, connected, trust.publicSignal(provider.address)),
     });
   });
 
@@ -502,6 +527,9 @@ export function createApp(deps: AppDeps) {
     }
 
     const provider = registry.register({ ...parsed.registration, agentId });
+    // Look up the payout wallet on Nansen in the background — never on the
+    // registration's critical path. The signal shows up once it lands.
+    trust.watch(provider.address);
     const registryResult = await publishRegistration(provider);
 
     return c.json({
@@ -1170,6 +1198,24 @@ export function createApp(deps: AppDeps) {
     if (ratingsInFlight.has(job.id)) return c.json({ error: "a rating for this job is already being relayed" }, 409);
     ratingsInFlight.add(job.id);
     try {
+      // The wash-rating guard. Only reached with a valid payer signature, so
+      // nobody but the buyer can make the broker spend on a lookup. A provider
+      // rating itself from a second wallet — one it funded, or one funded by
+      // the same (non-exchange) wallet, or one Nansen links to it — is refused
+      // before anything reaches ERC-8004. A lookup that fails or times out is
+      // recorded as degraded and does not block an honest buyer.
+      if (trust.ratingGuard && job.payment) {
+        const check = await trust.checkRelated(target.payer, job.payment.payTo);
+        jobs.patch(job.id, { trustCheck: check });
+        if (check.related) {
+          metrics.inc("xorv_rating_refusals_total", { reason: "related_wallets" });
+          console.warn(`[broker] rating for ${job.id} refused: ${check.reasons.map((r) => r.kind).join(", ")}`);
+          return c.json(
+            { error: refusalMessage(check), code: "related_wallets", trustCheck: publicRelatedCheck(check) },
+            403,
+          );
+        }
+      }
       // XorvLedger only accepts a rating for a job it has a receipt for.
       if (!job.receiptTxHash) await ensureReceipt(job);
       if (!jobs.get(job.id)?.receiptTxHash) {
@@ -1342,7 +1388,10 @@ export function createApp(deps: AppDeps) {
     try {
       const rows = await reader.leaderboard(limit);
       if (rows) {
-        return c.json({ source: "indexer", providers: leaderboardFromIndexer(config.network, rows, registry.list()) });
+        return c.json({
+          source: "indexer",
+          providers: leaderboardFromIndexer(config.network, rows, registry.list()).map(withTrust),
+        });
       }
     } catch (err) {
       indexerError = err instanceof Error ? err.message : String(err);
@@ -1350,9 +1399,14 @@ export function createApp(deps: AppDeps) {
     return c.json({
       source: "memory",
       ...(indexerError ? { indexerError } : {}),
-      providers: leaderboardFromMemory(config.network, registry.list(), jobs.list({ limit: 5_000 }), limit),
+      providers: leaderboardFromMemory(config.network, registry.list(), jobs.list({ limit: 5_000 }), limit).map(withTrust),
     });
   });
+
+  /** A leaderboard row with its payout wallet's public Nansen signal, when known. */
+  function withTrust<T extends { address: string }>(row: T): T & { trust: ReturnType<NansenTrust["publicSignal"]> } {
+    return { ...row, trust: trust.publicSignal(row.address) };
+  }
 
   // -------------------------------------------------------------------------
   // Registration helpers
@@ -1805,6 +1859,8 @@ export function createApp(deps: AppDeps) {
     app,
     /** How payments settle — for the boot banner. */
     settlement,
+    /** Nansen trust signals — for the boot banner. */
+    trust,
     hubHandlers: {
       onEvent: (providerId: string, jobId: string, event: JobEvent) => {
         const job = jobs.get(jobId);
@@ -1842,6 +1898,8 @@ export function createApp(deps: AppDeps) {
       for (const id of registry.reap()) {
         console.log(`[broker] reaped idle provider ${id}`);
       }
+      // Keep live providers' Nansen signals fresh (a no-op until one is stale).
+      trust.refreshStale(registry.live().map((p) => p.address));
       // Receipts whose write failed (or that were restored from disk before
       // their batch landed) get another go, a bounded number of times.
       if (chain.mode() === "write") {
