@@ -4,7 +4,10 @@
   "description": "MCP server for Xorv — lets any agent buy AI capacity from the network and pay for it in USDC over x402 on Monad, from a local key or a policy-bounded Privy server wallet.",
   "license": "MIT",
   "type": "module",
-  "bin": { "xorv-mcp": "./dist/index.js" },
+  "bin": {
+    "xorv-mcp": "./dist/index.js",
+    "xorv-mcp-privy-setup": "./dist/scripts/privy-setup.js"
+  },
   "main": "./dist/index.js",
   "files": ["dist", "README.md"],
   "publishConfig": { "access": "public" },
@@ -16,7 +19,7 @@
   },
   "keywords": ["mcp", "x402", "monad", "evm", "usdc", "privy", "ai-agents", "model-context-protocol"],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/make-executable.mjs dist/index.js",
+    "build": "tsc -p tsconfig.json && node scripts/make-executable.mjs dist/index.js dist/scripts/privy-setup.js",
     "dev": "tsx src/index.ts",
     "privy:setup": "tsx src/scripts/privy-setup.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
