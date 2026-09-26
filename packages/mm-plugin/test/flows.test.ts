@@ -139,6 +139,23 @@ describe("rating verification", () => {
     ).toThrow(expect.objectContaining({ code: "XORV_RATING_REFUSED" }));
   });
 
+  it("reports the broker's refusal to record a rating as XORV_RATING_REFUSED", async () => {
+    const refusing = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/rating")) {
+        return new Response(JSON.stringify({ error: "this job has already been rated" }), { status: 409 });
+      }
+      return fakeBroker().fetch(input, init);
+    };
+    const broker = new BrokerClient({ baseUrl: BROKER_URL, fetch: refusing as typeof fetch });
+    const mm = fakeMetaMask();
+    await expect(rateJob({ broker, executor: mm.executor, jobId: JOB_ID, stars: 5, value: 100 })).rejects.toMatchObject({
+      code: "XORV_RATING_REFUSED",
+      message: expect.stringContaining("already been rated"),
+    });
+    expect(mm.requests).toHaveLength(0);
+  });
+
   it("refuses to rate from a wallet that did not pay for the job", async () => {
     const broker = fakeBroker();
     const mm = fakeMetaMask({ account: OTHER });

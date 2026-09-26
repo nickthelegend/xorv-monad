@@ -255,6 +255,11 @@ export function brokerHttpError(status: number, body: unknown, path: string): Xo
   if (path.startsWith("/api/quotes") && status === 422) {
     return new XorvPluginError("XORV_QUOTE_REFUSED", message, "Rephrase the prompt; the broker's safety screen refused it.");
   }
+  if (/^\/api\/jobs\/[^/]+\/(rating|rate)(\?|$)/.test(path) && status !== 404 && status < 500) {
+    // "already rated", "not finished yet", "provider has no agent identity",
+    // "not the payer": all final answers about this job, not transport trouble.
+    return new XorvPluginError("XORV_RATING_REFUSED", `the broker will not record this rating: ${message}`, hintForStatus(status));
+  }
   return new XorvPluginError("XORV_BROKER_ERROR", `the broker refused ${path.split("?")[0]}: ${message}`, hintForStatus(status));
 }
 
