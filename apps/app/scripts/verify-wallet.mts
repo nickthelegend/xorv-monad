@@ -1,59 +1,74 @@
 /**
- * Proves the wallet payment path end to end against the live facilitator.
+ * Manual end-to-end check of the browser payment path against a live broker.
  *
- * This runs the EXACT production code — buildTransferTransaction, the
- * ClientHederaSigner wrapper, ExactHederaScheme, wrapFetchWithPayment — and
- * swaps only the one thing a test runner cannot drive: instead of HashPack
- * producing the signature, a local key does. If the facilitator accepts this,
- * every step except the extension's own signing is verified.
+ * Runs the same pieces the app's wallet path uses — protocol's
+ * `buyerX402Client` pinned to the frozen quote, `@x402/fetch`'s
+ * `wrapFetchWithPayment`, the EIP-3009 `exact` scheme — and swaps only the one
+ * thing a script cannot drive: instead of a Privy embedded wallet producing
+ * the EIP-712 signature, a local key does. If the broker's facilitator settles
+ * this, every step except the wallet's own signing prompt is verified.
+ *
+ * Network-bound and spends real (testnet) USDC, so it is not part of the test
+ * suite. Usage, from apps/app:
+ *
+ *   BROKER=http://localhost:8402 XORV_DEMO_PAYER_KEY=0x… node scripts/verify-wallet.mts
+ *
+ * Optional: XORV_NETWORK (default eip155:10143), ADAPTER (default "echo").
  */
-import { PrivateKey } from "@hashgraph/sdk";
-import { x402Client } from "@x402/core/client";
-import { wrapFetchWithPayment } from "@x402/fetch";
-import { ExactHederaScheme } from "@x402/hedera/exact/client";
-import { createWalletHederaSigner, buildTransferTransaction } from "../lib/hedera-wallet.ts";
+import { wrapFetchWithPayment, x402HTTPClient } from "@x402/fetch";
+import { accountFromKey, buyerX402Client, explorerTx } from "@xorv/protocol/web";
 
-const BROKER = process.env.BROKER;
-const ACCOUNT = process.env.XORV_DEMO_PAYER_ID;
+const BROKER = (process.env.BROKER ?? "http://localhost:8402").replace(/\/+$/, "");
+const NETWORK = process.env.XORV_NETWORK ?? "eip155:10143";
 const KEY = process.env.XORV_DEMO_PAYER_KEY;
-
-function parseKey(raw) {
-  const s = raw.trim();
-  try { return PrivateKey.fromStringECDSA(s); } catch {}
-  try { return PrivateKey.fromStringED25519(s); } catch {}
-  return PrivateKey.fromStringDer(s);
+if (!KEY) {
+  console.error("set XORV_DEMO_PAYER_KEY to a funded Monad testnet key");
+  process.exit(2);
 }
-const key = parseKey(KEY);
 
-// Stands in for HashPack: same signature, same place in the flow.
-const localWalletSign = async (tx) => tx.sign(key);
-
-const signer = createWalletHederaSigner(ACCOUNT, localWalletSign);
-console.log("signer.accountId :", signer.accountId);
+// Stands in for the Privy account: same { address, signTypedData } shape.
+const account = accountFromKey(KEY);
+console.log("payer            :", account.address);
 
 // 1. quote
-const quote = await (await fetch(`${BROKER}/api/quotes`, {
-  method: "POST", headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ prompt: "Reply with exactly: WALLET", adapter: "claude-code", maxPriceUsdMicros: 600000 }),
-})).json();
-console.log("quote            :", quote.quoteId, quote.priceLabel, "->", quote.provider.accountId);
+const quoteRes = await fetch(`${BROKER}/api/quotes`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ prompt: "Reply with exactly: WALLET", adapter: process.env.ADAPTER ?? "echo", maxPriceUsdMicros: 600000 }),
+});
+const quote = await quoteRes.json();
+if (!quoteRes.ok) {
+  console.error("quote failed     :", quote);
+  process.exit(1);
+}
+console.log("quote            :", quote.quoteId, quote.priceLabel, "->", quote.provider.address);
 
-// 2. pay through the real x402 client with our wallet-backed signer
-const client = new x402Client().register("hedera:*", new ExactHederaScheme(signer));
+// 2. pay through the real x402 client, refusing anything but the frozen quote
+const client = buyerX402Client({
+  signer: account,
+  network: NETWORK,
+  maxUsdcUnits: quote.usdcAmount,
+  expect: { payTo: quote.provider.address, amount: quote.usdcAmount },
+});
 const paidFetch = wrapFetchWithPayment(fetch, client);
 const res = await paidFetch(`${BROKER}/api/jobs/${quote.quoteId}`, {
-  method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({}),
 });
 const body = await res.json();
 console.log("http             :", res.status);
-const hdr = res.headers.get("payment-required") || res.headers.get("Payment-Required");
-if (hdr) {
-  try {
-    const decoded = JSON.parse(Buffer.from(hdr, "base64").toString("utf8"));
-    console.log("reject reason    :", JSON.stringify(decoded).slice(0, 500));
-  } catch { console.log("payment-required :", hdr.slice(0, 300)); }
+const refusal = res.headers.get("PAYMENT-REQUIRED");
+if (refusal) console.log("payment-required :", Buffer.from(refusal, "base64").toString("utf8").slice(0, 500));
+if (!res.ok || !body.jobId) {
+  console.error("FAILED           :", JSON.stringify(body));
+  process.exit(1);
 }
-console.log("settled          :", JSON.stringify(body));
-if (!res.ok || !body.jobId) { console.error("FAILED"); process.exit(1); }
-console.log("\n*** the wallet path settled on Hedera ***");
-console.log("job:", body.jobId);
+try {
+  const settled = new x402HTTPClient(client).getPaymentSettleResponse((name) => res.headers.get(name));
+  console.log("settlement       :", explorerTx(NETWORK, settled.transaction));
+} catch {
+  console.log("settlement       : (no PAYMENT-RESPONSE header)");
+}
+console.log("\n*** the wallet path settled on Monad ***");
+console.log("job:", `${BROKER}/api/jobs/${body.jobId}`);
