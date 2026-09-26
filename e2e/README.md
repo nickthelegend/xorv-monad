@@ -46,10 +46,14 @@ buyer never holds MON.
 - **Ratings:** a stranger's signature is refused (401) before any gas is spent; the buyer's EIP-712
   signature is relayed.
 - **Private jobs:** the broker only ever holds the sealed envelope — the buyer's inbox key opens it to the
-  provider's answer, the answer appears nowhere in the broker's API, database or the verifier's inputs, and
-  the receipt's `resultHash` is `keccak256(envelope)`.
+  provider's answer (another inbox key, or the envelope replayed under another job id, cannot), the answer
+  appears nowhere in the broker's API, database or the verifier's inputs, and the receipt's `resultHash` is
+  `keccak256(envelope)`.
 - **The broker's own views** (`/api/ledger` scanning the fork over RPC, `/api/leaderboard`,
   `/api/network`) agree with the chain.
+- **The provider's own view:** `xorv identity show` reads the agent back as its payout address;
+  `xorv earnings --json` holds each job's settled amount and settlement transaction, and its total is the
+  provider's on-chain USDC balance; `xorv start`'s piped log records each job once.
 
 The last green run's report is committed as [last-run.md](last-run.md).
 

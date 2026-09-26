@@ -843,6 +843,35 @@ async function main(): Promise<void> {
     report.equal("the status footer is printed once, not once a second", (log.match(/ctrl-c to stop/g) ?? []).length, 1);
   });
 
+  await report.step("provider: xorv identity show and xorv earnings agree with the chain", async () => {
+    const [showCmd, showArgs] = node(CLI_ENTRY, "identity", "show", "--json");
+    const show = await group.run("identity-show", showCmd, showArgs, { cwd: providerHome, env: providerEnv, timeoutMs: 60_000 });
+    report.equal("identity show exits 0", show.code, 0);
+    const identity = parseJsonOutput<{ agentId: string; walletMatches: boolean; ownerMatches: boolean }>(show.stdout);
+    report.equal("identity show: agent id", identity.agentId, agentId.toString());
+    report.check("identity show: owner and agent wallet are the payout address", identity.walletMatches && identity.ownerMatches);
+
+    const [earnCmd, earnArgs] = node(CLI_ENTRY, "earnings", "--json");
+    const earned = await group.run("earnings", earnCmd, earnArgs, { cwd: providerHome, env: providerEnv, timeoutMs: 60_000 });
+    report.equal("earnings exits 0", earned.code, 0);
+    const ledger = parseJsonOutput<{
+      rows: Array<{ jobId: string; amount: string; usdMicros: number; ok: boolean; transactionId?: string }>;
+      total: number;
+    }>(earned.stdout);
+    for (const [which, job] of [
+      ["cli", jobs.cli],
+      ["mcp", jobs.mcp],
+      ["private", jobs.private],
+    ] as const) {
+      const row = ledger.rows.find((r) => r.jobId === job.id);
+      report.check(`earnings: ${which} job recorded as ok`, Boolean(row?.ok), row ? `${row.amount} units` : "missing");
+      report.equal(`earnings: ${which} amount is the settled USDC`, row?.amount, job.payment?.amount);
+      report.equal(`earnings: ${which} carries its settlement tx`, row?.transactionId, job.payment?.txHash);
+    }
+    // USDC has 6 decimals, so micro-dollars and token units coincide.
+    report.equal("earnings total is the provider's on-chain USDC balance", BigInt(ledger.total), await usdcBalance(fork.client, USDC, parties.provider.address));
+  });
+
   await report.step("the private answer never touched the broker's disk", async () => {
     const bytes = fs.existsSync(dbFile) ? fs.readFileSync(dbFile) : Buffer.alloc(0);
     const wal = fs.existsSync(`${dbFile}-wal`) ? fs.readFileSync(`${dbFile}-wal`) : Buffer.alloc(0);
