@@ -20,6 +20,7 @@
     "build:all": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r --filter=./packages/** --filter=./services/** --filter=xorv-app --filter=xorv-landing test",
+    "e2e": "pnpm --filter @xorv/e2e e2e",
     "broker": "pnpm --filter @xorv/broker dev",
     "broker:start": "pnpm --filter @xorv/broker start",
     "app": "pnpm --filter xorv-app dev",

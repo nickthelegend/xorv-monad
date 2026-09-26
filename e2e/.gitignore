@@ -1,0 +1,2 @@
+# Run directories (databases, logs, generated test keys). Removed after a passing run.
+.runs/

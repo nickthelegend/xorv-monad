@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Run by tsx, never compiled: this is a typecheck-only config.
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}

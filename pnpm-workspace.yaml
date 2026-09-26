@@ -5,6 +5,8 @@ packages:
   # lockfile and installs from WSL, Docker or CI rather than from this workspace.
   - "!services/indexer"
   - "apps/*"
+  # The end-to-end harness (pnpm e2e): run by tsx, never built or published.
+  - "e2e"
 
 # Native build steps allowed to run on install.
 onlyBuiltDependencies:
