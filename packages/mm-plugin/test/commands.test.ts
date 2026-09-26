@@ -24,7 +24,6 @@ import {
   fakeMetaMask,
   job,
   provider,
-  quote,
   type BrokerScript,
   type FakeBroker,
   type FakeMetaMask,
