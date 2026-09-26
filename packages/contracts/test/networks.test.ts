@@ -34,11 +34,16 @@ describe("Monad fork support", function () {
     assert.ok(fork.forking, "monadFork must fork a remote chain");
   });
 
-  it("gives chain 10143 a hardfork history, or EDR refuses calls at the fork block", function () {
+  it("gives chain 10143 a hardfork history EDR actually receives, or it refuses calls at the fork block", function () {
     // Without it every eth_call against the forked block itself fails with "No known hardfork for
     // execution on historical block … in chain with id 10143".
-    const history = hre.config.chainDescriptors.get(10143n)?.hardforkHistory;
-    assert.ok(history?.has("prague"), "chainDescriptors[10143].hardforkHistory must name prague");
+    const descriptor = hre.config.chainDescriptors.get(10143n);
+    assert.ok(descriptor?.hardforkHistory?.has("prague"), "chainDescriptors[10143].hardforkHistory must name prague");
+    // Hardhat hands a descriptor's history to the fork only when its chain type is the forking
+    // network's. A chain Hardhat has no default descriptor for is "generic" unless it says otherwise,
+    // and an "l1" fork silently drops a generic descriptor: the history above would be dead config.
+    const fork = hre.config.networks.monadFork;
+    assert.equal(descriptor?.chainType, fork?.chainType);
   });
 
   it("reaches the fork over JSON-RPC with the node's own accounts", function () {

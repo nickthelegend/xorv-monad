@@ -151,6 +151,9 @@ export default defineConfig({
   chainDescriptors: {
     10143: {
       name: "Monad Testnet",
+      // Hardhat hands a descriptor's hardfork history to EDR only when the descriptor's chain type
+      // is the forking network's; a chain it has no default for is "generic", which an l1 fork skips.
+      chainType: "l1",
       hardforkHistory: MONAD_HARDFORK_HISTORY,
       blockExplorers: {
         etherscan: {
