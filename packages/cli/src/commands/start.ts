@@ -166,21 +166,29 @@ export async function startCommand(opts: StartOptions): Promise<void> {
 
   node.start(wsUrl);
 
-  // -- live dashboard -------------------------------------------------------
+  // -- live dashboard (a terminal) or a linear log (anything else) ----------
 
   ui.blank();
   const region = ui.liveRegion();
-  const paint = (): void => region.render(dashboard(node, logLines, endpoint));
-
-  const ticker = setInterval(paint, 1_000);
-  ticker.unref?.();
-  node.on("state", paint);
-  node.on("jobStarted", paint);
-  node.on("jobFinished", paint);
-  paint();
+  let ticker: ReturnType<typeof setInterval> | null = null;
+  if (ui.tty.isTTY) {
+    const paint = (): void => region.render(dashboard(node, logLines, endpoint));
+    ticker = setInterval(paint, 1_000);
+    ticker.unref?.();
+    node.on("state", paint);
+    node.on("jobStarted", paint);
+    node.on("jobFinished", paint);
+    paint();
+  } else {
+    // A service manager, a container, `xorv start > node.log`: nothing can be
+    // repainted there, so each node event is printed once, as it happens, and
+    // the output is a record of the jobs rather than a status line per second.
+    console.log(ui.stripAnsi(footerLine(node, endpoint)));
+    followLinear(node, logLines, (line) => console.log(line));
+  }
 
   const shutdown = (): void => {
-    clearInterval(ticker);
+    if (ticker) clearInterval(ticker);
     region.done();
     ui.blank();
     ui.info("shutting down…");
@@ -282,12 +290,40 @@ function dashboard(
   }
 
   lines.push("");
-  lines.push(
-    ui.c.muted(
-      `  payout ${shortHex(node.config.address)}${node.config.agentId ? ` · agent #${node.config.agentId}` : ""} · ${endpoint.replace(/^https?:\/\//, "")} · ctrl-c to stop`,
-    ),
-  );
+  lines.push(footerLine(node, endpoint));
   return lines;
+}
+
+/** The dashboard's last line: where the money goes, and how to stop. */
+function footerLine(node: ProviderNode, endpoint: string): string {
+  return ui.c.muted(
+    `  payout ${shortHex(node.config.address)}${node.config.agentId ? ` · agent #${node.config.agentId}` : ""} · ${endpoint.replace(/^https?:\/\//, "")} · ctrl-c to stop`,
+  );
+}
+
+export interface NodeLogEntry {
+  level: string;
+  text: string;
+  at: number;
+}
+
+/** One node log entry as a line of a plain-text log: ISO time, level, message, no colour. */
+export function plainLogLine(entry: NodeLogEntry): string {
+  const level = entry.level === "bad" ? "error" : entry.level;
+  return `${new Date(entry.at).toISOString()} ${level.padEnd(5)} ${ui.stripAnsi(entry.text)}`;
+}
+
+/**
+ * Print a node's log linearly: the entries already collected (`backlog`), then
+ * each new one as it is emitted — one line per event, never a repaint.
+ */
+export function followLinear(
+  node: { on(event: "log", listener: (entry: { level: string; text: string }) => void): unknown },
+  backlog: readonly NodeLogEntry[],
+  print: (line: string) => void,
+): void {
+  for (const entry of backlog) print(plainLogLine(entry));
+  node.on("log", ({ level, text }) => print(plainLogLine({ level, text, at: Date.now() })));
 }
 
 function renderRunningJob(job: RunningJob, width: number): string[] {

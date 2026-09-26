@@ -503,27 +503,28 @@ export async function multiSelect<T extends { label: string; hint?: string }>(
 // Live region — repaints a block in place without scrolling the terminal
 // ---------------------------------------------------------------------------
 
-export function liveRegion(): { render(lines: string[]): void; clear(): void; done(): void } {
+export function liveRegion(
+  opts: { tty?: boolean; write?: (chunk: string) => void } = {},
+): { render(lines: string[]): void; clear(): void; done(): void } {
   let painted = 0;
-  const enabled = isTTY;
+  const enabled = opts.tty ?? isTTY;
+  const write = opts.write ?? ((chunk: string) => void process.stdout.write(chunk));
 
   return {
     render(lines: string[]) {
-      if (!enabled) {
-        // Non-TTY: print only the last line, so logs stay linear.
-        const last = lines[lines.length - 1];
-        if (last) console.log(stripAnsi(last));
-        return;
-      }
-      if (painted > 0) process.stdout.write(`[${painted}A`);
+      // Off a terminal a repaint has no linear equivalent: printing a line of the
+      // block on every repaint floods a log with it (the provider dashboard
+      // repaints every second). Callers print their own linear record instead.
+      if (!enabled) return;
+      if (painted > 0) write(`[${painted}A`);
       const out = lines.map((line) => `[2K${line}`).join("\n");
-      process.stdout.write(out + "\n");
+      write(out + "\n");
       painted = lines.length;
     },
     clear() {
       if (!enabled || painted === 0) return;
-      process.stdout.write(`[${painted}A`);
-      process.stdout.write("[0J");
+      write(`[${painted}A`);
+      write("[0J");
       painted = 0;
     },
     done() {
