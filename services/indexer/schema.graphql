@@ -1,0 +1,337 @@
+# Xorv indexer schema.
+#
+# Conventions (the app and broker code against these, see src/queries.ts):
+# - Addresses are lowercase hex (config.yaml sets address_format: lowercase). Lowercase
+#   an address before using it in an `_eq` filter.
+# - bytes32 values (providerId, jobId, hashes, tx hashes) are lowercase 0x-hex.
+# - USDC amounts are BigInt base units, 6 decimals (1 USDC = 1000000). Hasura returns
+#   BigInt as a string; parse it with BigInt(), never Number().
+# - Timestamps are unix SECONDS from the block (Monad blocks are ~300 ms apart).
+# - A relation field `provider: Provider` is stored and filterable as `provider_id`.
+# - Ratios (successRate, avg*) are Float and 0 when there is nothing to divide by.
+
+# How a feedback entry is weighed. Anyone can call ERC-8004 giveFeedback, so the kind is
+# what separates payment-backed signal from open, Sybil-prone signal.
+enum FeedbackKind {
+  # tag1 "starred" with clientAddress == XorvLedger: relayed by rateJob, one per paid
+  # job, authorised by the buyer who paid for it (EIP-712 signature or direct call).
+  BUYER_RATING
+  # tag1 "xorv-verified" from the ledger's current broker (the broker's operator EOA runs
+  # the Kimi result verifier) or from an ENVIO_XORV_VERIFIER_ADDRESSES address.
+  XORV_VERIFIED
+  # Everything else, from any client. Indexed and shown, never mixed into Xorv scores.
+  OTHER
+}
+
+# A Xorv provider node, registered on XorvLedger by the broker.
+type Provider {
+  # providerId = keccak256(utf8(brokerProviderId))
+  id: ID!
+  # x402 payee: payments for this provider's jobs settle straight to this address.
+  payTo: String! @index
+  # ERC-8004 identity. Null when registered with NO_AGENT (uint256 max).
+  agent: Agent
+  # Truncated to 64 bytes by the broker.
+  label: String!
+  # Raw "adapter:priceUsdMicros,..." string, e.g. "claude-code:10000,qwen:5000".
+  capabilities: String!
+  # Adapter names parsed from capabilities, in registration order.
+  adapters: [String!]!
+  capabilityOffers: [ProviderCapability!]! @derivedFrom(field: "provider")
+  # ProviderRegistered count; re-registration updates label/capabilities/payTo.
+  registrations: Int!
+  # First registration.
+  registeredAt: Int!
+  registeredTx: String!
+  # Latest registration.
+  updatedAt: Int!
+  # Published heartbeats (the broker publishes every Nth one, XORV_HEARTBEAT_PUBLISH_EVERY).
+  heartbeats: Int!
+  lastHeartbeatAt: Int
+  # Values from the latest published heartbeat.
+  activeJobs: Int!
+  capacity: Int!
+  uptimeSeconds: Int!
+  jobsTotal: Int!
+  jobsOk: Int!
+  jobsFailed: Int!
+  # jobsOk / jobsTotal, 0..1.
+  successRate: Float!
+  # Sum of amount over paid AND ok receipts: what the provider earned for delivered work.
+  earnedUsdc: BigInt!
+  # Sum of amount over every paid receipt, failed jobs included: what actually settled
+  # to payTo on-chain. earnedUsdc <= settledUsdc.
+  settledUsdc: BigInt!
+  # Duration stats cover ok jobs only; a failure's duration is time-to-failure.
+  totalDurationMs: BigInt!
+  avgDurationMs: Int!
+  ratingsCount: Int!
+  ratingSum: Int!
+  # ratingSum / ratingsCount, 0..100 (buyer ratings via XorvLedger.rateJob).
+  avgRating: Float!
+  lastJobAt: Int
+  jobs: [Job!]! @derivedFrom(field: "provider")
+  ratings: [Rating!]! @derivedFrom(field: "provider")
+  days: [ProviderDay!]! @derivedFrom(field: "provider")
+}
+
+# One adapter a provider offers, with its price. Lets the app ask "cheapest active qwen
+# providers" without parsing capability strings.
+type ProviderCapability {
+  # "<providerId>-<adapter>"
+  id: ID!
+  provider: Provider!
+  adapter: String! @index
+  priceUsdMicros: BigInt!
+  # False once a re-registration drops the adapter.
+  active: Boolean!
+  updatedAt: Int!
+}
+
+# An ERC-8004 agent (every agent on the chain, not only Xorv providers).
+type Agent {
+  # agentId as a decimal string. Use agentId (BigInt) to sort numerically.
+  id: ID!
+  agentId: BigInt!
+  # Current NFT owner. Null if the mint happened before ENVIO_ERC8004_START_BLOCK.
+  owner: String @index
+  agentURI: String
+  # agentWallet metadata: the address XorvLedger requires payTo to equal. Null when
+  # unset or cleared (the registry clears it on every transfer).
+  wallet: String
+  registeredAt: Int
+  registeredTx: String
+  uriUpdatedAt: Int
+  transfers: Int!
+  # True once a ProviderRegistered carried this agentId. Never set any other way.
+  isXorvProvider: Boolean!
+  # The latest Xorv provider registered with this agentId.
+  provider: Provider
+  providers: [Provider!]! @derivedFrom(field: "agent")
+  # Active (non-revoked) feedback of every kind. Sums use value / 10^decimals.
+  feedbackCount: Int!
+  feedbackRevoked: Int!
+  feedbackSum: Float!
+  feedbackAvg: Float!
+  # BUYER_RATING only: payment-backed, one per paid job.
+  buyerRatingCount: Int!
+  buyerRatingSum: Float!
+  buyerRatingAvg: Float!
+  # XORV_VERIFIED only: the broker's Kimi verifier score, 0..100.
+  verifiedCount: Int!
+  verifiedSum: Float!
+  verifiedScore: Float!
+  lastFeedbackAt: Int
+  # Internal: the last BUYER_RATING feedback, so the JobRated that XorvLedger emits
+  # right after it (same tx) can link Rating <-> Feedback.
+  lastLedgerFeedbackId: String
+  feedbacks: [Feedback!]! @derivedFrom(field: "agent")
+  jobs: [Job!]! @derivedFrom(field: "agent")
+}
+
+# One x402-paid job receipt (XorvLedger.JobRecorded).
+type Job {
+  # jobId = keccak256(utf8(brokerJobId))
+  id: ID!
+  # Null only until a ProviderRegistered for this agent/payTo is indexed; the
+  # registration handler back-fills it.
+  provider: Provider
+  # Null when the receipt used NO_AGENT.
+  agent: Agent
+  # "agent:<agentId>" or "payto:<address>": how a receipt finds its provider.
+  attributionKey: String! @index
+  buyer: Buyer!
+  payTo: String! @index
+  amount: BigInt!
+  # paymentTx != 0x0. Unpaid receipts count as jobs but not as volume or earnings.
+  paid: Boolean!
+  paymentTx: String!
+  requestHash: String!
+  resultHash: String!
+  durationMs: Int!
+  ok: Boolean!
+  rated: Boolean!
+  # 0..100 once rated.
+  rating: Int
+  ratedAt: Int
+  # UTC day, yyyy-mm-dd.
+  day: String!
+  blockNumber: Int!
+  blockTimestamp: Int! @index
+  txHash: String!
+  logIndex: Int!
+}
+
+# A buyer's rating of a job (XorvLedger.JobRated). One per job, enforced on-chain.
+type Rating {
+  # jobId
+  id: ID!
+  job: Job!
+  provider: Provider
+  agent: Agent!
+  buyer: Buyer!
+  value: Int!
+  feedbackHash: String!
+  # The ERC-8004 NewFeedback the ledger relayed in the same transaction.
+  feedback: Feedback
+  blockNumber: Int!
+  blockTimestamp: Int! @index
+  txHash: String!
+  logIndex: Int!
+}
+
+# Every ERC-8004 NewFeedback, from any client, for any agent.
+type Feedback {
+  # "<agentId>-<clientAddress>-<feedbackIndex>" (feedbackIndex is 1-based per agent+client)
+  id: ID!
+  agent: Agent!
+  client: String! @index
+  feedbackIndex: BigInt!
+  # Raw int128 value and its decimals; normalizedValue = value / 10^decimals.
+  value: BigInt!
+  decimals: Int!
+  normalizedValue: Float!
+  tag1: String! @index
+  tag2: String!
+  endpoint: String!
+  feedbackURI: String!
+  feedbackHash: String!
+  kind: FeedbackKind!
+  revoked: Boolean!
+  revokedAt: Int
+  responsesCount: Int!
+  responses: [FeedbackResponse!]! @derivedFrom(field: "feedback")
+  # Set for BUYER_RATING once the matching JobRated is indexed.
+  job: Job
+  blockNumber: Int!
+  blockTimestamp: Int! @index
+  txHash: String!
+  logIndex: Int!
+}
+
+# ERC-8004 ResponseAppended: anyone (usually the agent) answering a feedback entry.
+type FeedbackResponse {
+  # "<blockNumber>-<logIndex>"
+  id: ID!
+  feedback: Feedback!
+  responder: String!
+  responseURI: String!
+  responseHash: String!
+  blockTimestamp: Int!
+  txHash: String!
+}
+
+# Someone who paid for at least one job.
+type Buyer {
+  # buyer address
+  id: ID!
+  jobsTotal: Int!
+  jobsOk: Int!
+  # Sum of paid receipt amounts, failed jobs included (the money left the wallet).
+  spentUsdc: BigInt!
+  ratingsGiven: Int!
+  firstJobAt: Int!
+  lastJobAt: Int!
+  jobs: [Job!]! @derivedFrom(field: "buyer")
+  ratings: [Rating!]! @derivedFrom(field: "buyer")
+}
+
+# The XorvLedger contract itself.
+type Ledger {
+  # contract address
+  id: ID!
+  # Current broker: the only address allowed to register providers and record jobs, and
+  # the verifier EOA whose "xorv-verified" feedback counts as XORV_VERIFIED.
+  broker: String!
+  owner: String
+  brokerChanges: Int!
+  updatedAt: Int!
+}
+
+# Every address that has held the ledger's broker role. Lets the feedback handler decide
+# "is this client the verifier?" with one lookup.
+type Broker {
+  # broker address
+  id: ID!
+  ledger: Ledger!
+  active: Boolean!
+  since: Int!
+  until: Int
+  verifiedFeedbacks: Int!
+}
+
+# Singleton, id "global". Network page and landing ledger numbers.
+type NetworkStats {
+  id: ID!
+  providers: Int!
+  # ERC-8004 agents seen on this chain since ENVIO_ERC8004_START_BLOCK.
+  agentsTotal: Int!
+  # Agents with isXorvProvider.
+  agentsLinked: Int!
+  buyers: Int!
+  jobs: Int!
+  okJobs: Int!
+  failedJobs: Int!
+  paidJobs: Int!
+  successRate: Float!
+  # Sum of paid receipt amounts.
+  volumeUsdc: BigInt!
+  # Sum of paid AND ok receipt amounts.
+  earnedUsdc: BigInt!
+  ratings: Int!
+  ratingSum: Int!
+  avgRating: Float!
+  heartbeats: Int!
+  # Active ERC-8004 feedback entries across all agents, and the XORV_VERIFIED subset.
+  feedbacks: Int!
+  verifiedFeedbacks: Int!
+  lastBlock: Int!
+  lastUpdated: Int!
+}
+
+# Network activity per UTC day.
+type DailyStats {
+  # yyyy-mm-dd (UTC)
+  id: ID!
+  # unix seconds of 00:00 UTC
+  dayStart: Int! @index
+  jobs: Int!
+  okJobs: Int!
+  failedJobs: Int!
+  volumeUsdc: BigInt!
+  earnedUsdc: BigInt!
+  # Exact distinct counts, kept with BuyerDay / ProviderDay rows.
+  uniqueBuyers: Int!
+  activeProviders: Int!
+  newBuyers: Int!
+  newProviders: Int!
+  ratings: Int!
+  ratingSum: Int!
+  avgRating: Float!
+  heartbeats: Int!
+  feedbacks: Int!
+}
+
+# Per-provider per-day series (earnings sparkline on the provider page).
+type ProviderDay {
+  # "<providerId>-<yyyy-mm-dd>"
+  id: ID!
+  provider: Provider!
+  day: String! @index
+  dayStart: Int!
+  jobs: Int!
+  okJobs: Int!
+  earnedUsdc: BigInt!
+  ratings: Int!
+  ratingSum: Int!
+}
+
+# Per-buyer per-day spend; its existence is what makes DailyStats.uniqueBuyers exact.
+type BuyerDay {
+  # "<buyer>-<yyyy-mm-dd>"
+  id: ID!
+  buyer: Buyer!
+  day: String! @index
+  jobs: Int!
+  spentUsdc: BigInt!
+}
