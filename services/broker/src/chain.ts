@@ -156,7 +156,11 @@ export function revertName(err: unknown): string | null {
 }
 
 function describe(err: unknown): string {
-  if (err instanceof BaseError) return err.shortMessage || err.message;
+  if (err instanceof BaseError) {
+    const reverted = revertName(err);
+    const message = err.shortMessage || err.message;
+    return reverted && !message.includes(reverted) ? `${message} (${reverted})` : message;
+  }
   return err instanceof Error ? err.message : String(err);
 }
 
@@ -295,9 +299,10 @@ export class LedgerWriter implements ChainLike {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    // One flush at a time; receipts queued while it runs are picked up by its
-    // loop, so a caller who joins an in-flight flush still sees them sent.
-    if (this.flushing) return this.flushing;
+    // One flush at a time. A caller who arrives mid-flush queues another pass
+    // behind it: the running loop may already have seen an empty queue, and a
+    // receipt added in that gap must not wait for the next timer.
+    if (this.flushing) return this.flushing.then(() => this.flush());
     if (this.queue.length === 0) return Promise.resolve();
     this.flushing = (async () => {
       while (this.queue.length > 0) {
