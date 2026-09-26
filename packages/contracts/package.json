@@ -1,0 +1,50 @@
+{
+  "name": "@xorv/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "XorvLedger: on-chain receipts for x402-paid Xorv jobs and a payer-authorised ERC-8004 feedback relay, on Monad.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    "./abi/XorvLedger.json": "./abi/XorvLedger.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "abi",
+    "contracts",
+    "deployments",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "hardhat build",
+    "compile": "hardhat build",
+    "typecheck": "hardhat build --quiet && tsc -p tsconfig.json --noEmit",
+    "test": "hardhat test nodejs",
+    "gas": "hardhat test nodejs test/gas.test.ts",
+    "abi": "hardhat run scripts/export-abi.ts",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network monadTestnet",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network monad",
+    "verify:testnet": "hardhat run scripts/verify.ts --network monadTestnet",
+    "verify:mainnet": "hardhat run scripts/verify.ts --network monad",
+    "clean": "hardhat clean"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "~5.4.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-keystore": "^3.1.0",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.11",
+    "@nomicfoundation/hardhat-node-test-runner": "^3.1.0",
+    "@nomicfoundation/hardhat-verify": "^3.1.1",
+    "@nomicfoundation/hardhat-viem": "^3.0.9",
+    "@nomicfoundation/hardhat-viem-assertions": "^3.1.3",
+    "@openzeppelin/contracts-upgradeable": "~5.4.0",
+    "@types/node": "^22.13.4",
+    "hardhat": "^3.18.0",
+    "typescript": "~5.9.0",
+    "viem": "^2.56.9"
+  }
+}
