@@ -191,7 +191,7 @@ export function ModelPicker({
           aria-label="Model"
           // Grows from the trigger's top-left, so the panel is visibly the
           // button's own surface rather than a layer that arrived over it.
-          className="absolute bottom-full left-0 z-50 mb-1.5 min-w-[190px] origin-bottom-left animate-[picker_140ms_cubic-bezier(0.23,1,0.32,1)] max-h-[min(440px,60vh)] overflow-y-auto rounded-xl border border-[var(--line-2)] bg-black p-1 shadow-[0_16px_40px_rgba(0,0,0,0.9)]"
+          className="absolute bottom-full left-0 z-50 mb-1.5 min-w-[236px] origin-bottom-left animate-[picker_140ms_cubic-bezier(0.23,1,0.32,1)] max-h-[min(440px,60vh)] overflow-y-auto rounded-xl border border-[var(--line-2)] bg-black p-1 shadow-[0_16px_40px_rgba(0,0,0,0.9)]"
         >
           {options.map((option, i) => {
             const isSelected = option.id === value;
