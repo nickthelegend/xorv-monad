@@ -50,3 +50,6 @@ videos/*/node_modules/
 videos/*/.thumbnails/
 videos/*/.waveform-cache/
 videos/*/audio_engine_meta.json
+
+# git worktrees created by parallel agents
+.claude/worktrees/
