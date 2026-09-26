@@ -8,6 +8,8 @@ import hardhatViem from "@nomicfoundation/hardhat-viem";
 import hardhatViemAssertions from "@nomicfoundation/hardhat-viem-assertions";
 import { configVariable, defineConfig } from "hardhat/config";
 
+import { MONAD_DEPLOYMENTS, rpcUrlFor } from "./scripts/lib/networks.js";
+
 // The broker's settings live in the repo-root .env, so the deployer can reuse XORV_OPERATOR_KEY and
 // XORV_BROKER_ADDRESS from there. A package-local .env is read first and wins; real environment
 // variables beat both (process.loadEnvFile never overwrites a variable that is already set).
@@ -88,15 +90,15 @@ export default defineConfig({
     monadTestnet: {
       type: "http",
       chainType: "l1",
-      chainId: 10143,
-      url: process.env.MONAD_TESTNET_RPC_URL || "https://testnet-rpc.monad.xyz",
+      chainId: MONAD_DEPLOYMENTS.monadTestnet.chainId,
+      url: rpcUrlFor(MONAD_DEPLOYMENTS.monadTestnet),
       accounts: [deployerKey],
     },
     monad: {
       type: "http",
       chainType: "l1",
-      chainId: 143,
-      url: process.env.MONAD_RPC_URL || "https://rpc.monad.xyz",
+      chainId: MONAD_DEPLOYMENTS.monad.chainId,
+      url: rpcUrlFor(MONAD_DEPLOYMENTS.monad),
       accounts: [deployerKey],
     },
   },
