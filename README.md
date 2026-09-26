@@ -56,7 +56,7 @@ layer, not a consumer app:
 pnpm install && pnpm build && pnpm test
 ```
 
-**965 tests pass** (counted on 2026-09-26 by running every workspace suite once, one after another,
+**970 tests pass** (counted on 2026-09-26 by running every workspace suite once, one after another,
 on Windows 11 with Node 22.21). A further 14 POSIX-only CLI cases (sandbox tiers and file modes) are
 skipped on Windows. They need **no keys, no RPC and no testnet funds**: the x402 facilitator and the
 XorvLedger writer are stubbed at the chain boundary, the contracts run on Hardhat's in-process chain
@@ -69,13 +69,13 @@ Solidity compiler through Hardhat. CI runs the same commands on Node 22 and 24
 |---|---:|---|
 | `packages/protocol` | 236 | Monad chain table, viem helpers and the signer lock, money math, the x402 facilitator and the quote-bound buyer client, the XorvLedger ABI and 100-block feed reader, ERC-8004 helpers, model presets and the SSE reader, private-job crypto (known-answer vectors, `node:crypto` cross-checks) |
 | `packages/contracts` | 47 | `XorvLedger` against the real ERC-8004 v2.0.0 registries, the ABI pin, the gas report, the Monad testnet fork config |
-| `packages/cli` | 240 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal |
+| `packages/cli` | 245 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal; the earnings ledger |
 | `packages/mcp` | 82 | the real server over stdio against a mock broker that verifies signatures, the Privy signer with a fake client, the session budget, the Privy policy |
 | `packages/mm-plugin` | 71 | every `mm xorv` command on a mocked MetaMask context, the signer, the payment policy, the manifest |
 | `services/broker` | 206 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles, private jobs and vaults |
 | `apps/app` | 69 | the x402 payment helper, ratings, demo-payer guards, the Mera keyring with a synced authenticator |
 | `apps/landing` | 14 | the broker feed parsers |
-| **Total** | **965** | |
+| **Total** | **970** | |
 
 The Envio indexer (`services/indexer`) is outside the pnpm workspace because Envio ships no Windows
 binary. Its 52 tests run in a Linux container with the one command in
@@ -86,7 +86,7 @@ binary. Its 52 tests run in a Linux container with the one command in
 | | Status |
 |---|---|
 | Quote → 402 → EIP-3009 signature → upfront settlement → dispatch → result → receipt, through the real Hono app, the real x402 resource server and the real WebSocket hub | Integration test, `services/broker/test/integration.test.ts` |
-| **The whole system on a fork of Monad testnet**: Circle's real USDC and the canonical ERC-8004 registries, XorvLedger deployed by its own script, the built broker, a real `xorv` provider node, `xorv run --json`, the MCP server over stdio and a private job; 174 checks read back off the chain (USDC transfers with the buyer holding no MON, `ProviderRegistered`/`JobRecorded`/`JobRated`, Kimi's and the buyers' `NewFeedback`, the sealed envelope's receipt hash) | `pnpm e2e` ([`e2e/README.md`](e2e/README.md)); last green run in [`e2e/last-run.md`](e2e/last-run.md). Needs the Monad testnet RPC, no keys or funds |
+| **The whole system on a fork of Monad testnet**: Circle's real USDC and the canonical ERC-8004 registries, XorvLedger deployed by its own script, the built broker, a real `xorv` provider node, `xorv run --json`, the MCP server over stdio and a private job; 188 checks read back off the chain (USDC transfers with the buyer holding no MON, `ProviderRegistered`/`JobRecorded`/`JobRated`, Kimi's and the buyers' `NewFeedback`, the sealed envelope's receipt hash) | `pnpm e2e` ([`e2e/README.md`](e2e/README.md)); last green run in [`e2e/last-run.md`](e2e/last-run.md). Needs the Monad testnet RPC, no keys or funds |
 | `XorvLedger` receipts, `payTo == agentWallet`, one rating per job, EOA and ERC-1271 signatures, forwarding into the real ERC-8004 Reputation Registry | Contract tests, `packages/contracts/test/XorvLedger.test.ts` |
 | Gas for every call the broker pays for, measured on **live Monad** with state overrides (nothing deployed) | `pnpm --filter @xorv/contracts gas:monad`, table in [`packages/contracts/README.md`](packages/contracts/README.md#gas) |
 | MetaMask plugin manifest accepted by MetaMask's own `PluginManifestSchema`; `providers` and `quote` run inside Agent Wallet 7.0.0 | `packages/mm-plugin/test/manifest.test.ts`, example session in [`packages/mm-plugin/README.md`](packages/mm-plugin/README.md#example-session) |

@@ -375,7 +375,7 @@ reassignment means someone else finished the job. The verifier runs, and the rec
 
 ## Testing
 
-The root `pnpm test` runs every workspace suite: **965 tests**, counted on 2026-09-26 by running
+The root `pnpm test` runs every workspace suite: **970 tests**, counted on 2026-09-26 by running
 each suite once, one after another, on Windows. A further 14 POSIX-only CLI cases are skipped there.
 None of them needs a key, an RPC or testnet funds.
 
@@ -383,13 +383,13 @@ None of them needs a key, an RPC or testnet funds.
 |---|---:|---:|---|
 | `packages/protocol` | 11 | 236 | viem over a fake JSON-RPC, a real x402 facilitator over a stub transport, known-answer crypto vectors |
 | `packages/contracts` | 4 | 47 | Hardhat's in-process chain (EDR), the vendored ERC-8004 registries, `node:test` |
-| `packages/cli` | 15 | 240 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
+| `packages/cli` | 16 | 245 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
 | `packages/mcp` | 7 | 82 | the real server over stdio, a mock broker that verifies signatures, a fake Privy client |
 | `packages/mm-plugin` | 7 | 71 | the real `PluginCommand` base, a fake executor that signs the way MetaMask's JSON-RPC signer does |
 | `services/broker` | 10 | 206 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
 | `apps/app` | 6 | 69 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
 | `apps/landing` | 1 | 14 | hand-built broker payloads, including malformed ones |
-| **Total** | **61** | **965** | |
+| **Total** | **62** | **970** | |
 
 What makes that possible:
 
@@ -429,10 +429,11 @@ script, and runs the built broker (self-hosted facilitator, ledger writer, ratin
 `xorv` provider node that registers its identity with `xorv identity register`, `xorv run --json`,
 the MCP server over stdio and a private job. Only the three models are stand-ins: a local
 OpenAI-compatible server behind each preset's base URL, so the roles' real request, parsing and
-feedback code runs. Every claim is then read back off the fork: 174 checks, last green run in
-[e2e/last-run.md](e2e/last-run.md). It found two bugs the unit suites could not: Hardhat dropped
-the fork's hardfork history (a chain-type mismatch), and `xorv start` off a terminal printed its
-status footer once a second instead of its jobs.
+feedback code runs. Every claim is then read back off the fork: 188 checks, last green run in
+[e2e/last-run.md](e2e/last-run.md). It found three bugs the unit suites could not: Hardhat dropped
+the fork's hardfork history (a chain-type mismatch); `xorv start` off a terminal printed its status
+footer once a second instead of its jobs; and a provider's earnings ledger carried no settlement
+transaction, and credited a node for a reassigned job it was never paid for.
 
 What the tests do not prove: that the public Monad RPC under load, the hosted facilitator, Privy,
 MetaMask or the three model APIs behave on the day as their documentation and our stubs say. That is
