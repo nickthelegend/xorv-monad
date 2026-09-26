@@ -7,14 +7,14 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
     "@lobehub/icons": "^5.15.0",
     "clsx": "^2.1.1",
     "gsap": "^3.13.0",
-    "lucide-react": "^1.24.0",
     "motion": "^12.23.6",
     "next": "16.2.10",
     "react": "19.2.4",
@@ -29,7 +29,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   },
-  "description": "Xorv marketing site — decentralized AI capacity network paid in USDC over x402 on Hedera."
+  "description": "Xorv marketing site — rent out idle AI capacity, get paid per job in USDC over x402 on Monad, with ERC-8004 identity and payment-backed reputation."
 }
