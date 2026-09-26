@@ -26,13 +26,12 @@ const NAV = [
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-
   // A route change should close the mobile rail; leaving it open over the new
-  // page is the classic half-finished drawer.
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  // page is the classic half-finished drawer. Remembering *where* it was opened
+  // closes it on navigation by construction, with no effect to keep in sync.
+  const [openAt, setOpenAt] = useState<string | null>(null);
+  const open = openAt === pathname;
+  const setOpen = (next: boolean): void => setOpenAt(next ? pathname : null);
 
   return (
     <div className="flex min-h-dvh">

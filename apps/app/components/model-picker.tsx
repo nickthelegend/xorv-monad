@@ -127,9 +127,11 @@ export function ModelPicker({
     };
   }, [open]);
 
-  useEffect(() => {
-    if (open) setActive(Math.max(0, options.findIndex((o) => o.id === value)));
-  }, [open, options, value]);
+  // Opening highlights the current choice, so arrow keys start from it.
+  function openMenu(): void {
+    setActive(Math.max(0, options.findIndex((o) => o.id === value)));
+    setOpen(true);
+  }
 
   function choose(id: string): void {
     onChange(id);
@@ -140,7 +142,7 @@ export function ModelPicker({
     if (!open) {
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        setOpen(true);
+        openMenu();
       }
       return;
     }
@@ -161,7 +163,7 @@ export function ModelPicker({
     <div ref={root} className="relative" onKeyDown={onKeyDown}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (open ? setOpen(false) : openMenu())}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Model: ${selected?.label ?? "any"}`}

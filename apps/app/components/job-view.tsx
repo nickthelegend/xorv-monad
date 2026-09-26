@@ -32,6 +32,26 @@ const GLYPH: Record<JobEvent["kind"], { mark: string; tone: string }> = {
 const TERMINAL = new Set<Job["status"]>(["completed", "failed", "expired"]);
 
 /**
+ * Wall-clock time, ticking once a second while `active` — the running job's
+ * "took" figure. Read in a timer rather than during render so the render
+ * stays pure; null until the first tick.
+ */
+function useClock(active: boolean): number | null {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const tick = (): void => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 1_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [active]);
+  return now;
+}
+
+/**
  * One job, live.
  *
  * Subscribes to the broker's SSE stream while the job is in flight and stops as
@@ -58,6 +78,7 @@ export function JobView({
   const logRef = useRef<HTMLDivElement | null>(null);
 
   const terminal = job ? TERMINAL.has(job.status) : false;
+  const now = useClock(Boolean(job?.startedAt) && !job?.completedAt && !terminal);
 
   useEffect(() => {
     if (terminal) return;
@@ -106,8 +127,8 @@ export function JobView({
   const elapsed =
     job.completedAt && job.startedAt
       ? job.completedAt - job.startedAt
-      : job.startedAt
-        ? Date.now() - job.startedAt
+      : job.startedAt && now
+        ? Math.max(0, now - job.startedAt)
         : 0;
 
   const paymentTx = job.payment?.txHash ?? settlementTx ?? null;
