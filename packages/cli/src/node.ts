@@ -18,19 +18,30 @@ import {
   type DispatchedJob,
   type JobEvent,
   type RegisterRequest,
+  type RegisterResponse,
 } from "@xorv/protocol";
 import { createAdapter } from "./adapters/index.js";
 import { makeJobDir, removeJobDir, type JobAdapter } from "./adapters/base.js";
-import { appendEarning, resolveBrokerUrl, type NodeConfig } from "./config.js";
+import { appendEarning, payoutAddress, resolveBrokerUrl, type NodeConfig } from "./config.js";
 import { isPaused } from "./commands/manage.js";
 
+/** What the broker's `/api/providers/register` hands back, as the node uses it. */
 export interface RegisterResult {
   providerId: string;
   token: string;
   wsUrl: string;
-  registry: { topicId: string; transactionId: string; hashscanUrl: string } | null;
+  /**
+   * The XorvLedger `registerProvider` write, when the broker has already made
+   * it. Null when the ledger is not configured or the write is still queued —
+   * the broker batches ledger writes and never blocks registration on one.
+   */
+  registry: NonNullable<RegisterResponse["registry"]> | null;
+  /** The broker's CAIP-2 network — must equal this node's, or no payment verifies. */
   network: string;
-  usdc: string;
+  /** The stablecoin contract the broker prices in (USDC's address). */
+  usdc: string | null;
+  /** The ERC-8004 agent id the broker registered this node under, if any. */
+  agentId: string | null;
 }
 
 export interface RunningJob {
@@ -113,7 +124,8 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
   async register(endpoint: string): Promise<RegisterResult> {
     const body: RegisterRequest = {
       label: this.config.label,
-      accountId: this.config.accountId,
+      address: payoutAddress(this.config),
+      agentId: this.config.agentId ?? null,
       endpoint,
       capabilities: this.config.capabilities,
       version: VERSION,
@@ -133,26 +145,25 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       throw new Error(`registration failed (${res.status}): ${text.slice(0, 300)}`);
     }
 
-    const result = (await res.json()) as {
-      provider: { id: string };
-      token: string;
+    const result = (await res.json()) as RegisterResponse & {
       wsUrl: string;
-      registry: RegisterResult["registry"];
-      network: string;
-      usdc: string;
+      network?: string;
+      usdc?: string | { address?: string } | null;
     };
 
     this.providerId = result.provider.id;
     this.token = result.token;
-    this.registryReceipt = result.registry;
+    this.registryReceipt = result.registry ?? null;
 
+    const usdc = typeof result.usdc === "string" ? result.usdc : (result.usdc?.address ?? null);
     return {
       providerId: result.provider.id,
       token: result.token,
       wsUrl: result.wsUrl,
-      registry: result.registry,
-      network: result.network,
-      usdc: result.usdc,
+      registry: result.registry ?? null,
+      network: result.network ?? this.config.network,
+      usdc,
+      agentId: result.registry?.agentId ?? result.provider.agentId ?? null,
     };
   }
 
@@ -342,6 +353,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
         at: Date.now(),
         jobId: job.jobId,
         asset: "usdc",
+        // micro-USD and USDC's smallest unit are the same integer (6 decimals).
         amount: String(dispatched.priceUsdMicros),
         usdMicros: dispatched.priceUsdMicros,
         durationMs,
@@ -424,5 +436,5 @@ function short(id: string): string {
   return id.length > 12 ? id.slice(0, 12) : id;
 }
 
-/** Kept in sync with package.json by the build; used in the registration. */
-export const VERSION = "0.1.0";
+/** Kept in sync with package.json; sent in the registration and shown by `--version`. */
+export const VERSION = "0.2.0";

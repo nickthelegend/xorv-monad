@@ -8,7 +8,7 @@
  */
 
 import http from "node:http";
-import { formatUsd } from "@xorv/protocol";
+import { explorerAddress, explorerAgent, formatUsd, networkLabel } from "@xorv/protocol";
 import type { ProviderNode } from "./node.js";
 
 export interface LocalServer {
@@ -34,7 +34,10 @@ export function startLocalServer(node: ProviderNode, port: number): Promise<Loca
       return json(res, 200, {
         label: node.config.label,
         providerId: node.providerId,
-        accountId: node.config.accountId,
+        address: node.config.address,
+        addressUrl: safe(() => explorerAddress(node.config.network, node.config.address)),
+        agentId: node.config.agentId ?? null,
+        agentUrl: node.config.agentId ? safe(() => explorerAgent(node.config.network, node.config.agentId!)) : null,
         network: node.config.network,
         region: node.config.region,
         capabilities: node.config.capabilities.map((c) => ({
@@ -76,6 +79,15 @@ export function startLocalServer(node: ProviderNode, port: number): Promise<Loca
   });
 }
 
+/** Explorer links only decorate the page; a bad network string must not take the page down. */
+function safe(fn: () => string): string | null {
+  try {
+    return fn();
+  } catch {
+    return null;
+  }
+}
+
 function json(res: http.ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body, null, 2);
   res.writeHead(status, {
@@ -102,6 +114,14 @@ function escapeHtml(value: string): string {
 /** A small dark status page, matching the rest of the brand. */
 function page(node: ProviderNode): string {
   const uptime = Math.round((Date.now() - node.stats.startedAt) / 1000);
+  const addressUrl = safe(() => explorerAddress(node.config.network, node.config.address));
+  const agentUrl = node.config.agentId ? safe(() => explorerAgent(node.config.network, node.config.agentId!)) : null;
+  const payout = addressUrl
+    ? `<a class="mono" href="${escapeHtml(addressUrl)}">${escapeHtml(node.config.address)}</a>`
+    : `<span class="mono">${escapeHtml(node.config.address)}</span>`;
+  const agent = agentUrl
+    ? `<br>ERC-8004 agent <a href="${escapeHtml(agentUrl)}">#${escapeHtml(node.config.agentId ?? "")}</a>.`
+    : "";
   const rows = node.config.capabilities
     .map(
       (c) => `<tr>
@@ -144,7 +164,7 @@ function page(node: ProviderNode): string {
 </style></head><body><div class="wrap">
   <div class="mark">Xorv provider node</div>
   <h1>${escapeHtml(node.config.label)}</h1>
-  <p class="sub">Selling idle AI capacity, paid per job in USDC over x402 on Hedera.</p>
+  <p class="sub">Selling idle AI capacity, paid per job in USDC over x402 on Monad.</p>
   <span class="pill"><span class="dot"></span>${node.stats.connected ? "connected to the network" : "reconnecting"}</span>
   <div class="grid">
     <div class="card"><div class="k">Jobs done</div><div class="v">${node.stats.jobsCompleted}</div></div>
@@ -154,7 +174,7 @@ function page(node: ProviderNode): string {
   </div>
   <table><thead><tr><th>Capability</th><th>Adapter</th><th class="right">Price / job</th></tr></thead>
   <tbody>${rows}</tbody></table>
-  <footer>Payouts to <span class="mono">${escapeHtml(node.config.accountId)}</span> on ${escapeHtml(node.config.network)}.
+  <footer>Payouts to ${payout} on Monad ${escapeHtml(networkLabel(node.config.network))} (${escapeHtml(node.config.network)}).${agent}
   <br>Run your own: <span class="mono">npm i -g @xorv/cli &amp;&amp; xorv init</span></footer>
 </div></body></html>`;
 }

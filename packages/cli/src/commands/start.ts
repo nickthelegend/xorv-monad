@@ -7,11 +7,12 @@
  */
 
 import {
+  explorerAgent,
   formatAgo,
   formatDuration,
   formatUsd,
-  hashscanAccount,
   networkLabel,
+  shortHex,
 } from "@xorv/protocol";
 import { requireConfig, resolveBrokerUrl } from "../config.js";
 import { ProviderNode, type RunningJob } from "../node.js";
@@ -68,7 +69,7 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   if (opts.broker) config.brokerUrl = opts.broker;
   const brokerUrl = resolveBrokerUrl(config);
 
-  console.log(ui.banner(`${config.label} · ${networkLabel(config.network)}`));
+  console.log(ui.banner(`${config.label} · Monad ${networkLabel(config.network)}`));
 
   const node = new ProviderNode(config);
   const logLines: Array<{ level: string; text: string; at: number }> = [];
@@ -134,11 +135,24 @@ export async function startCommand(opts: StartOptions): Promise<void> {
     const result = await node.register(endpoint);
     wsUrl = controlChannelUrl(brokerUrl, result.wsUrl);
     reg.succeed(`registered as ${ui.c.bold(result.providerId)}`);
+    if (result.network !== config.network) {
+      // Payment still reaches this address (an EVM address is the same on
+      // every chain), but balances, the identity and `xorv doctor` would all
+      // be looking at the wrong chain.
+      ui.warn(`the broker is on ${result.network}, this node is configured for ${config.network}`);
+      ui.muted(`  run ${ui.c.accent("xorv doctor")} — balances and the ERC-8004 identity are per chain`);
+    }
     if (result.registry) {
-      ui.ok(
-        `${ui.glyph.chain()} registration recorded on HCS ${ui.c.muted(result.registry.topicId)}`,
-      );
-      ui.muted(`  ${result.registry.hashscanUrl}`);
+      ui.ok(`${ui.glyph.chain()} registration recorded on XorvLedger ${ui.c.muted(shortHex(result.registry.contract))}`);
+      ui.muted(`  ${result.registry.explorerUrl}`);
+    } else {
+      ui.muted("  on-chain registration is queued by the broker (or its ledger is off) — jobs don't wait for it");
+    }
+    const agentId = result.agentId ?? config.agentId;
+    if (agentId) {
+      ui.ok(`ERC-8004 agent ${ui.c.bold(`#${agentId}`)} ${ui.c.muted(explorerAgent(config.network, agentId))}`);
+    } else {
+      ui.muted(`  no ERC-8004 identity — ${ui.c.accent("xorv identity register")} binds receipts and reputation to one`);
     }
   } catch (err) {
     reg.fail(`registration failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -270,7 +284,7 @@ function dashboard(
   lines.push("");
   lines.push(
     ui.c.muted(
-      `  payout ${node.config.accountId} · ${endpoint.replace(/^https?:\/\//, "")} · ctrl-c to stop`,
+      `  payout ${shortHex(node.config.address)}${node.config.agentId ? ` · agent #${node.config.agentId}` : ""} · ${endpoint.replace(/^https?:\/\//, "")} · ctrl-c to stop`,
     ),
   );
   return lines;
