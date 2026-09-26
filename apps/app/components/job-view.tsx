@@ -3,19 +3,14 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { explorerAddress, explorerAgent, explorerTx, formatUsdc, shortHex } from "@xorv/protocol/web";
 import { EASE, useEntrance } from "@/lib/motion";
-import {
-  BROKER_URL,
-  NETWORK,
-  api,
-  formatDuration,
-  formatUsd,
-  hashscanAccount,
-  type Job,
-  type JobEvent,
-} from "@/lib/api";
+import { BROKER_URL, api, formatDuration, formatUsd, type Job, type JobEvent } from "@/lib/api";
+import { NETWORK, NETWORK_LABEL } from "@/lib/network";
+import { useNetworkInfo } from "@/lib/hooks";
 import { Button, Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { ResultMarkdown } from "@/components/result-markdown";
+import { RateJob } from "@/components/rate-job";
 import { cn } from "@/lib/utils";
 
 /**
@@ -34,12 +29,7 @@ const GLYPH: Record<JobEvent["kind"], { mark: string; tone: string }> = {
   error: { mark: "✕", tone: "text-fail" },
 };
 
-function hashscanTx(transactionId: string): string {
-  const net = NETWORK === "hedera:mainnet" ? "mainnet" : "testnet";
-  return `https://hashscan.io/${net}/transaction/${transactionId
-    .replace("@", "-")
-    .replace(/\.(\d+)$/, "-$1")}`;
-}
+const TERMINAL = new Set<Job["status"]>(["completed", "failed", "expired"]);
 
 /**
  * One job, live.
@@ -47,19 +37,32 @@ function hashscanTx(transactionId: string): string {
  * Subscribes to the broker's SSE stream while the job is in flight and stops as
  * soon as it reaches a terminal state — a finished job is a static document,
  * and holding an event stream open for it wastes a connection on both ends.
+ *
+ * `settlementTx` is the hash the payer's own x402 client got back, passed in
+ * the URL by the composer, so the transfer is linkable on first paint even
+ * before the broker's payment record reaches the stream.
  */
-export function JobView({ jobId, initial }: { jobId: string; initial: Job | null }) {
+export function JobView({
+  jobId,
+  initial,
+  settlementTx,
+}: {
+  jobId: string;
+  initial: Job | null;
+  settlementTx?: string | null;
+}) {
   const [job, setJob] = useState<Job | null>(initial);
   const [events, setEvents] = useState<JobEvent[]>(initial?.events ?? []);
   const [streaming, setStreaming] = useState(false);
   const animate = useEntrance();
   const logRef = useRef<HTMLDivElement | null>(null);
 
-  const terminal = job?.status === "completed" || job?.status === "failed";
+  const terminal = job ? TERMINAL.has(job.status) : false;
 
   useEffect(() => {
     if (terminal) return;
-    const source = new EventSource(`${BROKER_URL}/api/jobs/${jobId}/stream`);
+    const source = new EventSource(`${BROKER_URL}/api/jobs/${encodeURIComponent(jobId)}/stream`);
+    let refetch: ReturnType<typeof setTimeout> | null = null;
 
     source.addEventListener("open", () => setStreaming(true));
     source.addEventListener("snapshot", (e) => {
@@ -77,15 +80,19 @@ export function JobView({ jobId, initial }: { jobId: string; initial: Job | null
       if (next.events) setEvents(next.events);
       source.close();
       setStreaming(false);
-      // The HCS receipt is written a beat after settlement, so one delayed
-      // refetch turns "publishing…" into a real link without polling forever.
-      setTimeout(() => {
+      // The ledger receipt is batched and written a beat after the job ends
+      // (and the verifier's feedback after that), so one delayed refetch turns
+      // "recording…" into real links without polling forever.
+      refetch = setTimeout(() => {
         void api.job(jobId).then(setJob).catch(() => {});
-      }, 6_000);
+      }, 8_000);
     });
     source.addEventListener("error", () => setStreaming(false));
 
-    return () => source.close();
+    return () => {
+      source.close();
+      if (refetch) clearTimeout(refetch);
+    };
   }, [jobId, terminal]);
 
   useEffect(() => {
@@ -102,6 +109,8 @@ export function JobView({ jobId, initial }: { jobId: string; initial: Job | null
       : job.startedAt
         ? Date.now() - job.startedAt
         : 0;
+
+  const paymentTx = job.payment?.txHash ?? settlementTx ?? null;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
@@ -142,6 +151,8 @@ export function JobView({ jobId, initial }: { jobId: string; initial: Job | null
             </Panel>
           </section>
         ) : null}
+
+        <AiChecks job={job} />
 
         <section>
           <div className="mb-2.5 flex items-center justify-between">
@@ -186,9 +197,15 @@ export function JobView({ jobId, initial }: { jobId: string; initial: Job | null
         <Panel className="p-4">
           <h2 className="text-[13px] font-medium text-fg">Provider</h2>
           <p className="mt-2 text-[14px] text-fg-2">{job.providerLabel ?? "unassigned"}</p>
-          {job.providerAccountId ? (
+          {job.providerAddress ? (
             <p className="mono mt-1 text-[11.5px] text-fg-4">
-              <Ext href={hashscanAccount(job.providerAccountId)}>{job.providerAccountId} ↗</Ext>
+              <Ext href={explorerAddress(NETWORK, job.providerAddress)}>{shortHex(job.providerAddress)} ↗</Ext>
+              {job.providerAgentId ? (
+                <>
+                  {" · "}
+                  <Ext href={explorerAgent(NETWORK, job.providerAgentId)}>agent #{job.providerAgentId} ↗</Ext>
+                </>
+              ) : null}
             </p>
           ) : null}
           <div className="mt-3 border-t border-[var(--line)] pt-1">
@@ -208,56 +225,70 @@ export function JobView({ jobId, initial }: { jobId: string; initial: Job | null
           {job.payment ? (
             <>
               <p className="tnum mt-2 text-[18px] font-semibold text-fg">
-                {formatUsd(job.priceUsdMicros)}{" "}
-                <span className="text-[12px] font-normal text-fg-3">
-                  in {job.payment.asset.toUpperCase()}
-                </span>
+                {formatUsdc(job.payment.amount)}{" "}
+                <span className="text-[12px] font-normal text-fg-3">in USDC</span>
               </p>
               <div className="mt-3 border-t border-[var(--line)] pt-1">
                 <Row label="payer">
-                  <Ext href={hashscanAccount(job.payment.payer)}>{job.payment.payer}</Ext>
+                  <Ext href={explorerAddress(NETWORK, job.payment.payer)}>{shortHex(job.payment.payer)}</Ext>
                 </Row>
                 <Row label="paid to">
-                  <Ext href={hashscanAccount(job.payment.payTo)}>{job.payment.payTo}</Ext>
+                  <Ext href={explorerAddress(NETWORK, job.payment.payTo)}>{shortHex(job.payment.payTo)}</Ext>
                 </Row>
                 <Row label="amount">
-                  <span className="tnum">
-                    {job.payment.amount} {job.payment.asset === "hbar" ? "tℏ" : "µUSDC"}
-                  </span>
+                  <span className="tnum">{job.payment.amount} units (6 dp)</span>
                 </Row>
-                <Row label="network">{job.payment.network}</Row>
+                <Row label="network">{job.payment.network === NETWORK ? NETWORK_LABEL : job.payment.network}</Row>
               </div>
 
               <div className="mt-4 space-y-2">
-                <Button href={job.payment.hashscanUrl} variant="secondary" external className="w-full">
-                  View transfer on HashScan
+                <Button
+                  href={job.payment.explorerUrl || explorerTx(NETWORK, job.payment.txHash)}
+                  variant="secondary"
+                  external
+                  className="w-full"
+                >
+                  View USDC transfer
                 </Button>
-                {job.receiptConsensusAt ? (
+                {job.receiptTxHash ? (
                   <Button
-                    href={hashscanTx(job.receiptConsensusAt)}
+                    href={explorerTx(NETWORK, job.receiptTxHash)}
                     variant="ghost"
                     external
                     className="w-full justify-center"
                   >
-                    View HCS receipt
+                    View XorvLedger receipt
                   </Button>
+                ) : TERMINAL.has(job.status) ? (
+                  <p className="text-center text-[11.5px] text-fg-4">Recording the receipt on XorvLedger…</p>
                 ) : (
-                  <p className="text-center text-[11.5px] text-fg-4">HCS receipt publishing…</p>
+                  <p className="text-center text-[11.5px] text-fg-4">The receipt is recorded when the job finishes.</p>
                 )}
               </div>
 
               {job.resultHash ? (
                 <p className="mono mt-3 break-all text-[10.5px] leading-relaxed text-fg-4">
-                  sha256 {job.resultHash}
+                  keccak256 {job.resultHash}
                 </p>
               ) : null}
             </>
+          ) : paymentTx ? (
+            <div className="mt-2 space-y-3">
+              <p className="text-[12.5px] leading-relaxed text-fg-3">
+                Settled — waiting for the broker to record the payment.
+              </p>
+              <Button href={explorerTx(NETWORK, paymentTx)} variant="secondary" external className="w-full">
+                View USDC transfer
+              </Button>
+            </div>
           ) : (
             <p className="mt-2 text-[12.5px] leading-relaxed text-fg-3">
-              Settling on Hedera — this usually takes about three seconds.
+              Settling on Monad — this usually takes about a second.
             </p>
           )}
         </Panel>
+
+        <RateJob job={job} onRated={(rating) => setJob((prev) => (prev ? { ...prev, rating } : prev))} />
 
         <Link
           href="/"
@@ -266,6 +297,97 @@ export function JobView({ jobId, initial }: { jobId: string; initial: Job | null
           ← all jobs
         </Link>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the network's AI roles said about this job, when they ran: the prompt
+ * screen (Hunyuan), the router (Qwen) and the result verifier (Kimi), whose
+ * score becomes ERC-8004 feedback. Each is optional — a broker with a role
+ * switched off simply doesn't send it — and each names the exact model, so the
+ * buyer knows which model judged their job.
+ */
+function AiChecks({ job }: { job: Job }) {
+  const info = useNetworkInfo();
+  const { screening, routing, verification } = job;
+  if (!screening && !routing && !verification) return null;
+
+  return (
+    <section>
+      <h2 className="mb-2.5 text-[13px] font-medium text-fg">Network checks</h2>
+      <Panel className="divide-y divide-[var(--line)] px-4">
+        {screening ? (
+          <Check
+            label="Screened"
+            by={screening.by}
+            model={screening.model}
+            verdict={screening.verdict === "allow" ? "allowed" : "blocked"}
+            bad={screening.verdict !== "allow"}
+            text={screening.reason}
+          />
+        ) : null}
+        {routing ? (
+          <Check
+            label="Routed"
+            by={routing.by}
+            model={routing.model}
+            verdict={routing.adapter ? `→ ${routing.adapter}` : "→ price match"}
+            text={routing.reason}
+          />
+        ) : null}
+        {verification ? (
+          <Check
+            label="Verified"
+            by={verification.by}
+            model={verification.model}
+            verdict={`${verification.score}/100 · ${verification.pass ? "pass" : "fail"}`}
+            bad={!verification.pass}
+            text={verification.rationale}
+            link={
+              verification.feedbackTxHash
+                ? { href: explorerTx(NETWORK, verification.feedbackTxHash), label: "ERC-8004 feedback ↗" }
+                : info?.ai.verifier
+                  ? { label: "feedback pending" }
+                  : null
+            }
+          />
+        ) : null}
+      </Panel>
+    </section>
+  );
+}
+
+function Check({
+  label,
+  by,
+  model,
+  verdict,
+  bad,
+  text,
+  link,
+}: {
+  label: string;
+  by: string;
+  model: string;
+  verdict: string;
+  bad?: boolean;
+  text: string;
+  link?: { href?: string; label: string } | null;
+}) {
+  return (
+    <div className="py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p className="text-[12.5px] text-fg-2">
+          {label} by <span className="capitalize">{by}</span>{" "}
+          <span className="mono text-[11.5px] text-fg-4">{model}</span>
+        </p>
+        <span className={cn("text-[12px]", bad ? "text-fail" : "text-fg-2")}>{verdict}</span>
+      </div>
+      {text ? <p className="mt-1 text-[12px] leading-relaxed text-fg-3">{text}</p> : null}
+      {link ? (
+        <p className="mt-1 text-[11.5px] text-fg-4">{link.href ? <Ext href={link.href}>{link.label}</Ext> : link.label}</p>
+      ) : null}
     </div>
   );
 }
