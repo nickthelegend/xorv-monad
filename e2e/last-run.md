@@ -1,6 +1,6 @@
 # Xorv end-to-end run
 
-**PASS** — 168/168 checks, 20 steps, 90.3 s. Started 2026-09-26T18:37:17.496Z.
+**PASS** — 174/174 checks, 21 steps, 218.2 s. Started 2026-09-26T19:16:20.284Z.
 
 Produced by `pnpm e2e` (see [README.md](README.md)). Every value below was read back from the
 forked chain or the running processes during the run; transaction hashes are local to that fork.
@@ -11,65 +11,65 @@ forked chain or the running processes during the run; transaction hashes are loc
 |---|---|
 | node | v22.21.1 |
 | platform | win32 10.0.22631 |
-| duration | 90.2 s |
+| duration | 218.2 s |
 | logs | (removed after a passing run) |
 
 ## Parties
 
 | | |
 |---|---|
-| operator (broker EOA: ledger writes, rating relay, Kimi feedback) | `0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4` |
-| facilitator (submits EIP-3009 authorizations, pays settlement gas) | `0x6F9C9a30E79240123F75E59B5F479C05090677e7` |
-| provider (payout address = ERC-8004 agent wallet) | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
-| buyer (USDC only, no MON) | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
+| operator (broker EOA: ledger writes, rating relay, Kimi feedback) | `0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8` |
+| facilitator (submits EIP-3009 authorizations, pays settlement gas) | `0xAa836D4b6579268f0098ad4afa9A548582013602` |
+| provider (payout address = ERC-8004 agent wallet) | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
+| buyer (USDC only, no MON) | `0x448bb5458912C227026DB2642500770F312465EA` |
 | provider ERC-8004 agent id | 1933 |
-| provider id (broker) | prv_0torF89hxrGp |
+| provider id (broker) | prv_dKXOdVrQcw03 |
 
 ## Chain
 
 | | |
 |---|---|
-| fork RPC | http://127.0.0.1:62722 |
-| forked from | https://testnet-rpc.monad.xyz at block 65922007 |
+| fork RPC | http://127.0.0.1:1270 |
+| forked from | https://testnet-rpc.monad.xyz at block 65929744 |
 | chain id | 10143 |
 | USDC (Circle FiatToken, forked) | `0x534b2f3A21130d7a60830c2Df862319e593943A3` |
 | ERC-8004 Identity Registry (forked) | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 | ERC-8004 Reputation Registry (forked) | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
 | buyer USDC funding | minted via masterMinter 0x87f2e95621D8f12b83bb4a3E9975c0eAd524D437 |
 | XorvLedger | `0xC0BF43A4Ca27e0976195E6661b099742f10507e5` |
-| XorvLedger deploy tx | `0xdfb579156bd667817f3a104d4abe481baae01ae0257b230dc68c094d6a51cd2d` |
+| XorvLedger deploy tx | `0x99916ccda93ab05de3782a6d00bfbe3b3f5b66094c7cdddfe1f8f55862d9ba2d` |
 
 ## Processes
 
 | | |
 |---|---|
-| broker | http://127.0.0.1:4467 |
+| broker | http://127.0.0.1:27774 |
 
 ## Jobs
 
 | | |
 |---|---|
-| CLI job | job_CNUk81G6_g-q |
-| MCP job | job_4tpjDXx5ssuY |
-| private job | job_B8uQEHV2trsw |
+| CLI job | job_N0MhWxuTpyR0 |
+| MCP job | job_40JiX_m_XZnS |
+| private job | job_XmJZZ1o_PZoZ |
 
 ## Transactions
 
 | | |
 |---|---|
-| cli job settlement | `0x2af1193810646b3e43782dcd006dba7cab2fcd8112d1ee3d3a58ebea9380b260` |
-| mcp job settlement | `0x91ecd970a28971bec64e0ca0d158e1f208d47e5c95d90ace5c43bf9cfd86dbe0` |
-| private job settlement | `0xb9a17166bd6e375119086821ce153822ffb9dfcf0228f10801b5572bcc703e5b` |
-| ProviderRegistered | `0xccbf88cf8d9ac3cbf8576b9bae7542616f55f51d06a9416926a7daa2b8062165` |
-| cli job receipt (JobRecorded) | `0x1da9337b0363b67e9604721792fb2f866e9721a9a1fe610020b217bcfb21ee79` |
-| mcp job receipt (JobRecorded) | `0x296a079ab50ab7f434847a8a98c776ffe46336102a0dda70e86d3b0677110061` |
-| private job receipt (JobRecorded) | `0x7cf7ee3d6749db6b39c87ba7a79a830b06da9c8156ecb095407bfc12f688abb5` |
-| cli job rating (JobRated) | `0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d` |
-| mcp job rating (JobRated) | `0xec3da39dc23a72a0b01cbbfab0370ea7f03af14c0ec05b668806243356111653` |
-| cli job Kimi feedback (NewFeedback) | `0x0f63842634cdbc52fc92828f0dc12e18dcac18a01116c04fce15ab3f942978ec` |
-| mcp job Kimi feedback (NewFeedback) | `0x4f023b79704c48acfdcc34b652051fde41e89fec6ef7c371b134fcc0de54603e` |
-| cli job rating (NewFeedback) | `0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d` |
-| mcp job rating (NewFeedback) | `0xec3da39dc23a72a0b01cbbfab0370ea7f03af14c0ec05b668806243356111653` |
+| cli job settlement | `0x661ed22287ad37bfb1234beb55f758eb34251b92005cfe7068eea5fc80bb8d98` |
+| mcp job settlement | `0x1f1ead2f5c52283abf5f7d7426f3b9921529c2a9ae5f4b1b0e93a2db85855a00` |
+| private job settlement | `0x19c327681dfc9347406f870fd3ab880b65df514ef0dce13823782a893294fe53` |
+| ProviderRegistered | `0x47f5d1814c9a57158f13820b6e90d60ecaca015236d8afae0208805ecc766a35` |
+| cli job receipt (JobRecorded) | `0x4de60be4fd2a5766cc68d6fe88013bcd652d9274121974b6d57c8fb0cbd4d1cf` |
+| mcp job receipt (JobRecorded) | `0x9e2f69b1887416363a7084cafc3a81d88a578f45e333f1b2974dad858e30e81c` |
+| private job receipt (JobRecorded) | `0xf460f42197d5a44edcc2cafb3a43aa7faef9c0ac524c1072f6bdcb531b6bfb32` |
+| cli job rating (JobRated) | `0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339` |
+| mcp job rating (JobRated) | `0x59594fc108cce2aa5f7fccad9c0eeecfecd07e2fef82a287c4093ffb084d5dc5` |
+| cli job Kimi feedback (NewFeedback) | `0x3986add361aae063a53bd03ba3f3f62546d653b95362ffe131224ae90bd3c516` |
+| mcp job Kimi feedback (NewFeedback) | `0x58377c17f2099c1ed8a51157b68cf54f5dc3780ff3be5a7a6b5d17a140f55769` |
+| cli job rating (NewFeedback) | `0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339` |
+| mcp job rating (NewFeedback) | `0x59594fc108cce2aa5f7fccad9c0eeecfecd07e2fef82a287c4093ffb084d5dc5` |
 
 ## AI roles (mock)
 
@@ -84,26 +84,27 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 | # | Step | Time | Result |
 |---|---|---:|---|
-| 1 | preflight | 0.0 s | ok |
-| 2 | start the mock OpenAI-compatible model server | 0.2 s | ok |
-| 3 | fork Monad testnet (Hardhat 3 / EDR, chain id 10143) | 15.9 s | ok |
-| 4 | check the forked contracts are the real ones | 4.3 s | ok |
-| 5 | fund the parties | 4.4 s | ok |
-| 6 | deploy XorvLedger with packages/contracts' deploy script | 15.0 s | ok |
-| 7 | start the broker (services/broker, self-hosted facilitator, AI roles on the mock) | 8.8 s | ok |
-| 8 | provider: register an ERC-8004 identity (xorv identity register) | 9.8 s | ok |
-| 9 | provider: go live (xorv start) | 5.5 s | ok |
+| 1 | preflight | 0.1 s | ok |
+| 2 | start the mock OpenAI-compatible model server | 0.0 s | ok |
+| 3 | fork Monad testnet (Hardhat 3 / EDR, chain id 10143) | 85.6 s | ok |
+| 4 | check the forked contracts are the real ones | 6.9 s | ok |
+| 5 | fund the parties | 6.2 s | ok |
+| 6 | deploy XorvLedger with packages/contracts' deploy script | 21.3 s | ok |
+| 7 | start the broker (services/broker, self-hosted facilitator, AI roles on the mock) | 19.2 s | ok |
+| 8 | provider: register an ERC-8004 identity (xorv identity register) | 16.0 s | ok |
+| 9 | provider: go live (xorv start) | 8.4 s | ok |
 | 10 | Hunyuan screen refuses an abusive prompt before any quote | 0.0 s | ok |
-| 11 | buyer: xorv run --json (Qwen routes, x402 pays, qwen adapter answers) | 8.2 s | ok |
+| 11 | buyer: xorv run --json (Qwen routes, x402 pays, qwen adapter answers) | 14.0 s | ok |
 | 12 | Kimi verifies the result and writes ERC-8004 feedback | 0.0 s | ok |
-| 13 | buyer rates the job through the broker API (EIP-712, gasless) | 2.5 s | ok |
-| 14 | agent buyer: the MCP server over stdio (xorv_run_job, xorv_rate_job) | 11.7 s | ok |
-| 15 | private job through the broker API (sealed to the buyer's inbox key) | 2.2 s | ok |
+| 13 | buyer rates the job through the broker API (EIP-712, gasless) | 2.7 s | ok |
+| 14 | agent buyer: the MCP server over stdio (xorv_run_job, xorv_rate_job) | 29.1 s | ok |
+| 15 | private job through the broker API (sealed to the buyer's inbox key) | 4.7 s | ok |
 | 16 | on-chain: x402 settlements (real USDC, facilitator pays gas) | 0.0 s | ok |
-| 17 | on-chain: XorvLedger events | 0.0 s | ok |
+| 17 | on-chain: XorvLedger events | 0.1 s | ok |
 | 18 | on-chain: ERC-8004 reputation (canonical Reputation Registry) | 0.0 s | ok |
 | 19 | the broker's own views agree with the chain | 0.0 s | ok |
-| 20 | the private answer never touched the broker's disk | 0.0 s | ok |
+| 20 | the provider's own log is a record of its jobs | 0.0 s | ok |
+| 21 | the private answer never touched the broker's disk | 0.0 s | ok |
 
 ## Checks
 
@@ -131,7 +132,7 @@ forked chain or the running processes during the run; transaction hashes are loc
 |---|---|---|
 | ✅ | ledger.identity() is the canonical Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 | ✅ | ledger.reputation() is the canonical Reputation Registry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
-| ✅ | ledger.broker() is the operator | `0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4` |
+| ✅ | ledger.broker() is the operator | `0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8` |
 
 ### Start the broker (services/broker, self-hosted facilitator, AI roles on the mock)
 
@@ -141,22 +142,22 @@ forked chain or the running processes during the run; transaction hashes are loc
 | ✅ | broker chain id | 10143 |
 | ✅ | broker prices in the forked USDC | `0x534b2f3A21130d7a60830c2Df862319e593943A3` |
 | ✅ | facilitator is self-hosted | self |
-| ✅ | facilitator EOA | `0x6F9C9a30E79240123F75E59B5F479C05090677e7` |
+| ✅ | facilitator EOA | `0xAa836D4b6579268f0098ad4afa9A548582013602` |
 | ✅ | payments are available | true |
 | ✅ | ledger address | `0xC0BF43A4Ca27e0976195E6661b099742f10507e5` |
 | ✅ | ledger mode | write |
 | ✅ | screener | hunyuan |
 | ✅ | router | qwen |
 | ✅ | verifier | kimi |
-| ✅ | verifier writes ERC-8004 feedback from the operator | `0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4` |
+| ✅ | verifier writes ERC-8004 feedback from the operator | `0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8` |
 
 ### Provider: register an ERC-8004 identity (xorv identity register)
 
 | | Check | Detail |
 |---|---|---|
-| ✅ | agent owner is the provider's payout address | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
-| ✅ | agent wallet is the provider's payout address | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
-| ✅ | agentURI is the broker's registration file | http://127.0.0.1:4467/agents/e2e-node-xtchil3y.json |
+| ✅ | agent owner is the provider's payout address | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
+| ✅ | agent wallet is the provider's payout address | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
+| ✅ | agentURI is the broker's registration file | http://127.0.0.1:27774/agents/e2e-node-0qatav61.json |
 
 ### Provider: go live (xorv start)
 
@@ -179,16 +180,16 @@ forked chain or the running processes during the run; transaction hashes are loc
 | | Check | Detail |
 |---|---|---|
 | ✅ | job completed | completed |
-| ✅ | payer is the buyer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
+| ✅ | payer is the buyer | `0x448bb5458912C227026DB2642500770F312465EA` |
 | ✅ | screened by Hunyuan and allowed | hunyuan:allow |
 | ✅ | routed by Qwen | qwen |
 | ✅ | router's pick (over the cheaper echo) is the quoted adapter | qwen/qwen |
 | ✅ | quote freezes $0.04 = 40000 USDC units | 40000 |
-| ✅ | payTo is the provider, not the broker | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
-| ✅ | result came from the provider's qwen adapter (mock answer token) | ans-21cd93a46116e9fc2aec |
-| ✅ | resultHash = keccak256(result) | `0x3748c75ea6097e4325b7bb96412bf42b169374f1e57a5368d9147a9da175f2fa` |
-| ✅ | settlement tx reported | `0x2af1193810646b3e43782dcd006dba7cab2fcd8112d1ee3d3a58ebea9380b260` |
-| ✅ | XorvLedger receipt tx reported | `0x1da9337b0363b67e9604721792fb2f866e9721a9a1fe610020b217bcfb21ee79` |
+| ✅ | payTo is the provider, not the broker | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
+| ✅ | result came from the provider's qwen adapter (mock answer token) | ans-fe724aa6b7dd6a3928ec |
+| ✅ | resultHash = keccak256(result) | `0x7f4f40b643dc2e63f311eaff46373c59c8a988b648e3a346853ccc3dcf1b84aa` |
+| ✅ | settlement tx reported | `0x661ed22287ad37bfb1234beb55f758eb34251b92005cfe7068eea5fc80bb8d98` |
+| ✅ | XorvLedger receipt tx reported | `0x4de60be4fd2a5766cc68d6fe88013bcd652d9274121974b6d57c8fb0cbd4d1cf` |
 
 ### Kimi verifies the result and writes ERC-8004 feedback
 
@@ -201,11 +202,11 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 | | Check | Detail |
 |---|---|---|
-| ✅ | rating signer is the payer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
+| ✅ | rating signer is the payer | `0x448bb5458912C227026DB2642500770F312465EA` |
 | ✅ | rating is for the provider's agent | 1933 |
 | ✅ | typed data domain is this XorvLedger | `0xC0BF43A4Ca27e0976195E6661b099742f10507e5` |
 | ✅ | a stranger's signature is refused | 401 |
-| ✅ | served feedback file hashes to the committed feedbackHash | `0x9fd1c141f6dd2ff256380efdf2c406adfb39e9dab1105441530b340edf4bf9ff` |
+| ✅ | served feedback file hashes to the committed feedbackHash | `0x1fb0f2c9bbb1b7f94b7f71cde5a851a5315c44288d0ccbcd51aad0cfa9cc7e7c` |
 
 ### Agent buyer: the MCP server over stdio (xorv_run_job, xorv_rate_job)
 
@@ -223,29 +224,31 @@ forked chain or the running processes during the run; transaction hashes are loc
 | ✅ | job is flagged private | true |
 | ✅ | prompt is redacted from the public job |  |
 | ✅ | the broker holds a sealed envelope | alg x25519-hkdf-sha256-aes256gcm |
-| ✅ | the buyer's inbox key opens it to the provider's answer | ans-298555c1b3d3f8a14fb9 |
+| ✅ | the buyer's inbox key opens it to the provider's answer | ans-46cf730a00c0066c26b3 |
+| ✅ | another inbox key cannot open it | DECRYPT_FAILED |
+| ✅ | it is bound to its job id | DECRYPT_FAILED |
 | ✅ | the plaintext answer is nowhere in the broker's API |  |
 | ✅ | the plaintext answer never reached the Kimi verifier |  |
 | ✅ | the private job was not verified (no readable result) |  |
-| ✅ | resultHash commits to the envelope | `0xc5e2ac925fc25b2f684cb370c23105dd3317062a0c7109a43a55ee4cb96391f3` |
+| ✅ | resultHash commits to the envelope | `0xafa81d0b936bb2c5c0b96d1df294ba73b16d0d6b64502986c6f46f379b073055` |
 
 ### On-chain: x402 settlements (real USDC, facilitator pays gas)
 
 | | Check | Detail |
 |---|---|---|
 | ✅ | cli: settlement succeeded | success |
-| ✅ | cli: sent (and gas paid) by the facilitator | `0x6F9C9a30E79240123F75E59B5F479C05090677e7` |
-| ✅ | cli: USDC Transfer buyer → provider for exactly 40000 | 0x7F883811A53d7E7EB5BE3E4dDF6115473696e861→0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3 40000 |
+| ✅ | cli: sent (and gas paid) by the facilitator | `0xAa836D4b6579268f0098ad4afa9A548582013602` |
+| ✅ | cli: USDC Transfer buyer → provider for exactly 40000 | 0x448bb5458912C227026DB2642500770F312465EA→0x19957eF079d30419Fc65fD355D572b3E296eab42 40000 |
 | ✅ | cli: EIP-3009 authorization used by the buyer |  |
 | ✅ | cli: job.payment.amount | 40000 |
 | ✅ | mcp: settlement succeeded | success |
-| ✅ | mcp: sent (and gas paid) by the facilitator | `0x6F9C9a30E79240123F75E59B5F479C05090677e7` |
-| ✅ | mcp: USDC Transfer buyer → provider for exactly 1000 | 0x7F883811A53d7E7EB5BE3E4dDF6115473696e861→0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3 1000 |
+| ✅ | mcp: sent (and gas paid) by the facilitator | `0xAa836D4b6579268f0098ad4afa9A548582013602` |
+| ✅ | mcp: USDC Transfer buyer → provider for exactly 1000 | 0x448bb5458912C227026DB2642500770F312465EA→0x19957eF079d30419Fc65fD355D572b3E296eab42 1000 |
 | ✅ | mcp: EIP-3009 authorization used by the buyer |  |
 | ✅ | mcp: job.payment.amount | 1000 |
 | ✅ | private: settlement succeeded | success |
-| ✅ | private: sent (and gas paid) by the facilitator | `0x6F9C9a30E79240123F75E59B5F479C05090677e7` |
-| ✅ | private: USDC Transfer buyer → provider for exactly 40000 | 0x7F883811A53d7E7EB5BE3E4dDF6115473696e861→0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3 40000 |
+| ✅ | private: sent (and gas paid) by the facilitator | `0xAa836D4b6579268f0098ad4afa9A548582013602` |
+| ✅ | private: USDC Transfer buyer → provider for exactly 40000 | 0x448bb5458912C227026DB2642500770F312465EA→0x19957eF079d30419Fc65fD355D572b3E296eab42 40000 |
 | ✅ | private: EIP-3009 authorization used by the buyer |  |
 | ✅ | private: job.payment.amount | 40000 |
 | ✅ | buyer USDC balance | 4919000 |
@@ -257,100 +260,109 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 | | Check | Detail |
 |---|---|---|
-| ✅ | ProviderRegistered for the provider | `0xccbf88cf8d9ac3cbf8576b9bae7542616f55f51d06a9416926a7daa2b8062165` |
-| ✅ | ProviderRegistered.payTo | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
+| ✅ | ProviderRegistered for the provider | `0x47f5d1814c9a57158f13820b6e90d60ecaca015236d8afae0208805ecc766a35` |
+| ✅ | ProviderRegistered.payTo | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
 | ✅ | ProviderRegistered.agentId | 1933 |
 | ✅ | ProviderRegistered.label | e2e-provider |
 | ✅ | ProviderRegistered.capabilities | echo:1000,qwen:40000 |
-| ✅ | a sampled ProviderHeartbeat was published | `0xa56e2aa55bf7fac04dfab1cca71c745ef359031767054da7fe72e57746518cc0` |
-| ✅ | cli: JobRecorded | `0x1da9337b0363b67e9604721792fb2f866e9721a9a1fe610020b217bcfb21ee79` |
+| ✅ | a sampled ProviderHeartbeat was published | `0xb7c077346b8a4dd726d92e93ab9bd63e2ff5b524a5f62bbfd774357afc1e51fc` |
+| ✅ | cli: JobRecorded | `0x4de60be4fd2a5766cc68d6fe88013bcd652d9274121974b6d57c8fb0cbd4d1cf` |
 | ✅ | cli: JobRecorded.agentId | 1933 |
-| ✅ | cli: JobRecorded.buyer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
-| ✅ | cli: JobRecorded.payTo | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
+| ✅ | cli: JobRecorded.buyer | `0x448bb5458912C227026DB2642500770F312465EA` |
+| ✅ | cli: JobRecorded.payTo | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
 | ✅ | cli: JobRecorded.amount | 40000 |
-| ✅ | cli: JobRecorded.paymentTx is the settlement | `0x2af1193810646b3e43782dcd006dba7cab2fcd8112d1ee3d3a58ebea9380b260` |
-| ✅ | cli: JobRecorded.requestHash = keccak256(prompt) | `0xe22f6e2d727ac3da67b4d51021be3dd4e53868f3d033825b40a47fa40518e3b5` |
-| ✅ | cli: JobRecorded.resultHash = keccak256(result) | `0x3748c75ea6097e4325b7bb96412bf42b169374f1e57a5368d9147a9da175f2fa` |
+| ✅ | cli: JobRecorded.paymentTx is the settlement | `0x661ed22287ad37bfb1234beb55f758eb34251b92005cfe7068eea5fc80bb8d98` |
+| ✅ | cli: JobRecorded.requestHash = keccak256(prompt) | `0xdf64005a292084bd28f244db7385fa59bcd29b90aa198d1991225323388836dc` |
+| ✅ | cli: JobRecorded.resultHash = keccak256(result) | `0x7f4f40b643dc2e63f311eaff46373c59c8a988b648e3a346853ccc3dcf1b84aa` |
 | ✅ | cli: JobRecorded.ok | true |
-| ✅ | cli: the broker's receiptTxHash is that transaction | `0x1da9337b0363b67e9604721792fb2f866e9721a9a1fe610020b217bcfb21ee79` |
-| ✅ | mcp: JobRecorded | `0x296a079ab50ab7f434847a8a98c776ffe46336102a0dda70e86d3b0677110061` |
+| ✅ | cli: the broker's receiptTxHash is that transaction | `0x4de60be4fd2a5766cc68d6fe88013bcd652d9274121974b6d57c8fb0cbd4d1cf` |
+| ✅ | mcp: JobRecorded | `0x9e2f69b1887416363a7084cafc3a81d88a578f45e333f1b2974dad858e30e81c` |
 | ✅ | mcp: JobRecorded.agentId | 1933 |
-| ✅ | mcp: JobRecorded.buyer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
-| ✅ | mcp: JobRecorded.payTo | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
+| ✅ | mcp: JobRecorded.buyer | `0x448bb5458912C227026DB2642500770F312465EA` |
+| ✅ | mcp: JobRecorded.payTo | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
 | ✅ | mcp: JobRecorded.amount | 1000 |
-| ✅ | mcp: JobRecorded.paymentTx is the settlement | `0x91ecd970a28971bec64e0ca0d158e1f208d47e5c95d90ace5c43bf9cfd86dbe0` |
-| ✅ | mcp: JobRecorded.requestHash = keccak256(prompt) | `0x9fc5489df4422ff0e55c87848e07d103ed6ea7a51f43bced43afc69e74d4cb28` |
-| ✅ | mcp: JobRecorded.resultHash = keccak256(result) | `0x8fa74e31091b595515b1d9c9322990497680dd29925c35a6ae69be07cb49ed12` |
+| ✅ | mcp: JobRecorded.paymentTx is the settlement | `0x1f1ead2f5c52283abf5f7d7426f3b9921529c2a9ae5f4b1b0e93a2db85855a00` |
+| ✅ | mcp: JobRecorded.requestHash = keccak256(prompt) | `0x79c5a8868cd14446a1ada8ed4374fcc90257c693f5959e6b47a9b9e7af478828` |
+| ✅ | mcp: JobRecorded.resultHash = keccak256(result) | `0x9563fef959d2744056daa4bfa0807258dde25481cbc88eb9f72003f7cd9dd72c` |
 | ✅ | mcp: JobRecorded.ok | true |
-| ✅ | mcp: the broker's receiptTxHash is that transaction | `0x296a079ab50ab7f434847a8a98c776ffe46336102a0dda70e86d3b0677110061` |
-| ✅ | private: JobRecorded | `0x7cf7ee3d6749db6b39c87ba7a79a830b06da9c8156ecb095407bfc12f688abb5` |
+| ✅ | mcp: the broker's receiptTxHash is that transaction | `0x9e2f69b1887416363a7084cafc3a81d88a578f45e333f1b2974dad858e30e81c` |
+| ✅ | private: JobRecorded | `0xf460f42197d5a44edcc2cafb3a43aa7faef9c0ac524c1072f6bdcb531b6bfb32` |
 | ✅ | private: JobRecorded.agentId | 1933 |
-| ✅ | private: JobRecorded.buyer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
-| ✅ | private: JobRecorded.payTo | `0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3` |
+| ✅ | private: JobRecorded.buyer | `0x448bb5458912C227026DB2642500770F312465EA` |
+| ✅ | private: JobRecorded.payTo | `0x19957eF079d30419Fc65fD355D572b3E296eab42` |
 | ✅ | private: JobRecorded.amount | 40000 |
-| ✅ | private: JobRecorded.paymentTx is the settlement | `0xb9a17166bd6e375119086821ce153822ffb9dfcf0228f10801b5572bcc703e5b` |
-| ✅ | private: JobRecorded.requestHash = keccak256(prompt) | `0xdabc72310ca6bb0a4da31176153f3c5cf6ed201118ce6671fe0271a7a11bc5d6` |
-| ✅ | private: JobRecorded.resultHash = keccak256(result) | `0xc5e2ac925fc25b2f684cb370c23105dd3317062a0c7109a43a55ee4cb96391f3` |
+| ✅ | private: JobRecorded.paymentTx is the settlement | `0x19c327681dfc9347406f870fd3ab880b65df514ef0dce13823782a893294fe53` |
+| ✅ | private: JobRecorded.requestHash = keccak256(prompt) | `0x099a76cc50b886a869b0e1de94a35a8f6ca670455bfffc21aa5e5b10dbe52d88` |
+| ✅ | private: JobRecorded.resultHash = keccak256(result) | `0xafa81d0b936bb2c5c0b96d1df294ba73b16d0d6b64502986c6f46f379b073055` |
 | ✅ | private: JobRecorded.ok | true |
-| ✅ | private: the broker's receiptTxHash is that transaction | `0x7cf7ee3d6749db6b39c87ba7a79a830b06da9c8156ecb095407bfc12f688abb5` |
-| ✅ | private: the on-chain resultHash is keccak256 of the sealed envelope | `0xc5e2ac925fc25b2f684cb370c23105dd3317062a0c7109a43a55ee4cb96391f3` |
-| ✅ | cli: JobRated | `0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d` |
+| ✅ | private: the broker's receiptTxHash is that transaction | `0xf460f42197d5a44edcc2cafb3a43aa7faef9c0ac524c1072f6bdcb531b6bfb32` |
+| ✅ | private: the on-chain resultHash is keccak256 of the sealed envelope | `0xafa81d0b936bb2c5c0b96d1df294ba73b16d0d6b64502986c6f46f379b073055` |
+| ✅ | cli: JobRated | `0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339` |
 | ✅ | cli: JobRated.value | 87 |
-| ✅ | cli: JobRated.buyer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
+| ✅ | cli: JobRated.buyer | `0x448bb5458912C227026DB2642500770F312465EA` |
 | ✅ | cli: JobRated.agentId | 1933 |
 | ✅ | cli: ledger.jobs() marks it rated |  |
-| ✅ | mcp: JobRated | `0xec3da39dc23a72a0b01cbbfab0370ea7f03af14c0ec05b668806243356111653` |
+| ✅ | mcp: JobRated | `0x59594fc108cce2aa5f7fccad9c0eeecfecd07e2fef82a287c4093ffb084d5dc5` |
 | ✅ | mcp: JobRated.value | 64 |
-| ✅ | mcp: JobRated.buyer | `0x7F883811A53d7E7EB5BE3E4dDF6115473696e861` |
+| ✅ | mcp: JobRated.buyer | `0x448bb5458912C227026DB2642500770F312465EA` |
 | ✅ | mcp: JobRated.agentId | 1933 |
 | ✅ | mcp: ledger.jobs() marks it rated |  |
-| ✅ | cli: the relay tx the broker returned is the JobRated tx | `0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d` |
+| ✅ | cli: the relay tx the broker returned is the JobRated tx | `0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339` |
 | ✅ | private: not rated |  |
 
 ### On-chain: ERC-8004 reputation (canonical Reputation Registry)
 
 | | Check | Detail |
 |---|---|---|
-| ✅ | cli: Kimi's NewFeedback (tag1 "xorv-verified") | `0x0f63842634cdbc52fc92828f0dc12e18dcac18a01116c04fce15ab3f942978ec` |
-| ✅ | cli: verifier feedback client is the verifier EOA | `0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4` |
+| ✅ | cli: Kimi's NewFeedback (tag1 "xorv-verified") | `0x3986add361aae063a53bd03ba3f3f62546d653b95362ffe131224ae90bd3c516` |
+| ✅ | cli: verifier feedback client is the verifier EOA | `0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8` |
 | ✅ | cli: verifier feedback value | 92 |
 | ✅ | cli: verifier feedback tag2 is the adapter | qwen |
-| ✅ | cli: verifier feedbackURI | http://127.0.0.1:4467/verifications/job_CNUk81G6_g-q.json |
-| ✅ | cli: served verification file hashes to the on-chain feedbackHash | `0x05cfb5e61c72237f43de0d91c1cc6fd5f218777923544848950453e49901f297` |
-| ✅ | mcp: Kimi's NewFeedback (tag1 "xorv-verified") | `0x4f023b79704c48acfdcc34b652051fde41e89fec6ef7c371b134fcc0de54603e` |
-| ✅ | mcp: verifier feedback client is the verifier EOA | `0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4` |
+| ✅ | cli: verifier feedbackURI | http://127.0.0.1:27774/verifications/job_N0MhWxuTpyR0.json |
+| ✅ | cli: served verification file hashes to the on-chain feedbackHash | `0xff83cda8c82ec75de0476d917bac1e2e1f5206946122ca5b33f020db138189db` |
+| ✅ | mcp: Kimi's NewFeedback (tag1 "xorv-verified") | `0x58377c17f2099c1ed8a51157b68cf54f5dc3780ff3be5a7a6b5d17a140f55769` |
+| ✅ | mcp: verifier feedback client is the verifier EOA | `0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8` |
 | ✅ | mcp: verifier feedback value | 92 |
 | ✅ | mcp: verifier feedback tag2 is the adapter | echo |
-| ✅ | mcp: verifier feedbackURI | http://127.0.0.1:4467/verifications/job_4tpjDXx5ssuY.json |
-| ✅ | mcp: served verification file hashes to the on-chain feedbackHash | `0xc82c666384a95311962f131eedefe73f556a650e97eb7de75168819c4dce93a4` |
+| ✅ | mcp: verifier feedbackURI | http://127.0.0.1:27774/verifications/job_40JiX_m_XZnS.json |
+| ✅ | mcp: served verification file hashes to the on-chain feedbackHash | `0x4bff9bdbd93bc36188cace6d71073c700cbb58620a4a504a3b504a3bcff7be19` |
 | ✅ | private: no verifier feedback | 2 xorv-verified entries |
-| ✅ | cli: the buyer's rating as NewFeedback (tag1 "starred") | `0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d` |
+| ✅ | cli: the buyer's rating as NewFeedback (tag1 "starred") | `0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339` |
 | ✅ | cli: rating feedback client is XorvLedger | `0xC0BF43A4Ca27e0976195E6661b099742f10507e5` |
 | ✅ | cli: rating feedback value | 87 |
-| ✅ | cli: rating endpoint is the broker's jobs service | http://127.0.0.1:4467/api/quotes |
-| ✅ | cli: served feedback file hashes to the on-chain feedbackHash | `0x9fd1c141f6dd2ff256380efdf2c406adfb39e9dab1105441530b340edf4bf9ff` |
-| ✅ | mcp: the buyer's rating as NewFeedback (tag1 "starred") | `0xec3da39dc23a72a0b01cbbfab0370ea7f03af14c0ec05b668806243356111653` |
+| ✅ | cli: rating endpoint is the broker's jobs service | http://127.0.0.1:27774/api/quotes |
+| ✅ | cli: served feedback file hashes to the on-chain feedbackHash | `0x1fb0f2c9bbb1b7f94b7f71cde5a851a5315c44288d0ccbcd51aad0cfa9cc7e7c` |
+| ✅ | mcp: the buyer's rating as NewFeedback (tag1 "starred") | `0x59594fc108cce2aa5f7fccad9c0eeecfecd07e2fef82a287c4093ffb084d5dc5` |
 | ✅ | mcp: rating feedback client is XorvLedger | `0xC0BF43A4Ca27e0976195E6661b099742f10507e5` |
 | ✅ | mcp: rating feedback value | 64 |
-| ✅ | mcp: rating endpoint is the broker's jobs service | http://127.0.0.1:4467/api/quotes |
-| ✅ | mcp: served feedback file hashes to the on-chain feedbackHash | `0x380cbb9bb852c11127647908f547872f67c4d996dda3fadaeccc6c29aab94b2e` |
-| ✅ | cli: rating feedbackHash is what the buyer signed | `0x9fd1c141f6dd2ff256380efdf2c406adfb39e9dab1105441530b340edf4bf9ff` |
+| ✅ | mcp: rating endpoint is the broker's jobs service | http://127.0.0.1:27774/api/quotes |
+| ✅ | mcp: served feedback file hashes to the on-chain feedbackHash | `0x41644adc9e642ee5f379b76231585c844e97120d02499f957cdef48a6740a485` |
+| ✅ | cli: rating feedbackHash is what the buyer signed | `0x1fb0f2c9bbb1b7f94b7f71cde5a851a5315c44288d0ccbcd51aad0cfa9cc7e7c` |
 | ✅ | getSummary([ledger], "starred").count | 2 |
 | ✅ | getSummary([ledger], "starred") is the registry's mean of those NewFeedback values | 75 (0 decimals) |
 | ✅ | getSummary([verifier], "xorv-verified").count | 2 |
 | ✅ | getSummary([verifier], "xorv-verified") is the registry's mean of those NewFeedback values | 92 (0 decimals) |
-| ✅ | getClients lists XorvLedger and the verifier | 0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4, 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 |
+| ✅ | getClients lists XorvLedger and the verifier | 0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8, 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 |
 
 ### The broker's own views agree with the chain
 
 | | Check | Detail |
 |---|---|---|
 | ✅ | ledger feed source (RPC scan of the fork) | rpc |
-| ✅ | ledger feed links all three receipts to their jobs | job_B8uQEHV2trsw, job_4tpjDXx5ssuY, job_CNUk81G6_g-q |
+| ✅ | ledger feed links all three receipts to their jobs | job_XmJZZ1o_PZoZ, job_40JiX_m_XZnS, job_N0MhWxuTpyR0 |
 | ✅ | ledger feed has both ratings | 2 |
 | ✅ | leaderboard lists the provider |  |
 | ✅ | no ledger publish errors | null |
 | ✅ | no receipts left queued | 0 |
+
+### The provider's own log is a record of its jobs
+
+| | Check | Detail |
+|---|---|---|
+| ✅ | cli: logged once, as done | 1 |
+| ✅ | mcp: logged once, as done | 1 |
+| ✅ | private: logged once, as done | 1 |
+| ✅ | the status footer is printed once, not once a second | 1 |
 
 ### The private answer never touched the broker's disk
 
@@ -364,28 +376,28 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 **preflight**
 
-- run directory E:\Projects\xorv-monad-wt\cli\e2e\.runs\2026-09-26T18-37-17-524Z-7KXAOO
+- run directory E:\Projects\xorv-monad-wt\cli\e2e\.runs\2026-09-26T19-16-20-294Z-Qz7RCD
 - forking https://testnet-rpc.monad.xyz at its latest block
 
 **start the mock OpenAI-compatible model server**
 
-- listening on http://127.0.0.1:62721 (/qwen/v1, /kimi/v1, /hunyuan/v1)
+- listening on http://127.0.0.1:1269 (/qwen/v1, /kimi/v1, /hunyuan/v1)
 
 **fork Monad testnet (Hardhat 3 / EDR, chain id 10143)**
 
-- serving http://127.0.0.1:62722, forked at block 65922007
+- serving http://127.0.0.1:1270, forked at block 65929744
 
 **fund the parties**
 
-- minted 5.00 USDC through the token's masterMinter 0x87f2e95621D8f12b83bb4a3E9975c0eAd524D437 (configureMinter 0x1a356ac5f70d3ebe3f3bd8a86f17f1d808109ccdd39710818c6ff9e47c24cd0e, mint 0xf975381398a9283c36e44abd65e5a3b9ac11ae6656cc6ec612c93acba1757645)
+- minted 5.00 USDC through the token's masterMinter 0x87f2e95621D8f12b83bb4a3E9975c0eAd524D437 (configureMinter 0xc7c3eed3f6779862b27428f97e8220d36cdc1f21245e3852ea99c09f38c0cd20, mint 0x9826fef70a13156e9c035edbd2251989b4b196544b241e43779b985333c5f06c)
 
 **deploy XorvLedger with packages/contracts' deploy script**
 
-- XorvLedger at 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 (block 65922010, tx 0xdfb579156bd667817f3a104d4abe481baae01ae0257b230dc68c094d6a51cd2d)
+- XorvLedger at 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 (block 65929747, tx 0x99916ccda93ab05de3782a6d00bfbe3b3f5b66094c7cdddfe1f8f55862d9ba2d)
 
 **start the broker (services/broker, self-hosted facilitator, AI roles on the mock)**
 
-- listening on http://127.0.0.1:4467
+- listening on http://127.0.0.1:27774
 
 **provider: register an ERC-8004 identity (xorv identity register)**
 
@@ -393,8 +405,8 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 **provider: go live (xorv start)**
 
-- provider prv_0torF89hxrGp connected, agent #1933
-- ProviderRegistered in 0xccbf88cf8d9ac3cbf8576b9bae7542616f55f51d06a9416926a7daa2b8062165
+- provider prv_dKXOdVrQcw03 connected, agent #1933
+- ProviderRegistered in 0x47f5d1814c9a57158f13820b6e90d60ecaca015236d8afae0208805ecc766a35
 
 **Hunyuan screen refuses an abusive prompt before any quote**
 
@@ -402,31 +414,31 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 **buyer: xorv run --json (Qwen routes, x402 pays, qwen adapter answers)**
 
-- job job_CNUk81G6_g-q completed in 2.1s; paid in 0x2af1193810646b3e43782dcd006dba7cab2fcd8112d1ee3d3a58ebea9380b260
+- job job_N0MhWxuTpyR0 completed in 3.1s; paid in 0x661ed22287ad37bfb1234beb55f758eb34251b92005cfe7068eea5fc80bb8d98
 
 **Kimi verifies the result and writes ERC-8004 feedback**
 
-- score 92/100 by kimi-k3; giveFeedback 0x0f63842634cdbc52fc92828f0dc12e18dcac18a01116c04fce15ab3f942978ec
+- score 92/100 by kimi-k3; giveFeedback 0x3986add361aae063a53bd03ba3f3f62546d653b95362ffe131224ae90bd3c516
 
 **buyer rates the job through the broker API (EIP-712, gasless)**
 
-- rateJob relayed in 0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d
+- rateJob relayed in 0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339
 
 **agent buyer: the MCP server over stdio (xorv_run_job, xorv_rate_job)**
 
-- job job_4tpjDXx5ssuY
-- Relayed on-chain: https://testnet.monadscan.com/tx/0xec3da39dc23a72a0b01cbbfab0370ea7f03af14c0ec05b668806243356111653
+- job job_40JiX_m_XZnS
+- Relayed on-chain: https://testnet.monadscan.com/tx/0x59594fc108cce2aa5f7fccad9c0eeecfecd07e2fef82a287c4093ffb084d5dc5
 
 **private job through the broker API (sealed to the buyer's inbox key)**
 
-- job job_B8uQEHV2trsw completed; settlement 0xb9a17166bd6e375119086821ce153822ffb9dfcf0228f10801b5572bcc703e5b
-- receipt 0x7cf7ee3d6749db6b39c87ba7a79a830b06da9c8156ecb095407bfc12f688abb5
+- job job_XmJZZ1o_PZoZ completed; settlement 0x19c327681dfc9347406f870fd3ab880b65df514ef0dce13823782a893294fe53
+- receipt 0xf460f42197d5a44edcc2cafb3a43aa7faef9c0ac524c1072f6bdcb531b6bfb32
 
 **on-chain: x402 settlements (real USDC, facilitator pays gas)**
 
-- cli: 0x2af1193810646b3e43782dcd006dba7cab2fcd8112d1ee3d3a58ebea9380b260 — 40000 0x7F883811A53d7E7EB5BE3E4dDF6115473696e861→0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3; gas 102828
-- mcp: 0x91ecd970a28971bec64e0ca0d158e1f208d47e5c95d90ace5c43bf9cfd86dbe0 — 1000 0x7F883811A53d7E7EB5BE3E4dDF6115473696e861→0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3; gas 85740
-- private: 0xb9a17166bd6e375119086821ce153822ffb9dfcf0228f10801b5572bcc703e5b — 40000 0x7F883811A53d7E7EB5BE3E4dDF6115473696e861→0xf116e8b0E1c1e828dc97D28048ff9c7C9a61A6c3; gas 85720
+- cli: 0x661ed22287ad37bfb1234beb55f758eb34251b92005cfe7068eea5fc80bb8d98 — 40000 0x448bb5458912C227026DB2642500770F312465EA→0x19957eF079d30419Fc65fD355D572b3E296eab42; gas 102808
+- mcp: 0x1f1ead2f5c52283abf5f7d7426f3b9921529c2a9ae5f4b1b0e93a2db85855a00 — 1000 0x448bb5458912C227026DB2642500770F312465EA→0x19957eF079d30419Fc65fD355D572b3E296eab42; gas 85716
+- private: 0x19c327681dfc9347406f870fd3ab880b65df514ef0dce13823782a893294fe53 — 40000 0x448bb5458912C227026DB2642500770F312465EA→0x19957eF079d30419Fc65fD355D572b3E296eab42; gas 85716
 
 **on-chain: XorvLedger events**
 
@@ -434,7 +446,7 @@ forked chain or the running processes during the run; transaction hashes are loc
 
 **on-chain: ERC-8004 reputation (canonical Reputation Registry)**
 
-- xorv-verified/qwen 92 from 0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4 (0x0f63842634cdbc52fc92828f0dc12e18dcac18a01116c04fce15ab3f942978ec); starred/qwen 87 from 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 (0xa86c93e84943200047e49ba0c6df0443ac6effffb1c65ba8f697136e62a64d1d); xorv-verified/echo 92 from 0xA6B8dd1060b38B3a3aFc0771021f17EF2f9D1FF4 (0x4f023b79704c48acfdcc34b652051fde41e89fec6ef7c371b134fcc0de54603e); starred/echo 64 from 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 (0xec3da39dc23a72a0b01cbbfab0370ea7f03af14c0ec05b668806243356111653)
+- xorv-verified/qwen 92 from 0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8 (0x3986add361aae063a53bd03ba3f3f62546d653b95362ffe131224ae90bd3c516); starred/qwen 87 from 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 (0xbfbc9e0ec255d90c42c7eeaa398ebf3867aa295e575f09e8315d9a4f490ef339); xorv-verified/echo 92 from 0x79eA4B61CC9e924F49500B8f3803c80Ba9023Eb8 (0x58377c17f2099c1ed8a51157b68cf54f5dc3780ff3be5a7a6b5d17a140f55769); starred/echo 64 from 0xC0BF43A4Ca27e0976195E6661b099742f10507e5 (0x59594fc108cce2aa5f7fccad9c0eeecfecd07e2fef82a287c4093ffb084d5dc5)
 
 **the broker's own views agree with the chain**
 

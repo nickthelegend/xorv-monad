@@ -7,7 +7,7 @@ it forks Monad testnet.
 ```sh
 pnpm install
 pnpm build          # the harness runs the built broker, CLI and MCP server
-pnpm e2e            # ≈ 1–2 minutes; writes e2e/last-run.md
+pnpm e2e            # ≈ 2–4 minutes, most of it the fork reading the public RPC; writes e2e/last-run.md
 ```
 
 Exit code 0 means every step finished and every check held; anything else is a failure, with the tail of
