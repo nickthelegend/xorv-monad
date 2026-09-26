@@ -30,6 +30,7 @@ import {
   type PublicJob,
   type PublicProvider,
   type QuoteResponse,
+  type RatingInput,
 } from "@xorv/protocol";
 import { hashTypedData, verifyTypedData, type Hex, type TypedDataDomain } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -394,7 +395,12 @@ export function fakeBroker(script: BrokerScript = {}): FakeBroker {
       const typed = ratingTypedData({
         network: NETWORK,
         ledger: LEDGER_ADDRESS,
-        rating: { ...(request.typedData.message as never), jobId: jobIdHash(JOB_ID), value: sent.value, deadline: sent.deadline },
+        rating: {
+          ...(request.typedData.message as unknown as RatingInput),
+          jobId: jobIdHash(JOB_ID),
+          value: sent.value,
+          deadline: sent.deadline,
+        },
       });
       const valid = await verifyTypedData({ ...typed, address: PAYER.address, signature: sent.signature });
       if (!valid) return json({ error: "the signature is not from this job's payer" }, 401);

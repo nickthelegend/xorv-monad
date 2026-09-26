@@ -18,6 +18,7 @@ import {
   fakeMetaMask,
   paymentRequiredFor,
   quote,
+  type BrokerScript,
 } from "./helpers.js";
 
 describe("vetQuote", () => {
@@ -63,7 +64,7 @@ describe("vetQuote", () => {
 });
 
 describe("payForQuote: the 402 must match the vetted quote", () => {
-  async function attempt(paymentRequired: Parameters<typeof fakeBroker>[0]["paymentRequired"]) {
+  async function attempt(paymentRequired: BrokerScript["paymentRequired"]) {
     const broker = fakeBroker({ paymentRequired });
     const mm = fakeMetaMask();
     let signerError: unknown = null;
