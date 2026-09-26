@@ -126,12 +126,49 @@ async function teardown(): Promise<void> {
 }
 
 process.on("exit", () => group.killAllSync());
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
+// Ctrl-C, a kill, the terminal closing (SIGHUP, also on Windows) and Ctrl-Break (Windows) all end
+// the run the same way: torn down, reported, exit 130. The children usually get the same Ctrl-C and
+// die first, failing whatever step was running; the interruption stays the reported cause.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"] as const) {
+  if (!(signal in os.constants.signals)) continue;
   process.on(signal, () => {
     process.stderr.write(`\n${signal} — tearing down\n`);
-    report.error = `interrupted by ${signal}`;
-    void teardown().finally(() => process.exit(130));
+    report.error ??= `interrupted by ${signal}`;
+    void finish(130);
   });
+}
+
+let finishing: Promise<never> | null = null;
+
+/** Tear everything down, write the report, and exit — once, whichever path gets here first. */
+function finish(code: number): Promise<never> {
+  finishing ??= (async (): Promise<never> => {
+    await teardown();
+    const markdown = report.markdown({
+      command: "pnpm e2e",
+      environment: [
+        ["node", process.version],
+        ["platform", `${process.platform} ${os.release()}`],
+        ["duration", `${((Date.now() - report.startedAt.getTime()) / 1000).toFixed(1)} s`],
+        ["logs", report.passed && !KEEP_RUN ? "(removed after a passing run)" : "kept in the run directory"],
+      ],
+    });
+    const outFile = path.join(E2E_DIR, "last-run.md");
+    fs.writeFileSync(outFile, markdown);
+    process.stderr.write(`\n${bold(report.summaryLine())}\n${dim(`report: ${path.relative(process.cwd(), outFile)}`)}\n`);
+    if (report.passed && !KEEP_RUN) {
+      fs.rmSync(runDir, { recursive: true, force: true });
+    } else {
+      process.stderr.write(`${dim(`logs kept in ${path.join(runDir, "logs")}`)}\n`);
+    }
+    if (!report.passed) {
+      for (const proc of group.list()) {
+        if (proc.output.trim()) process.stderr.write(`\n--- ${proc.name} (last lines) ---\n${tail(proc.output, 25)}\n`);
+      }
+    }
+    process.exit(report.passed ? 0 : code);
+  })();
+  return finishing;
 }
 
 function makeRunDir(): string {
@@ -837,34 +874,10 @@ function formatUsdc(units: bigint): string {
 
 // -----------------------------------------------------------------------------
 
-const started = Date.now();
 try {
   await main();
 } catch (err) {
-  report.error = err instanceof Error ? err.message : String(err);
+  // An interruption that caused this failure stays the reported cause.
+  report.error ??= err instanceof Error ? err.message : String(err);
 }
-await teardown();
-
-const markdown = report.markdown({
-  command: "pnpm e2e",
-  environment: [
-    ["node", process.version],
-    ["platform", `${process.platform} ${os.release()}`],
-    ["duration", `${((Date.now() - started) / 1000).toFixed(1)} s`],
-    ["logs", report.passed && !KEEP_RUN ? "(removed after a passing run)" : "kept in the run directory"],
-  ],
-});
-const outFile = path.join(E2E_DIR, "last-run.md");
-fs.writeFileSync(outFile, markdown);
-process.stderr.write(`\n${bold(report.summaryLine())}\n${dim(`report: ${path.relative(process.cwd(), outFile)}`)}\n`);
-if (report.passed && !KEEP_RUN) {
-  fs.rmSync(runDir, { recursive: true, force: true });
-} else {
-  process.stderr.write(`${dim(`logs kept in ${path.join(runDir, "logs")}`)}\n`);
-}
-if (!report.passed) {
-  for (const proc of group.list()) {
-    if (proc.output.trim()) process.stderr.write(`\n--- ${proc.name} (last lines) ---\n${tail(proc.output, 25)}\n`);
-  }
-}
-process.exit(report.passed ? 0 : 1);
+await finish(1);

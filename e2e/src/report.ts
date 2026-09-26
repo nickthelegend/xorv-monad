@@ -93,11 +93,22 @@ export class Report {
   }
 
   summaryLine(): string {
-    const failed = this.checks.filter((c) => !c.ok).length;
     const total = Date.now() - this.startedAt.getTime();
     return this.passed
       ? green(`PASS — ${this.checks.length} checks, ${this.steps.length} steps, ${(total / 1000).toFixed(1)}s`)
-      : red(`FAIL — ${failed} of ${this.checks.length} checks failed${this.error ? `; ${this.error}` : ""}`);
+      : red(`FAIL — ${this.verdict()}`);
+  }
+
+  /** Why a run failed, in one line: the failed checks, and where it stopped if it did. */
+  private verdict(): string {
+    const failed = this.checks.filter((c) => !c.ok).length;
+    const parts = [`${failed} of ${this.checks.length} checks failed`];
+    const stoppedAt = this.steps.find((s) => !s.ok)?.name;
+    if (this.error) {
+      const reason = this.error.split("\n")[0]!.slice(0, 200);
+      parts.push(stoppedAt ? `stopped at "${stoppedAt}": ${reason}` : reason);
+    }
+    return parts.join("; ");
   }
 
   markdown(extra: { command: string; environment: Array<[string, string]> }): string {
@@ -106,8 +117,10 @@ export class Report {
     lines.push("# Xorv end-to-end run");
     lines.push("");
     lines.push(
-      `**${this.passed ? "PASS" : "FAIL"}** — ${this.checks.filter((c) => c.ok).length}/${this.checks.length} checks, ` +
-        `${this.steps.length} steps, ${(total / 1000).toFixed(1)} s. Started ${this.startedAt.toISOString()}.`,
+      this.passed
+        ? `**PASS** — ${this.checks.length}/${this.checks.length} checks, ${this.steps.length} steps, ` +
+            `${(total / 1000).toFixed(1)} s. Started ${this.startedAt.toISOString()}.`
+        : `**FAIL** — ${this.verdict()}. ${(total / 1000).toFixed(1)} s, started ${this.startedAt.toISOString()}.`,
     );
     lines.push("");
     lines.push(`Produced by \`${extra.command}\` (see [README.md](README.md)). Every value below was read back from the`);
