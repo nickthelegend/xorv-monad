@@ -1,0 +1,12 @@
+# Keep LF in the working tree on every OS: the broker image and the Envio
+# indexer run on Linux, where a CRLF shebang or YAML file fails in confusing ways.
+* text=auto eol=lf
+*.mp4 binary
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.woff binary
+*.ttf binary
+*.wav binary
+*.mp3 binary
+*.ico binary
