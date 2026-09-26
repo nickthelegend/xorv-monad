@@ -25,6 +25,7 @@ import {
   type MonadNetwork,
 } from "@xorv/protocol";
 import type { Address, PrivateKeyAccount } from "viem";
+import type { NansenConfig } from "./trust/index.js";
 
 // The repo keeps one .env at the root; the broker is two directories down
 // (the same relative path works from both src/ and dist/).
@@ -108,6 +109,12 @@ export interface BrokerConfig {
   mongoUri: string | null;
   mongoDb: string;
   ai: AiRoleConfig;
+  /**
+   * Nansen trust signals (src/trust/): provider wallet scores, the
+   * wash-rating guard and a matching tie-breaker, paid per call over x402 on
+   * Monad mainnet. Absent means off.
+   */
+  nansen?: NansenConfig;
 }
 
 function optional(name: string): string | null {
@@ -147,6 +154,81 @@ function failMode(name: string): "open" | "closed" {
   const raw = (optional(name) ?? "open").toLowerCase();
   if (raw === "open" || raw === "closed") return raw;
   throw new Error(`${name} must be "open" or "closed", got "${raw}"`);
+}
+
+/** A positive integer amount of USDC units (6 dp), e.g. 50000 for $0.05. */
+function usdcUnits(name: string, fallback: bigint): bigint {
+  const raw = optional(name);
+  if (raw === null) return fallback;
+  if (!/^\d+$/.test(raw) || BigInt(raw) === 0n) {
+    throw new Error(`${name} must be a positive whole number of USDC units (6 decimals, so 50000 = $0.05), got "${raw}"`);
+  }
+  return BigInt(raw);
+}
+
+function onOff(name: string, fallback: boolean): boolean {
+  const raw = optional(name)?.toLowerCase();
+  if (raw === undefined) return fallback;
+  if (["on", "1", "true", "yes"].includes(raw)) return true;
+  if (["off", "0", "false", "no"].includes(raw)) return false;
+  throw new Error(`${name} must be "on" or "off", got "${raw}"`);
+}
+
+/** Nansen's Monad `payTo`, as observed in every 402 on 2026-09-26 (`XORV_NANSEN_PIN_PAYTO=observed`). */
+const NANSEN_OBSERVED_PAY_TO = "0x93053f1e7A5eFEDa532Fe69CbbE43cBEc3A0F13f";
+
+/**
+ * The Nansen integration's settings.
+ *
+ * `live` needs a way to pay: XORV_NANSEN_PAYER_KEY (a Monad *mainnet* key with
+ * a few USDC — Nansen only settles x402 on mainnet, whatever network the
+ * broker runs on) or NANSEN_API_KEY. Asking for live without either fails
+ * here rather than degrading silently at the first lookup.
+ */
+export function loadNansenConfig(): NansenConfig {
+  const mode = (optional("XORV_NANSEN_MODE") ?? "off").toLowerCase();
+  if (mode !== "off" && mode !== "fixture" && mode !== "live") {
+    throw new Error(`XORV_NANSEN_MODE must be "off", "fixture" or "live", got "${mode}"`);
+  }
+  const payer = key("XORV_NANSEN_PAYER_KEY");
+  const apiKey = optional("NANSEN_API_KEY");
+  if (mode === "live" && !payer && !apiKey) {
+    throw new Error(
+      "XORV_NANSEN_MODE=live needs XORV_NANSEN_PAYER_KEY (a Monad MAINNET key holding a few USDC) or NANSEN_API_KEY",
+    );
+  }
+  const pinRaw = optional("XORV_NANSEN_PIN_PAYTO");
+  let pinPayTo: string | null = null;
+  if (pinRaw) {
+    try {
+      pinPayTo = pinRaw.toLowerCase() === "observed" ? NANSEN_OBSERVED_PAY_TO : normalizeAddress(pinRaw);
+    } catch (err) {
+      throw new Error(`XORV_NANSEN_PIN_PAYTO: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const cluster = (optional("XORV_NANSEN_FIXTURE_CLUSTER") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const address of cluster) {
+    try {
+      normalizeAddress(address);
+    } catch (err) {
+      throw new Error(`XORV_NANSEN_FIXTURE_CLUSTER: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return {
+    mode,
+    payer,
+    apiKey,
+    perCallCapUnits: usdcUnits("XORV_NANSEN_PER_CALL_CAP", 50_000n),
+    dailyCapUnits: usdcUnits("XORV_NANSEN_DAILY_CAP", 1_000_000n),
+    pinPayTo,
+    smartMoney: onOff("XORV_NANSEN_SMART_MONEY", true),
+    ratingGuard: onOff("XORV_NANSEN_RATING_GUARD", true),
+    refreshMs: Math.max(5, nonNegativeInt("XORV_NANSEN_REFRESH_MINUTES", 360)) * 60_000,
+    fixtureCluster: cluster,
+  };
 }
 
 export function loadConfig(): BrokerConfig {
@@ -212,5 +294,6 @@ export function loadConfig(): BrokerConfig {
       verifier: role("XORV_VERIFIER", "kimi"),
       screenerFail: failMode("XORV_SCREENER_FAIL"),
     },
+    nansen: loadNansenConfig(),
   };
 }
