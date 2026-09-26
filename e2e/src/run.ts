@@ -42,6 +42,7 @@ import {
   networkConfig,
   openResult,
   parseSealedResult,
+  providerIdFor,
   providerIdHash,
   ratingTypedData,
   textHash,
@@ -418,7 +419,10 @@ async function main(): Promise<void> {
     const state = await agentState(fork.client, IDENTITY, id);
     report.equal("agent owner is the provider's payout address", state.owner, parties.provider.address);
     report.equal("agent wallet is the provider's payout address", state.wallet, parties.provider.address);
-    report.equal("agentURI is the broker's registration file", state.uri, `${brokerUrl}/agents/${nodeId}.json`);
+    // Keyed by the provider id the CLI computed locally — never the node id,
+    // which is what reclaims the node's broker slot and must stay off-chain.
+    report.equal("agentURI is the broker's registration file", state.uri, `${brokerUrl}/agents/${providerIdFor(nodeId)}.json`);
+    report.equal("agentURI does not publish the node id", state.uri?.includes(nodeId), false);
     return id;
   });
   report.fact("provider ERC-8004 agent id", agentId.toString(), "parties");
@@ -432,6 +436,7 @@ async function main(): Promise<void> {
       return providers.find((p) => p.address === parties.provider.address && p.connected && p.status !== "offline");
     });
     note(`provider ${live.id} connected, agent #${live.agentId}`);
+    report.equal("provider id is the one the CLI put in the agent URI", live.id, providerIdFor(nodeId));
     report.equal("broker verified the agent id against the Identity Registry", live.agentId, agentId.toString());
     const registered = await waitUntil("the registration to reach XorvLedger", 30_000, async () => {
       const { providers } = await api.get<{ providers: PublicProvider[] }>("/api/providers");
@@ -439,7 +444,7 @@ async function main(): Promise<void> {
     });
     note(`ProviderRegistered in ${registered.registryTxHash}`);
     // The agentURI written on-chain resolves, and the file points back at the agent.
-    const file = await api.get<{ registrations?: Array<{ agentId: number | string; agentRegistry: string }> }>(`/agents/${nodeId}.json`);
+    const file = await api.get<{ registrations?: Array<{ agentId: number | string; agentRegistry: string }> }>(`/agents/${live.id}.json`);
     report.equal("registration file names the agent", String(file.registrations?.[0]?.agentId ?? ""), agentId.toString());
     report.equal("registration file names the canonical Identity Registry", file.registrations?.[0]?.agentRegistry, `eip155:10143:${IDENTITY}`);
     return registered;

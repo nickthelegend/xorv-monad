@@ -31,6 +31,7 @@ import {
   isLocalUri,
   readIdentity,
   registerAgent,
+  uriExposesNodeId,
 } from "../src/commands/identity.js";
 import { walletRows } from "../src/commands/wallet.js";
 
@@ -40,7 +41,8 @@ const KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 const account = privateKeyToAccount(KEY);
 const PAYOUT = account.address;
 const OTHER = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
-const URI = "https://broker.example.test/agents/node1.json";
+/** providerIdFor("node1") — the CLI keys the URI by the public provider id. */
+const URI = "https://broker.example.test/agents/prv_VBvElEwGrAJJ.json";
 
 const ESTIMATE = 246_000n;
 const BASE_FEE = 100_000_000_000n; // 100 gwei
@@ -142,8 +144,17 @@ function registryReads(state: { owner: string; wallet: string; uri?: string }) {
 }
 
 describe("agentURI", () => {
-  it("points at the broker's registration file for this node", () => {
+  it("points at the broker's registration file, keyed by the provider id — never the node id", () => {
+    // The node id reclaims this node's broker slot; an agent URI is public
+    // forever, so only the one-way provider id may appear in it.
     expect(agentUri("https://broker.example.test/", "node1")).toBe(URI);
+    expect(agentUri("https://broker.example.test/", "node1")).not.toContain("node1");
+  });
+
+  it("recognises an older agent URI that published the node id", () => {
+    expect(uriExposesNodeId("https://broker.example.test/agents/node1.json", "node1")).toBe(true);
+    expect(uriExposesNodeId(URI, "node1")).toBe(false);
+    expect(uriExposesNodeId(null, "node1")).toBe(false);
   });
 
   it("flags a URI nobody else can resolve before it goes on-chain for good", () => {

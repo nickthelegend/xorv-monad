@@ -29,6 +29,7 @@ import {
   buyerX402Client,
   deriveInboxKeys,
   jobIdHash,
+  providerIdFor,
   providerIdHash,
   ratingMessage,
   sealResult,
@@ -343,11 +344,16 @@ async function connectProvider(
     nodeId?: string;
     adapter?: string;
     model?: string | null;
+    /** Present a session token, the way a node re-registering its own live session does. */
+    token?: string;
   } = {},
 ) {
   const res = await fetch(`${h.base}/api/providers/register`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
+    },
     body: JSON.stringify({
       label: opts.label ?? "test-node",
       address: opts.address ?? PAYEE_A,
@@ -514,12 +520,87 @@ describe("registration", () => {
 
   it("does not re-publish an unchanged re-registration", async () => {
     const first = await connectProvider(h, { nodeId: "same" });
-    const again = await connectProvider(h, { nodeId: "same" });
+    const again = await connectProvider(h, { nodeId: "same", token: first.token });
     expect(again.providerId).toBe(first.providerId);
     expect(h.chain.registrations).toHaveLength(1);
     expect(again.registration.registry?.txHash).toBe(first.registration.registry?.txHash);
     first.close();
     again.close();
+  });
+
+  it("refuses to re-register a live node id without its token, so nobody can take over its payouts", async () => {
+    // The victim node is live. An attacker who learned its node id (older
+    // CLIs wrote it into the on-chain agent URI) posts its own payout address.
+    const victim = await connectProvider(h, { nodeId: "victim-node" });
+    const hijack = await fetch(`${h.base}/api/providers/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "test-node",
+        address: PAYEE_B,
+        endpoint: "",
+        nodeId: "victim-node",
+        capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo", model: null, priceUsdMicros: 1_000, maxConcurrency: 4 }],
+      }),
+    });
+    expect(hijack.status).toBe(409);
+    const body = (await hijack.json()) as Json;
+    expect(body.code).toBe("node_live");
+    expect(body.retryAfterMs).toBeGreaterThan(0);
+    // No token, and nothing about the record changed: buyers still pay the victim.
+    expect(JSON.stringify(body)).not.toContain(victim.token);
+    expect(h.registry.get(victim.providerId)!.address).toBe(getAddress(PAYEE_A));
+    const { body: q } = await quote(h);
+    expect(q.accepts[0].payTo).toBe(getAddress(PAYEE_A));
+
+    // A wrong token is no better than none.
+    const other = await connectProvider(h, { nodeId: "attacker-node", address: PAYEE_B });
+    const forged = await connectProvider(h, { nodeId: "victim-node", address: PAYEE_B, token: other.token }).catch(
+      (err: unknown) => err,
+    );
+    expect(forged).toBeInstanceOf(Error);
+    expect(h.registry.get(victim.providerId)!.address).toBe(getAddress(PAYEE_A));
+
+    // The node itself, presenting its token, re-registers freely and keeps it.
+    const own = await connectProvider(h, { nodeId: "victim-node", address: PAYEE_B, token: victim.token });
+    expect(own.providerId).toBe(victim.providerId);
+    expect(own.token).toBe(victim.token);
+    expect(h.registry.get(victim.providerId)!.address).toBe(getAddress(PAYEE_B));
+    victim.close();
+    other.close();
+    own.close();
+  });
+
+  it("lets the node id alone reclaim a slot only once its session is gone, with a fresh token and the old socket closed", async () => {
+    const old = await connectProvider(h, { nodeId: "sleepy-node" });
+    const closed = new Promise<number>((resolve) => old.ws.once("close", (code) => resolve(code)));
+    // The session went silent past the offline window (a laptop lid, a crash).
+    h.registry.get(old.providerId)!.lastHeartbeatAt = Date.now() - 60_000;
+
+    const res = await fetch(`${h.base}/api/providers/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "test-node",
+        address: PAYEE_A,
+        endpoint: "",
+        nodeId: "sleepy-node",
+        capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo", model: null, priceUsdMicros: 1_000, maxConcurrency: 4 }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Json;
+    expect(body.provider.id).toBe(old.providerId);
+    // Never the token someone else holds…
+    expect(body.token).not.toBe(old.token);
+    // …which stops working everywhere, including the socket it opened.
+    expect(await closed).toBe(4001);
+    const beat = await fetch(`${h.base}/api/providers/${old.providerId}/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${old.token}` },
+      body: "{}",
+    });
+    expect(beat.status).toBe(401);
   });
 
   it("never leaks the bearer token on the public provider list", async () => {
@@ -1308,13 +1389,14 @@ describe("public surface", () => {
     provider.close();
   });
 
-  it("resolves the registration file by node id too, which is what the CLI mints", async () => {
+  it("resolves the registration file by provider id only, the id the CLI computes locally", async () => {
     h.agentWallets.set("8", PAYEE_A);
     const provider = await connectProvider(h, { agentId: "8", nodeId: "node-cli-minted" });
-    const byNode = await fetch(`${h.base}/agents/node-cli-minted.json`);
-    expect(byNode.status).toBe(200);
-    const byProvider = await fetch(`${h.base}/agents/${provider.providerId}.json`);
-    expect(await byNode.json()).toEqual(await byProvider.json());
+    // The node id reclaims a node's slot; a URL that accepted it invited
+    // writing it into a public agent URI.
+    expect((await fetch(`${h.base}/agents/node-cli-minted.json`)).status).toBe(404);
+    expect(provider.providerId).toBe(providerIdFor("node-cli-minted"));
+    expect((await fetch(`${h.base}/agents/${providerIdFor("node-cli-minted")}.json`)).status).toBe(200);
     provider.close();
   });
 

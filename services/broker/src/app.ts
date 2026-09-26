@@ -87,7 +87,14 @@ import type { BrokerConfig } from "./config.js";
 import { describeLedger, type ChainLike, type PublishResult } from "./chain.js";
 import type { Hub } from "./hub.js";
 import { JobStore, isTerminal, type Quote, type StoredJob } from "./jobs.js";
-import { Registry, providerIdFor, type Match, type ProviderRecord, type VerifiedRegistration } from "./registry.js";
+import {
+  Registry,
+  RegistrationRefused,
+  type Match,
+  type ProviderRecord,
+  type RegisterOutcome,
+  type VerifiedRegistration,
+} from "./registry.js";
 import { bodyLimit, rateLimit, requestLog } from "./guards.js";
 import { Metrics } from "./metrics.js";
 import { resolveFacilitator } from "./facilitator.js";
@@ -472,16 +479,18 @@ export function createApp(deps: AppDeps) {
    * `IdentityRegistry.register(agentURI)` transaction and a URL that never
    * changes: the provider id is derived from the node id, so it survives both
    * node and broker restarts.
+   *
+   * Keyed by provider id only. `xorv identity register` computes the id
+   * locally (`providerIdFor` in @xorv/protocol) before the node has ever
+   * registered. Resolving the node id here too was what invited a CLI to
+   * write the node id — the secret that reclaims a node's slot — into a
+   * public, permanent agent URI.
    */
   app.get("/agents/:file", (c) => {
     const file = c.req.param("file");
     if (!file.endsWith(".json")) return c.json({ error: "not found" }, 404);
-    // Accept the provider id or the node id: `xorv identity register` mints the
-    // agent before the node has ever been told its provider id, so the URI it
-    // writes on-chain is keyed by node id. The provider id is a pure function
-    // of the node id, so both spellings resolve to the same record.
     const name = file.slice(0, -".json".length);
-    const provider = registry.find(name) ?? registry.find(providerIdFor(name));
+    const provider = registry.find(name);
     if (!provider) return c.json({ error: "unknown provider" }, 404);
     const adapters = [...new Set(provider.capabilities.map((cap) => cap.displayName || cap.adapter))];
     return c.json(
@@ -526,7 +535,24 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    const provider = registry.register({ ...parsed.registration, agentId });
+    // Re-registering a node id that has a live session takes that session's
+    // bearer token; the node id alone only reclaims a slot nobody is holding
+    // (after a broker restart, or once the old session went offline).
+    const presented = c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() || null;
+    let outcome: RegisterOutcome;
+    try {
+      outcome = registry.registerNode({ ...parsed.registration, agentId }, { token: presented });
+    } catch (err) {
+      if (err instanceof RegistrationRefused) {
+        console.warn(`[broker] registration "${parsed.registration.label}" refused: node id has a live session`);
+        return c.json({ error: err.message, code: err.code, retryAfterMs: err.retryAfterMs }, 409);
+      }
+      throw err;
+    }
+    const provider = outcome.provider;
+    // A fresh token was minted, so whoever held the old one — and any socket
+    // it opened — no longer speaks for this node.
+    if (!outcome.authenticated) deps.getHub()?.disconnect(provider.id, "this node re-registered with a new token");
     // Look up the payout wallet on Nansen in the background — never on the
     // registration's critical path. The signal shows up once it lands.
     trust.watch(provider.address);

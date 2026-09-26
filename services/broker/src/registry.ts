@@ -12,6 +12,7 @@
 import {
   HEARTBEAT_OFFLINE_MS,
   PROVIDER_REAP_MS,
+  providerIdFor,
   type AdapterKind,
   type Capability,
   type Provider,
@@ -19,7 +20,7 @@ import {
   type ProviderStatus,
   type RegisterRequest,
 } from "@xorv/protocol";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { MemoryPersistence, type PersistedProviderStats, type Persistence } from "./store.js";
 
 export interface ProviderRecord extends Provider {
@@ -61,18 +62,41 @@ export const TRUST_TIEBREAK_WEIGHT = 0.1;
 
 /**
  * The public provider id for a node: stable across broker restarts, and not
- * reversible to the node id.
- *
- * Stable matters more on-chain than it ever did in memory: the id is hashed
- * into XorvLedger events (`providerIdHash`) and baked into the provider's
- * ERC-8004 registration URI (`/agents/<id>.json`). A random id per broker
- * process would split one node into a new on-chain provider after every
- * deploy and break its agent URI. Not reversible matters because the node id
- * doubles as the node's re-registration credential.
+ * reversible to the node id. It lives in @xorv/protocol because the CLI
+ * computes it too, to build its agent URI without asking the broker.
  */
-export function providerIdFor(nodeId: string): string {
-  const digest = createHash("sha256").update(`xorv:provider:${nodeId}`, "utf8").digest();
-  return `prv_${digest.subarray(0, 9).toString("base64url")}`;
+export { providerIdFor };
+
+/**
+ * A registration for a node id that another session holds live.
+ *
+ * Once a session exists, the node id proves nothing: whoever holds that
+ * session's bearer token is the node. Letting the node id alone re-register a
+ * live record handed its payout address and its token to anyone who learned
+ * the id. Answered 409, with when the other session would go offline if it
+ * has really gone away.
+ */
+export class RegistrationRefused extends Error {
+  readonly code = "node_live";
+  constructor(readonly retryAfterMs: number) {
+    super(
+      "this node id already has a live session on the broker; re-registering it needs that session's " +
+        "bearer token (Authorization: Bearer <token>). If this is the same node restarting without its " +
+        `token, the old session goes offline in about ${Math.ceil(retryAfterMs / 1000)}s and can be claimed then`,
+    );
+    this.name = "RegistrationRefused";
+  }
+}
+
+/** What `registerNode` did. */
+export interface RegisterOutcome {
+  provider: ProviderRecord;
+  /**
+   * False when the caller proved only the node id, so a fresh token was
+   * minted. A socket still attached under this provider id belongs to
+   * whoever held the old token, and the caller must close it.
+   */
+  authenticated: boolean;
 }
 
 function emptyStats(): ProviderStats {
@@ -146,12 +170,36 @@ export class Registry {
    * The caller has already validated and normalized `address` and verified
    * `agentId` against the Identity Registry — see `validateRegistration` and
    * `verifyAgent` in app.ts.
+   *
+   * Who may re-register a node id that is already here:
+   *
+   *  - **Its current token holder**, always. The session keeps its token, so
+   *    the node's open socket stays valid.
+   *  - **Anyone with the node id, only while the record is not live** (it
+   *    went offline, was reaped, or the broker restarted and lost every
+   *    token). That is how a node rejoins after a broker restart. A new token
+   *    is minted every time, so a caller who proved only the node id never
+   *    receives a token someone else is using; the caller closes the old
+   *    socket (see `RegisterOutcome.authenticated`).
+   *  - A live record with anything else throws `RegistrationRefused`.
    */
-  register(req: VerifiedRegistration): ProviderRecord {
+  register(req: VerifiedRegistration, auth: { token?: string | null } = {}): ProviderRecord {
+    return this.registerNode(req, auth).provider;
+  }
+
+  registerNode(req: VerifiedRegistration, auth: { token?: string | null } = {}): RegisterOutcome {
     const existingId = this.byNodeId.get(req.nodeId);
     const existing = existingId ? this.providers.get(existingId) : undefined;
     const now = Date.now();
     const restored = this.restoredStats.get(req.nodeId);
+
+    const authenticated = Boolean(existing && auth.token && sameToken(auth.token, existing.token));
+    if (existing && !authenticated) {
+      const silentFor = now - existing.lastHeartbeatAt;
+      if (silentFor <= HEARTBEAT_OFFLINE_MS) {
+        throw new RegistrationRefused(Math.max(1_000, HEARTBEAT_OFFLINE_MS - silentFor + 1_000));
+      }
+    }
 
     const record: ProviderRecord = {
       id: existing?.id ?? providerIdFor(req.nodeId),
@@ -170,7 +218,8 @@ export class Registry {
       // Earnings and job counts belong to the operator, not to a process
       // lifetime — a restart must not zero them.
       stats: existing?.stats ?? (restored ? stripKeys(restored) : emptyStats()),
-      token: existing?.token ?? randomBytes(24).toString("base64url"),
+      // Never hand an existing token to a caller that did not present it.
+      token: authenticated && existing ? existing.token : randomBytes(24).toString("base64url"),
       available: Object.fromEntries(req.capabilities.map((c) => [c.id, true])),
       uptimeSeconds: 0,
       // A re-registration that changes the payout address or agent is a new
@@ -186,7 +235,7 @@ export class Registry {
     this.providers.set(record.id, record);
     this.byToken.set(record.token, record.id);
     this.byNodeId.set(record.nodeId, record.id);
-    return record;
+    return { provider: record, authenticated };
   }
 
   /**
@@ -370,6 +419,13 @@ export class Registry {
     }
     return removed;
   }
+}
+
+/** Constant-time token comparison: the token is a bearer credential. */
+function sameToken(a: string, b: string): boolean {
+  const x = Buffer.from(a, "utf8");
+  const y = Buffer.from(b, "utf8");
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 function totalConcurrency(capabilities: Capability[]): number {

@@ -14,7 +14,7 @@ import {
   networkLabel,
   shortHex,
 } from "@xorv/protocol";
-import { requireConfig, resolveBrokerUrl } from "../config.js";
+import { loadConfig, requireConfig, resolveBrokerUrl, saveConfig } from "../config.js";
 import { ProviderNode, type RunningJob } from "../node.js";
 import { startLocalServer } from "../local-server.js";
 import { CLOUDFLARED_INSTALL_HINT, cloudflaredAvailable, startTunnel } from "../tunnel.js";
@@ -64,6 +64,21 @@ export function controlChannelUrl(brokerUrl: string, advertised: string): string
   }
 }
 
+/**
+ * Save the broker session into config.json. Re-read from disk rather than
+ * written from the in-memory copy, so a `--broker` override stays a one-off
+ * and an edit made while the node runs (`xorv identity register`) survives.
+ */
+function saveSession(providerId: string, token: string): void {
+  try {
+    const current = loadConfig();
+    if (!current) return;
+    saveConfig({ ...current, providerId, token });
+  } catch {
+    /* best effort: without it, a quick restart just waits out the old session */
+  }
+}
+
 export async function startCommand(opts: StartOptions): Promise<void> {
   const config = requireConfig();
   if (opts.broker) config.brokerUrl = opts.broker;
@@ -72,6 +87,9 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   console.log(ui.banner(`${config.label} · Monad ${networkLabel(config.network)}`));
 
   const node = new ProviderNode(config);
+  // Keep the session token, so the next `xorv start` can prove it is this
+  // node while the broker still holds the old session (ProviderNode.register).
+  node.on("registered", ({ providerId, token }) => saveSession(providerId, token));
   const logLines: Array<{ level: string; text: string; at: number }> = [];
   node.on("log", ({ level, text }) => {
     logLines.push({ level, text, at: Date.now() });

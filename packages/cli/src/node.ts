@@ -77,6 +77,8 @@ export interface NodeStats {
 /** Typed events the CLI's live view listens to. */
 export interface ProviderNodeEvents {
   log: [{ level: "info" | "ok" | "warn" | "bad"; text: string }];
+  /** A registration succeeded; `xorv start` saves the token so a restart can present it. */
+  registered: [{ providerId: string; token: string }];
   state: [];
   jobStarted: [RunningJob];
   jobEvent: [{ jobId: string; event: JobEvent }];
@@ -91,6 +93,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private backoffMs = 1_000;
   private stopped = false;
+  private reregistering = false;
   private adapters = new Map<string, JobAdapter>();
 
   providerId: string | null = null;
@@ -129,7 +132,22 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     this.emit("log", { level, text });
   }
 
-  /** Announce this node to the broker and take its bearer token. */
+  /**
+   * Longest this node waits for a live session under its own node id to go
+   * offline before retrying registration once (the broker says how long).
+   */
+  liveSessionWaitMaxMs = 60_000;
+
+  /**
+   * Announce this node to the broker and take its bearer token.
+   *
+   * The broker only lets the node id alone claim a slot nobody holds. When a
+   * session for this node id is still live, re-registering needs that
+   * session's token, so the node presents the one it holds (this process's,
+   * or the one the last run saved to config). A node restarted without it
+   * gets a 409 `node_live` naming when the old session goes offline, and
+   * waits for that once rather than failing to start.
+   */
   async register(endpoint: string): Promise<RegisterResult> {
     const body: RegisterRequest = {
       label: this.config.label,
@@ -142,12 +160,19 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       nodeId: this.config.nodeId,
     };
 
-    const res = await fetch(`${this.brokerUrl}/api/providers/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
-    });
+    let res = await this.postRegistration(body);
+    if (res.status === 409) {
+      const refusal = (await res
+        .clone()
+        .json()
+        .catch(() => null)) as { code?: string; retryAfterMs?: number } | null;
+      if (refusal?.code === "node_live") {
+        const wait = Math.min(Math.max(Number(refusal.retryAfterMs) || 0, 1_000), this.liveSessionWaitMaxMs);
+        this.log("warn", `the broker still holds a live session for this node id — retrying in ${Math.ceil(wait / 1000)}s`);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        res = await this.postRegistration(body);
+      }
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -163,6 +188,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     this.providerId = result.provider.id;
     this.token = result.token;
     this.registryReceipt = result.registry ?? null;
+    this.emit("registered", { providerId: result.provider.id, token: result.token });
 
     const usdc = typeof result.usdc === "string" ? result.usdc : (result.usdc?.address ?? null);
     return {
@@ -174,6 +200,19 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       usdc,
       agentId: result.registry?.agentId ?? result.provider.agentId ?? null,
     };
+  }
+
+  private postRegistration(body: RegisterRequest): Promise<Response> {
+    const token = this.token ?? this.config.token ?? null;
+    return fetch(`${this.brokerUrl}/api/providers/register`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
   }
 
   /** Open the control channel and start reporting in. */
@@ -271,12 +310,23 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       } else if (res.status === 401 || res.status === 404) {
         // The broker restarted and forgot us. Re-register rather than beating
         // against a dead session forever.
-        this.log("warn", "broker no longer recognises this node — re-registering");
-        const endpoint = this.publicUrl ?? "local";
-        const result = await this.register(endpoint).catch(() => null);
-        if (result) {
-          this.ws?.close();
-          this.connect(result.wsUrl);
+        // One at a time: a registration can wait out a live session (see
+        // `register`), and the next beats must not pile more on top.
+        if (this.reregistering) return;
+        this.reregistering = true;
+        try {
+          this.log("warn", "broker no longer recognises this node — re-registering");
+          const endpoint = this.publicUrl ?? "local";
+          const result = await this.register(endpoint).catch((err: unknown) => {
+            this.stats.lastError = err instanceof Error ? err.message : String(err);
+            return null;
+          });
+          if (result) {
+            this.ws?.close();
+            this.connect(result.wsUrl);
+          }
+        } finally {
+          this.reregistering = false;
         }
       }
     } catch (err) {

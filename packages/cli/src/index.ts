@@ -190,7 +190,7 @@ identity
 identity
   .command("register")
   .description("register an ERC-8004 agent from the payout key (one transaction, needs a little MON)")
-  .option("--uri <url>", "agentURI to register (default: <broker>/agents/<nodeId>.json)")
+  .option("--uri <url>", "agentURI to register (default: <broker>/agents/<providerId>.json)")
   .option("--force", "register a new identity even if this node has one")
   .option("-y, --yes", "skip the confirmation")
   .action(wrap(identityRegisterCommand));

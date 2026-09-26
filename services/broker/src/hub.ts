@@ -129,6 +129,19 @@ export class Hub {
     }
   }
 
+  /**
+   * Close a provider's control channel, if it has one. Used when its token is
+   * replaced: a socket authenticates once, at the upgrade, so without this the
+   * holder of the old token would keep receiving that provider's jobs.
+   */
+  disconnect(providerId: string, reason: string): void {
+    const ws = this.sockets.get(providerId);
+    if (!ws) return;
+    this.sockets.delete(providerId);
+    ws.close(4001, reason.slice(0, 120));
+    this.handlers.onDisconnect(providerId);
+  }
+
   /** True when this provider currently holds a live control channel. */
   isConnected(providerId: string): boolean {
     return this.sockets.get(providerId)?.readyState === 1;

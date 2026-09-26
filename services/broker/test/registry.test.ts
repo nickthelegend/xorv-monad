@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Registry, providerIdFor, type VerifiedRegistration } from "../src/registry.js";
+import { Registry, RegistrationRefused, providerIdFor, type VerifiedRegistration } from "../src/registry.js";
 import type { Capability } from "@xorv/protocol";
 
 /** A distinct, valid payout address per small integer. */
@@ -56,7 +56,7 @@ describe("register", () => {
 
   it("treats a re-registering nodeId as the SAME provider", () => {
     const first = registry.register(registration());
-    const again = registry.register(registration({ label: "renamed" }));
+    const again = registry.register(registration({ label: "renamed" }), { token: first.token });
     expect(again.id).toBe(first.id);
     expect(registry.list()).toHaveLength(1);
     expect(again.label).toBe("renamed");
@@ -67,20 +67,50 @@ describe("register", () => {
     registry.jobStarted(first.id);
     registry.jobFinished(first.id, { ok: true, durationMs: 1_000, usdcMicros: 10_000 });
 
-    const again = registry.register(registration());
+    const again = registry.register(registration(), { token: first.token });
     expect(again.stats.jobsCompleted).toBe(1);
     expect(again.stats.earnedUsdcMicros).toBe(10_000);
     expect(again.registeredAt).toBe(first.registeredAt);
   });
 
-  it("invalidates the previous token when a node re-registers", () => {
+  it("keeps the token for a node that presents it, and a stale token never resolves", () => {
     const first = registry.register(registration());
-    const oldToken = first.token;
-    const again = registry.register(registration());
-    // Same token is reused by design (stable identity), but a stale token for a
-    // *different* provider must never resolve.
-    expect(registry.byAuthToken(oldToken)?.id).toBe(again.id);
+    const again = registry.registerNode(registration(), { token: first.token });
+    expect(again.authenticated).toBe(true);
+    expect(again.provider.token).toBe(first.token);
+    expect(registry.byAuthToken(first.token)?.id).toBe(first.id);
     expect(registry.byAuthToken("nonsense")).toBeUndefined();
+  });
+
+  it("refuses the node id alone while its session is live, and never returns its token", () => {
+    const first = registry.register(registration());
+    // No token, or someone else's: the payout address must not move.
+    expect(() => registry.register(registration({ address: addr(666) }))).toThrow(RegistrationRefused);
+    const other = registry.register(registration({ nodeId: "other", address: addr(666) }));
+    expect(() => registry.register(registration({ address: addr(666) }), { token: other.token })).toThrow(
+      RegistrationRefused,
+    );
+    expect(registry.get(first.id)!.address).toBe(addr(1001));
+    expect(registry.byAuthToken(first.token)?.id).toBe(first.id);
+  });
+
+  it("lets the node id alone reclaim an offline slot, with a fresh token that retires the old one", () => {
+    vi.useFakeTimers();
+    try {
+      const first = registry.register(registration());
+      registry.jobStarted(first.id);
+      registry.jobFinished(first.id, { ok: true, durationMs: 1_000, usdcMicros: 10_000 });
+      vi.advanceTimersByTime(46_000);
+      const reclaimed = registry.registerNode(registration());
+      expect(reclaimed.authenticated).toBe(false);
+      expect(reclaimed.provider.id).toBe(first.id);
+      expect(reclaimed.provider.token).not.toBe(first.token);
+      expect(reclaimed.provider.stats.jobsCompleted).toBe(1);
+      expect(registry.byAuthToken(first.token)).toBeUndefined();
+      expect(registry.byAuthToken(reclaimed.provider.token)?.id).toBe(first.id);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("derives a stable provider id from the node id, across broker restarts", () => {
@@ -100,8 +130,9 @@ describe("register", () => {
     const first = registry.register(registration({ agentId: "42" }));
     expect(first.agentId).toBe("42");
     registry.setRegistryTx(first.id, "0xabc");
-    expect(registry.register(registration({ agentId: "42" })).registryTxHash).toBe("0xabc");
-    expect(registry.register(registration({ agentId: "42", address: addr(9) })).registryTxHash).toBeNull();
+    const token = { token: first.token };
+    expect(registry.register(registration({ agentId: "42" }), token).registryTxHash).toBe("0xabc");
+    expect(registry.register(registration({ agentId: "42", address: addr(9) }), token).registryTxHash).toBeNull();
   });
 
   it("keeps distinct nodeIds as distinct providers", () => {

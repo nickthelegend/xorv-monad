@@ -19,10 +19,13 @@
  * pays gas for. An address-only node can still earn without it; it just earns
  * without an on-chain identity.
  *
- * The agentURI points at the broker (`<broker>/agents/<nodeId>.json`), which
- * serves the ERC-8004 registration file — a URL that stays stable, so the
- * registration never needs a follow-up `setAgentURI` write when the node's
- * details change.
+ * The agentURI points at the broker (`<broker>/agents/<providerId>.json`),
+ * which serves the ERC-8004 registration file — a URL that stays stable, so
+ * the registration never needs a follow-up `setAgentURI` write when the
+ * node's details change. The provider id is computed here from the node id
+ * (`providerIdFor`, the same one-way hash the broker uses), never the node id
+ * itself: the node id is what reclaims this node's slot on the broker, and an
+ * agent URI is public forever.
  */
 
 import {
@@ -36,6 +39,7 @@ import {
   networkConfig,
   networkLabel,
   normalizeAddress,
+  providerIdFor,
   publicClientFor,
   sameAddress,
   walletClientFor,
@@ -53,9 +57,22 @@ import {
 } from "../config.js";
 import * as ui from "../ui.js";
 
-/** The registration file URL this node's identity points at. */
+/**
+ * The registration file URL this node's identity points at: keyed by the
+ * public provider id, computed locally, so the node id never goes on-chain.
+ */
 export function agentUri(brokerUrl: string, nodeId: string): string {
-  return `${brokerUrl.replace(/\/+$/, "")}/agents/${encodeURIComponent(nodeId)}.json`;
+  return `${brokerUrl.replace(/\/+$/, "")}/agents/${providerIdFor(nodeId)}.json`;
+}
+
+/**
+ * True for an agent URI minted by an older CLI, which keyed it by the raw
+ * node id. That id is what reclaims this node's broker slot, so an on-chain
+ * URI naming it is a standing takeover risk: the node needs a new node id.
+ */
+export function uriExposesNodeId(uri: string | null, nodeId: string): boolean {
+  if (!uri || !nodeId) return false;
+  return uri.includes(`/agents/${encodeURIComponent(nodeId)}.json`) || uri.includes(`/agents/${nodeId}.json`);
 }
 
 /** A URI nobody but this machine can resolve — worth a warning before it goes on-chain for good. */
@@ -346,6 +363,11 @@ export async function identityShowCommand(opts: { json?: boolean } = {}): Promis
     ),
   );
   ui.blank();
+  if (uriExposesNodeId(state.uri, config.nodeId)) {
+    ui.warn("this agent URI publishes the node id, which is what lets a node reclaim its slot on the broker");
+    ui.muted("  give the node a new nodeId in config.json, then register a new identity: xorv identity register --force");
+    ui.blank();
+  }
   if (!state.walletMatches) {
     // XorvLedger refuses a receipt whose payTo is not the agent's wallet, so a
     // mismatch means jobs are paid but never recorded against this identity.

@@ -19,6 +19,16 @@ describe("node helpers", () => {
     expect(node.sha256("hello")).toBe("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
   });
 
+  it("derives the broker's provider id from a node id, one-way and stable", () => {
+    // Pinned: provider ids are on-chain (XorvLedger events, agent URIs), so
+    // this exact output must never change.
+    expect(node.providerIdFor("stable")).toBe(node.providerIdFor("stable"));
+    expect(node.providerIdFor("stable")).toMatch(/^prv_[A-Za-z0-9_-]{12}$/);
+    expect(node.providerIdFor("node1")).toBe("prv_VBvElEwGrAJJ");
+    expect(node.providerIdFor("stable")).not.toContain("stable");
+    expect(node.providerIdFor("a")).not.toBe(node.providerIdFor("b"));
+  });
+
   it("mints prefixed, URL-safe, non-colliding ids", () => {
     const ids = new Set(Array.from({ length: 500 }, () => node.newId("job")));
     expect(ids.size).toBe(500);
