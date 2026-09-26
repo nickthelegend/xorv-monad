@@ -127,20 +127,19 @@ const LINES: Line[] = [
 ];
 
 export function NodePanel({ animate = true }: { animate?: boolean }) {
-  const [shown, setShown] = useState(animate ? 0 : LINES.length);
+  // Lines typed so far. Only ever advanced from a timer: the not-animating
+  // case is derived below rather than written into state from the effect,
+  // which would cost a second render every time `animate` changes.
+  const [typed, setTyped] = useState(0);
 
   useEffect(() => {
-    if (!animate) {
-      setShown(LINES.length);
-      return;
-    }
-    setShown(0);
+    if (!animate) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
 
     const step = (i: number): void => {
       if (cancelled || i >= LINES.length) return;
-      setShown(i + 1);
+      setTyped(i + 1);
       timer = setTimeout(() => step(i + 1), LINES[i]?.after ?? 200);
     };
     timer = setTimeout(() => step(0), 260);
@@ -151,6 +150,9 @@ export function NodePanel({ animate = true }: { animate?: boolean }) {
     };
   }, [animate]);
 
+  // Not animating — reduced motion, a background tab, or not yet in view —
+  // means the finished transcript, never an empty frame.
+  const shown = animate ? typed : LINES.length;
   const done = shown >= LINES.length;
 
   return (
