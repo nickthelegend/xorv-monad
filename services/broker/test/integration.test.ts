@@ -48,6 +48,7 @@ import { createAiHooks, type FeedbackSink, type GiveFeedbackInput } from "../src
 import { Hub } from "../src/hub.js";
 import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
+import { NANSEN_OFF, createNansenTrust, type NansenTrust } from "../src/trust/index.js";
 
 /** Response bodies are asserted on, not typed: the tests are what pin their shape. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -259,7 +260,13 @@ interface Harness {
 }
 
 async function boot(
-  opts: { config?: Partial<BrokerConfig>; injectFacilitator?: boolean; ai?: AiHooks } = {},
+  opts: {
+    config?: Partial<BrokerConfig>;
+    injectFacilitator?: boolean;
+    ai?: AiHooks;
+    trust?: NansenTrust;
+    buyer?: PrivateKeyAccount;
+  } = {},
 ): Promise<Harness> {
   const config = testConfig(opts.config);
   const chain = new StubChain(config.ledgerAddress);
@@ -283,6 +290,7 @@ async function boot(
       return agentWallets.get(agentId) ?? null;
     },
     ai: opts.ai,
+    trust: opts.trust,
   });
 
   const server = serve({ fetch: app.fetch, port: 0 }) as unknown as Server;
@@ -299,7 +307,7 @@ async function boot(
       fetch,
       buyerX402Client({ signer: account, network: NETWORK, maxUsdcUnits: "10000000" }),
     ) as typeof fetch;
-  const buyer = privateKeyToAccount(generatePrivateKey());
+  const buyer = opts.buyer ?? privateKeyToAccount(generatePrivateKey());
 
   return {
     base: `http://127.0.0.1:${port}`,
@@ -1739,4 +1747,161 @@ describe("AI roles", () => {
     expect(net.aiRoles.verifier.feedback).toMatchObject({ onChain: true, address: s.feedback.address, tag1: "xorv-verified" });
     expect(JSON.stringify(net)).not.toContain("sk-test");
   });
+});
+
+describe("Nansen trust", () => {
+  const fixtureTrust = (cluster: string[] = []) =>
+    createNansenTrust({ ...NANSEN_OFF, mode: "fixture", fixtureCluster: cluster, smartMoney: true });
+
+  /** A job paid by `h.buyer` on a provider with a verified agent, receipt landed. */
+  async function paidJob() {
+    h.agentWallets.set("7", PAYEE_A);
+    const provider = await connectProvider(h, { agentId: "7" });
+    const { body: q } = await quote(h, "rate me");
+    const { body: paid } = await pay(h, q.quoteId);
+    await provider.completeNextJob("rated answer");
+    await waitFor(async () => {
+      const j = await getJob(h, paid.jobId);
+      return j.receiptTxHash ? j : undefined;
+    });
+    return { provider, jobId: paid.jobId as string };
+  }
+
+  async function rate(jobId: string, value: number) {
+    const td = (await (await fetch(`${h.base}/api/jobs/${jobId}/rating?value=${value}`)).json()) as Json;
+    const typed = td.typedData as { domain: Record<string, unknown>; types: Record<string, unknown>; message: Parameters<typeof ratingMessage>[0] };
+    const signature = await h.buyer.signTypedData({
+      domain: typed.domain,
+      types: typed.types,
+      primaryType: "Rating",
+      message: ratingMessage(typed.message),
+    } as never);
+    const res = await fetch(`${h.base}/api/jobs/${jobId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value, deadline: td.deadline, signature }),
+    });
+    return { res, body: (await res.json()) as Json };
+  }
+
+  it("reports Nansen's state on /api/network, off by default", async () => {
+    const net = (await (await fetch(`${h.base}/api/network`)).json()) as Json;
+    expect(net.nansen).toMatchObject({
+      mode: "off",
+      auth: "none",
+      network: "eip155:143",
+      payer: null,
+      callsToday: 0,
+      paidCallsToday: 0,
+      spentTodayUsdc: "0.00",
+      budgetUsdc: "1.00",
+      perCallCapUsdc: "0.05",
+      lastPaidTx: null,
+      ratingGuard: false,
+      attribution: "Powered by Nansen",
+      attributionUrl: "https://nansen.ai",
+    });
+  });
+
+  it("scores a provider's payout wallet on registration and serves the public view everywhere", async () => {
+    await h.stop();
+    h = await boot({ trust: fixtureTrust() });
+    const provider = await connectProvider(h);
+
+    const listed = await waitFor(async () => {
+      const { providers } = (await (await fetch(`${h.base}/api/providers`)).json()) as Json;
+      return providers[0]?.trust ? providers[0] : undefined;
+    });
+    expect(listed.trust).toMatchObject({
+      address: provider.address,
+      source: "nansen",
+      mode: "fixture",
+      degraded: false,
+      paidTx: [],
+      paidUsdc: "0.00",
+      attribution: "Powered by Nansen",
+      attributionUrl: "https://nansen.ai",
+    });
+    expect(listed.trust.score).toBeGreaterThanOrEqual(0);
+    expect(listed.trust.score).toBeLessThanOrEqual(100);
+    const wire = JSON.stringify(listed);
+    expect(wire).not.toContain("smartMoney");
+    expect(wire).not.toContain("relatedWallets");
+
+    const one = (await (await fetch(`${h.base}/api/providers/${provider.providerId}`)).json()) as Json;
+    expect(one.provider).toMatchObject({ id: provider.providerId, trust: { score: listed.trust.score } });
+    expect(one.provider.token).toBeUndefined();
+    expect((await fetch(`${h.base}/api/providers/prv_nobody`)).status).toBe(404);
+
+    const board = (await (await fetch(`${h.base}/api/leaderboard`)).json()) as Json;
+    expect(board.providers[0].trust).toMatchObject({ score: listed.trust.score, attribution: "Powered by Nansen" });
+
+    const net = (await (await fetch(`${h.base}/api/network`)).json()) as Json;
+    expect(net.nansen).toMatchObject({ mode: "fixture", auth: "fixture", ratingGuard: true, spentTodayUsdc: "0.00" });
+    expect(net.nansen.callsToday).toBeGreaterThanOrEqual(3);
+    expect(net.nansen.walletsScored).toBe(1);
+    provider.close();
+  });
+
+  it("refuses a rating between related wallets with 403 and records the check on the job", async () => {
+    const buyer = privateKeyToAccount(generatePrivateKey());
+    await h.stop();
+    // The fixture gives these two wallets one unlabelled first funder: a sybil ring.
+    h = await boot({ trust: fixtureTrust([buyer.address, PAYEE_A]), buyer });
+    const { provider, jobId } = await paidJob();
+
+    const { res, body } = await rate(jobId, 100);
+    expect(res.status).toBe(403);
+    expect(body.code).toBe("related_wallets");
+    expect(String(body.error)).toMatch(/related \(Nansen\)/);
+    expect(body.trustCheck).toMatchObject({ related: true, mode: "fixture", attribution: "Powered by Nansen" });
+    expect(body.trustCheck.reasons.map((r: Json) => r.kind)).toContain("shared-funder");
+    expect(JSON.stringify(body.trustCheck)).not.toContain("errors");
+
+    // Nothing reached ERC-8004, and the refusal is on the record.
+    expect(h.chain.ratings).toHaveLength(0);
+    const job = await getJob(h, jobId);
+    expect(job.rating).toBeNull();
+    expect(job.trustCheck).toMatchObject({ related: true });
+    const metrics = await (await fetch(`${h.base}/metrics`)).text();
+    expect(metrics).toContain('xorv_rating_refusals_total{reason="related_wallets"} 1');
+    const net = (await (await fetch(`${h.base}/api/network`)).json()) as Json;
+    expect(net.nansen).toMatchObject({ ratingChecks: 1, ratingsRefused: 1 });
+    provider.close();
+  }, 20_000);
+
+  it("relays a rating between unrelated wallets and records the passed check", async () => {
+    await h.stop();
+    h = await boot({ trust: fixtureTrust() });
+    const { provider, jobId } = await paidJob();
+    const { res, body } = await rate(jobId, 80);
+    expect(body.error).toBeUndefined();
+    expect(res.status).toBe(200);
+    expect(h.chain.ratings).toHaveLength(1);
+    const job = await getJob(h, jobId);
+    expect(job.rating).toMatchObject({ value: 80 });
+    expect(job.trustCheck).toMatchObject({ related: false, degraded: false, reasons: [], attribution: "Powered by Nansen" });
+    provider.close();
+  }, 20_000);
+
+  it("never blocks registration or an honest rating on a Nansen outage", async () => {
+    const down = (async () => {
+      throw new Error("nansen unreachable");
+    }) as typeof fetch;
+    await h.stop();
+    h = await boot({ trust: createNansenTrust({ ...NANSEN_OFF, mode: "live", apiKey: "test" }, { fetch: down }) });
+    const started = Date.now();
+    const { provider, jobId } = await paidJob();
+    expect(Date.now() - started).toBeLessThan(10_000);
+
+    const { res } = await rate(jobId, 60);
+    expect(res.status).toBe(200);
+    const job = await getJob(h, jobId);
+    expect(job.trustCheck).toMatchObject({ related: false, degraded: true });
+
+    // A failed lookup is a neutral, degraded signal — never a penalty.
+    const { providers } = (await (await fetch(`${h.base}/api/providers`)).json()) as Json;
+    expect(providers[0].trust).toMatchObject({ score: 50, degraded: true, band: "unknown" });
+    provider.close();
+  }, 20_000);
 });

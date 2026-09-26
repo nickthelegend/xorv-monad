@@ -5,7 +5,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { loadConfig } from "../src/config.js";
+import { loadConfig, loadNansenConfig } from "../src/config.js";
 import { resolveFacilitator } from "../src/facilitator.js";
 import { validateRegistration } from "../src/app.js";
 
@@ -26,6 +26,16 @@ const VARS = [
   "XORV_VERIFIER",
   "XORV_SCREENER_FAIL",
   "XORV_VERIFIER_KEY",
+  "XORV_NANSEN_MODE",
+  "XORV_NANSEN_PAYER_KEY",
+  "NANSEN_API_KEY",
+  "XORV_NANSEN_PER_CALL_CAP",
+  "XORV_NANSEN_DAILY_CAP",
+  "XORV_NANSEN_PIN_PAYTO",
+  "XORV_NANSEN_SMART_MONEY",
+  "XORV_NANSEN_RATING_GUARD",
+  "XORV_NANSEN_REFRESH_MINUTES",
+  "XORV_NANSEN_FIXTURE_CLUSTER",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -180,5 +190,58 @@ describe("validateRegistration", () => {
     expect("error" in validateRegistration({ ...base, agentId: "-1" })).toBe(true);
     const none = validateRegistration({ ...base, agentId: null });
     expect("registration" in none && none.agentId).toBeNull();
+  });
+});
+
+describe("loadNansenConfig", () => {
+  it("is off by default, with the documented caps", () => {
+    const nansen = loadConfig().nansen!;
+    expect(nansen).toMatchObject({
+      mode: "off",
+      payer: null,
+      apiKey: null,
+      perCallCapUnits: 50_000n,
+      dailyCapUnits: 1_000_000n,
+      pinPayTo: null,
+      smartMoney: true,
+      ratingGuard: true,
+      refreshMs: 360 * 60_000,
+      fixtureCluster: [],
+    });
+  });
+
+  it("refuses live mode with no way to pay, and names both options", () => {
+    process.env.XORV_NANSEN_MODE = "live";
+    expect(() => loadNansenConfig()).toThrow(/XORV_NANSEN_PAYER_KEY.*MAINNET.*NANSEN_API_KEY/);
+    process.env.NANSEN_API_KEY = "nansen-test";
+    expect(loadNansenConfig()).toMatchObject({ mode: "live", apiKey: "nansen-test", payer: null });
+    delete process.env.NANSEN_API_KEY;
+    process.env.XORV_NANSEN_PAYER_KEY = generatePrivateKey();
+    expect(loadNansenConfig().payer?.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+  });
+
+  it("parses caps, the payTo pin and the fixture cluster, and rejects nonsense", () => {
+    process.env.XORV_NANSEN_MODE = "fixture";
+    process.env.XORV_NANSEN_PER_CALL_CAP = "10000";
+    process.env.XORV_NANSEN_DAILY_CAP = "250000";
+    process.env.XORV_NANSEN_PIN_PAYTO = "observed";
+    process.env.XORV_NANSEN_SMART_MONEY = "off";
+    process.env.XORV_NANSEN_FIXTURE_CLUSTER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045, 0x1111111111111111111111111111111111111111";
+    expect(loadNansenConfig()).toMatchObject({
+      mode: "fixture",
+      perCallCapUnits: 10_000n,
+      dailyCapUnits: 250_000n,
+      pinPayTo: "0x93053f1e7A5eFEDa532Fe69CbbE43cBEc3A0F13f",
+      smartMoney: false,
+      fixtureCluster: ["0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0x1111111111111111111111111111111111111111"],
+    });
+    process.env.XORV_NANSEN_DAILY_CAP = "$1";
+    expect(() => loadNansenConfig()).toThrow(/XORV_NANSEN_DAILY_CAP.*USDC units/);
+    delete process.env.XORV_NANSEN_DAILY_CAP;
+    process.env.XORV_NANSEN_MODE = "testnet";
+    expect(() => loadNansenConfig()).toThrow(/"off", "fixture" or "live"/);
+    process.env.XORV_NANSEN_MODE = "fixture";
+    process.env.XORV_NANSEN_FIXTURE_CLUSTER = "0.0.1234";
+    expect(() => loadNansenConfig()).toThrow(/XORV_NANSEN_FIXTURE_CLUSTER/);
   });
 });
