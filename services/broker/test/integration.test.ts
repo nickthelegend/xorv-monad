@@ -1279,6 +1279,16 @@ describe("public surface", () => {
     provider.close();
   });
 
+  it("resolves the registration file by node id too, which is what the CLI mints", async () => {
+    h.agentWallets.set("8", PAYEE_A);
+    const provider = await connectProvider(h, { agentId: "8", nodeId: "node-cli-minted" });
+    const byNode = await fetch(`${h.base}/agents/node-cli-minted.json`);
+    expect(byNode.status).toBe(200);
+    const byProvider = await fetch(`${h.base}/agents/${provider.providerId}.json`);
+    expect(await byNode.json()).toEqual(await byProvider.json());
+    provider.close();
+  });
+
   it("serves ledger feeds from the reader, linked back to broker job ids", async () => {
     const provider = await connectProvider(h);
     const { body: q } = await quote(h);

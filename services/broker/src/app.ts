@@ -81,7 +81,7 @@ import type { BrokerConfig } from "./config.js";
 import { describeLedger, type ChainLike, type PublishResult } from "./chain.js";
 import type { Hub } from "./hub.js";
 import { JobStore, isTerminal, type Quote, type StoredJob } from "./jobs.js";
-import { Registry, type ProviderRecord, type VerifiedRegistration } from "./registry.js";
+import { Registry, providerIdFor, type ProviderRecord, type VerifiedRegistration } from "./registry.js";
 import { bodyLimit, rateLimit, requestLog } from "./guards.js";
 import { Metrics } from "./metrics.js";
 import { resolveFacilitator } from "./facilitator.js";
@@ -423,7 +423,12 @@ export function createApp(deps: AppDeps) {
   app.get("/agents/:file", (c) => {
     const file = c.req.param("file");
     if (!file.endsWith(".json")) return c.json({ error: "not found" }, 404);
-    const provider = registry.find(file.slice(0, -".json".length));
+    // Accept the provider id or the node id: `xorv identity register` mints the
+    // agent before the node has ever been told its provider id, so the URI it
+    // writes on-chain is keyed by node id. The provider id is a pure function
+    // of the node id, so both spellings resolve to the same record.
+    const name = file.slice(0, -".json".length);
+    const provider = registry.find(name) ?? registry.find(providerIdFor(name));
     if (!provider) return c.json({ error: "unknown provider" }, 404);
     const adapters = [...new Set(provider.capabilities.map((cap) => cap.displayName || cap.adapter))];
     return c.json(
