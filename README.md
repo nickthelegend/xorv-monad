@@ -63,7 +63,7 @@ layer, not a consumer app:
 pnpm install && pnpm build && pnpm test
 ```
 
-**970 tests pass** (counted on 2026-09-26 by running every workspace suite once, one after another,
+**1,038 tests pass** (counted on 2026-09-27 by running every workspace suite once, one after another,
 on Windows 11 with Node 22.21). A further 14 POSIX-only CLI cases (sandbox tiers and file modes) are
 skipped on Windows. They need **no keys, no RPC and no testnet funds**: the x402 facilitator and the
 XorvLedger writer are stubbed at the chain boundary, the contracts run on Hardhat's in-process chain
@@ -79,10 +79,10 @@ Solidity compiler through Hardhat. CI runs the same commands on Node 22 and 24
 | `packages/cli` | 245 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal; the earnings ledger |
 | `packages/mcp` | 82 | the real server over stdio against a mock broker that verifies signatures, the Privy signer with a fake client, the session budget, the Privy policy |
 | `packages/mm-plugin` | 71 | every `mm xorv` command on a mocked MetaMask context, the signer, the payment policy, the manifest |
-| `services/broker` | 206 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles, private jobs and vaults |
-| `apps/app` | 69 | the x402 payment helper, ratings, demo-payer guards, the Mera keyring with a synced authenticator |
+| `services/broker` | 264 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles, private jobs and vaults, Nansen trust signals over x402 and the wash-rating guard |
+| `apps/app` | 79 | the x402 payment helper, ratings, demo-payer guards, the Mera keyring with a synced authenticator, the Nansen trust panels |
 | `apps/landing` | 14 | the broker feed parsers |
-| **Total** | **970** | |
+| **Total** | **1,038** | |
 
 The Envio indexer (`services/indexer`) is outside the pnpm workspace because Envio ships no Windows
 binary. Its 52 tests run in a Linux container with the one command in

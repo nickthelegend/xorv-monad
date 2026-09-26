@@ -407,7 +407,7 @@ reassignment means someone else finished the job. The verifier runs, and the rec
 
 ## Testing
 
-The root `pnpm test` runs every workspace suite: **970 tests**, counted on 2026-09-26 by running
+The root `pnpm test` runs every workspace suite: **1,038 tests**, counted on 2026-09-27 by running
 each suite once, one after another, on Windows. A further 14 POSIX-only CLI cases are skipped there.
 None of them needs a key, an RPC or testnet funds.
 
@@ -418,10 +418,10 @@ None of them needs a key, an RPC or testnet funds.
 | `packages/cli` | 16 | 245 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
 | `packages/mcp` | 7 | 82 | the real server over stdio, a mock broker that verifies signatures, a fake Privy client |
 | `packages/mm-plugin` | 7 | 71 | the real `PluginCommand` base, a fake executor that signs the way MetaMask's JSON-RPC signer does |
-| `services/broker` | 10 | 206 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
-| `apps/app` | 6 | 69 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
+| `services/broker` | 11 | 264 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
+| `apps/app` | 7 | 79 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
 | `apps/landing` | 1 | 14 | hand-built broker payloads, including malformed ones |
-| **Total** | **62** | **970** | |
+| **Total** | **64** | **1,038** | |
 
 What makes that possible:
 
