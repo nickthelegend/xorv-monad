@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@category-labs/mera": "^0.2.0",
     "@lobehub/icons": "^5.15.0",
     "@privy-io/react-auth": "^3.45.0",
     "@x402/core": "~2.27.0",
