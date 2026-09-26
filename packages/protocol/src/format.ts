@@ -1,0 +1,23 @@
+/**
+ * Human-facing formatting shared by the CLI and both web apps, so a duration
+ * or an age reads the same everywhere it is shown.
+ */
+
+/** Wall-clock duration rendered for humans: "820ms", "4.2s", "1m 12s". */
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
+/** Relative time for feeds: "just now", "12s ago", "4m ago". */
+export function formatAgo(epochMs: number, now = Date.now()): string {
+  const delta = Math.max(0, now - epochMs);
+  if (delta < 2_000) return "just now";
+  if (delta < 60_000) return `${Math.round(delta / 1000)}s ago`;
+  if (delta < 3_600_000) return `${Math.round(delta / 60_000)}m ago`;
+  if (delta < 86_400_000) return `${Math.round(delta / 3_600_000)}h ago`;
+  return `${Math.round(delta / 86_400_000)}d ago`;
+}
