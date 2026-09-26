@@ -1393,7 +1393,9 @@ export function createApp(deps: AppDeps) {
       .recordJob({
         jobId: job.id,
         agentId: receiptAgentId(job),
-        buyer: job.payment.payer,
+        // A facilitator that didn't report the payer leaves "unknown"; the
+        // receipt then records the zero address rather than failing to build.
+        buyer: isEvmAddress(job.payment.payer) ? job.payment.payer : null,
         payTo: job.payment.payTo,
         amount: job.payment.amount,
         paymentTx: job.payment.txHash,

@@ -67,6 +67,8 @@ class StubChain implements ChainLike {
   readonly heartbeats: HeartbeatSample[] = [];
   readonly receipts: ReceiptInput[] = [];
   readonly ratings: Array<{ rating: RatingMessage; signature: Hex }> = [];
+  /** Fail this many receipt writes before letting them land (an RPC outage). */
+  failReceipts = 0;
   private tx = 0;
 
   mode(): LedgerMode {
@@ -100,6 +102,10 @@ class StubChain implements ChainLike {
     return this.result();
   }
   async recordJob(input: ReceiptInput) {
+    if (this.failReceipts > 0) {
+      this.failReceipts -= 1;
+      return null;
+    }
     this.receipts.push(input);
     return this.result();
   }
@@ -243,6 +249,7 @@ interface Harness {
   paidFetch: typeof fetch;
   payAs(account: PrivateKeyAccount): typeof fetch;
   agentWallets: Map<string, string>;
+  sweep(): void;
   stop(): Promise<void>;
 }
 
@@ -256,7 +263,7 @@ async function boot(opts: { config?: Partial<BrokerConfig>; injectFacilitator?: 
   const agentWallets = new Map<string, string>();
 
   let hub: Hub | null = null;
-  const { app, hubHandlers } = createApp({
+  const { app, hubHandlers, sweep } = createApp({
     config,
     chain,
     registry,
@@ -297,6 +304,7 @@ async function boot(opts: { config?: Partial<BrokerConfig>; injectFacilitator?: 
     paidFetch: payAs(buyer),
     payAs,
     agentWallets,
+    sweep,
     async stop() {
       hub?.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -865,6 +873,54 @@ describe("failure handling", () => {
     expect((await getJob(h, paid.jobId)).error).toBe("second failure");
     a.close();
     b.close();
+  }, 20_000);
+
+  it("times out an overdue job onto a fresh provider, with a fresh clock, and doesn't bounce it back", async () => {
+    const a = await connectProvider(h, { label: "a", nodeId: "n1", address: PAYEE_A });
+    const b = await connectProvider(h, { label: "b", nodeId: "n2", address: PAYEE_B });
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId);
+    const first = a.dispatched.length > 0 ? a : b;
+    const second = first === a ? b : a;
+    await waitFor(() => first.dispatched[0]);
+
+    // Eleven minutes on the first provider: past the ten-minute ceiling.
+    const longAgo = Date.now() - 11 * 60_000;
+    h.jobs.patch(paid.jobId, { assignedAt: longAgo, startedAt: longAgo });
+    h.sweep();
+    await waitFor(() => second.dispatched[0]);
+    await waitFor(() => first.cancelled[0]);
+    const moved = await getJob(h, paid.jobId);
+    expect(moved.providerId).toBe(second.providerId);
+    expect(Date.now() - moved.assignedAt).toBeLessThan(5_000);
+
+    // The next sweep finds nothing overdue: the new provider has its full timeout.
+    h.sweep();
+    await new Promise((r) => setTimeout(r, 100));
+    expect((await getJob(h, paid.jobId)).providerId).toBe(second.providerId);
+    expect(first.dispatched).toHaveLength(1);
+    a.close();
+    b.close();
+  }, 20_000);
+
+  it("retries a receipt whose write failed", async () => {
+    const provider = await connectProvider(h);
+    h.chain.failReceipts = 1;
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId);
+    await provider.completeNextJob("done");
+    await waitForStatus(h, paid.jobId, "completed");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(h.chain.receipts).toHaveLength(0);
+
+    h.sweep();
+    const receipted = await waitFor(async () => {
+      const j = await getJob(h, paid.jobId);
+      return j.receiptTxHash ? j : undefined;
+    });
+    expect(receipted.receiptTxHash).toMatch(/^0x/);
+    expect(h.chain.receipts).toHaveLength(1);
+    provider.close();
   }, 20_000);
 
   it("fails the job when there is nobody left to retry with, and still receipts the payment", async () => {
