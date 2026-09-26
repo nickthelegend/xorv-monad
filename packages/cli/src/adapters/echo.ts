@@ -40,10 +40,10 @@ export class EchoAdapter implements JobAdapter {
       `You asked (${words.length} word${words.length === 1 ? "" : "s"}):`,
       `> ${input.prompt.trim().slice(0, 800)}`,
       ``,
-      `This job was matched to a live provider, paid for in a real on-chain`,
-      `transfer over x402, and executed here. Swap this capability for`,
-      `claude-code, codex, grok or an OpenAI-compatible endpoint to sell actual`,
-      `model capacity — the payment path is identical.`,
+      `This job was matched to a live provider, paid for with a real USDC`,
+      `transfer over x402 on Monad, and executed here. Swap this capability for`,
+      `claude-code, codex, grok, qwen, kimi, hunyuan or an OpenAI-compatible`,
+      `endpoint to sell actual model capacity — the payment path is identical.`,
     ].join("\n");
 
     input.emit({ kind: "message", text: reply });
