@@ -254,6 +254,26 @@ describe("match", () => {
     );
     expect(registry.match({ maxPriceUsdMicros: 100_000 })!.capability.id).toBe("echo");
   });
+
+  it("lists every eligible capability in the order match would pick them", () => {
+    registry.register(
+      registration({
+        capabilities: [
+          capability({ id: "claude-code", priceUsdMicros: 10_000 }),
+          capability({ id: "echo", adapter: "echo", priceUsdMicros: 1_000, maxConcurrency: 4 }),
+          capability({ id: "kimi", adapter: "kimi", priceUsdMicros: 90_000 }),
+        ],
+      }),
+    );
+    registry.register(
+      registration({ nodeId: "node-b-id", address: addr(1002), capabilities: [capability({ id: "qwen", adapter: "qwen", priceUsdMicros: 5_000 })] }),
+    );
+    const candidates = registry.candidates({ maxPriceUsdMicros: 50_000 });
+    expect(candidates.map((m) => m.capability.id)).toEqual(["echo", "qwen", "claude-code"]);
+    expect(registry.match({ maxPriceUsdMicros: 50_000 })).toEqual(candidates[0]);
+    expect(registry.candidates({ adapter: "qwen", maxPriceUsdMicros: 50_000 }).map((m) => m.capability.id)).toEqual(["qwen"]);
+    expect(registry.candidates({ maxPriceUsdMicros: 500 })).toEqual([]);
+  });
 });
 
 describe("stats", () => {

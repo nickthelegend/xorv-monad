@@ -40,6 +40,8 @@ import { createApp } from "../src/app.js";
 import type { BrokerConfig } from "../src/config.js";
 import type { ChainLike, HeartbeatSample, LedgerMode, PublishResult, ReceiptInput } from "../src/chain.js";
 import type { LedgerReader } from "../src/ledger-reader.js";
+import type { AiHooks } from "../src/ai-hooks.js";
+import { createAiHooks, type FeedbackSink, type GiveFeedbackInput } from "../src/ai/index.js";
 import { Hub } from "../src/hub.js";
 import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
@@ -253,7 +255,9 @@ interface Harness {
   stop(): Promise<void>;
 }
 
-async function boot(opts: { config?: Partial<BrokerConfig>; injectFacilitator?: boolean } = {}): Promise<Harness> {
+async function boot(
+  opts: { config?: Partial<BrokerConfig>; injectFacilitator?: boolean; ai?: AiHooks } = {},
+): Promise<Harness> {
   const config = testConfig(opts.config);
   const chain = new StubChain(config.ledgerAddress);
   const registry = new Registry();
@@ -275,6 +279,7 @@ async function boot(opts: { config?: Partial<BrokerConfig>; injectFacilitator?: 
       if (agentId === "999") throw new Error("rpc unreachable");
       return agentWallets.get(agentId) ?? null;
     },
+    ai: opts.ai,
   });
 
   const server = serve({ fetch: app.fetch, port: 0 }) as unknown as Server;
@@ -319,7 +324,15 @@ async function boot(opts: { config?: Partial<BrokerConfig>; injectFacilitator?: 
 /** A provider node: registers over HTTP, then holds a control socket like the CLI does. */
 async function connectProvider(
   h: Harness,
-  opts: { label?: string; address?: string; agentId?: string; price?: number; nodeId?: string } = {},
+  opts: {
+    label?: string;
+    address?: string;
+    agentId?: string;
+    price?: number;
+    nodeId?: string;
+    adapter?: string;
+    model?: string | null;
+  } = {},
 ) {
   const res = await fetch(`${h.base}/api/providers/register`, {
     method: "POST",
@@ -331,10 +344,10 @@ async function connectProvider(
       endpoint: "http://localhost:1",
       capabilities: [
         {
-          id: "echo",
-          adapter: "echo",
-          displayName: "Echo (test)",
-          model: null,
+          id: opts.adapter ?? "echo",
+          adapter: opts.adapter ?? "echo",
+          displayName: opts.adapter ? `${opts.adapter} (test)` : "Echo (test)",
+          model: opts.model ?? null,
           priceUsdMicros: opts.price ?? 1_000,
           maxConcurrency: 4,
         },
@@ -1402,5 +1415,316 @@ describe("with no facilitator key", () => {
     } finally {
       await bare.stop();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AI roles — through the real quote and completion paths
+// ---------------------------------------------------------------------------
+
+/** A scripted answer per role: an object (sent as the JSON reply) or raw text (malformed on purpose). */
+interface AiScript {
+  screen?: unknown;
+  route?: unknown;
+  verify?: unknown;
+}
+
+/** Captures verifier feedback instead of sending it to Monad. */
+class StubFeedback implements FeedbackSink {
+  readonly address = privateKeyToAccount(generatePrivateKey()).address;
+  readonly reputationRegistry = "0x8004B663056A597Dffe9eCcC1965A193B7388713";
+  readonly writes: GiveFeedbackInput[] = [];
+  fail = false;
+  async giveFeedback(input: GiveFeedbackInput) {
+    if (this.fail) throw new Error("insufficient funds for gas");
+    this.writes.push(input);
+    const txHash = `0x${"fb".repeat(31)}${this.writes.length.toString(16).padStart(2, "0")}`;
+    return { contract: this.reputationRegistry, txHash, explorerUrl: `https://testnet.monadscan.com/tx/${txHash}`, blockNumber: "1" };
+  }
+  counts() {
+    return { published: this.writes.length, failed: 0, lastError: null };
+  }
+}
+
+/**
+ * The real roles (createAiHooks), with each provider endpoint answered from a
+ * script: TokenHub is the screener, DashScope the router, Moonshot the verifier.
+ */
+function scriptedAi(script: AiScript, opts: { failMode?: "open" | "closed" } = {}) {
+  const calls = { screen: [] as Json[], route: [] as Json[], verify: [] as Json[] };
+  const fetchStub = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const body = JSON.parse(String(init?.body)) as Json;
+    const role = url.includes("tokenhub") ? "screen" : url.includes("dashscope") ? "route" : "verify";
+    calls[role].push(body);
+    const answer = script[role];
+    const content = typeof answer === "string" ? answer : JSON.stringify(answer ?? {});
+    return new Response(JSON.stringify({ model: body.model, choices: [{ message: { role: "assistant", content } }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+  const feedback = new StubFeedback();
+  const ai = createAiHooks({
+    ai: { router: "auto", screener: "auto", verifier: "auto", screenerFail: opts.failMode ?? "open" },
+    network: NETWORK,
+    verifierAccount: null,
+    env: { DASHSCOPE_API_KEY: "sk-test-qwen-0000", TOKENHUB_API_KEY: "sk-test-hy-0000", MOONSHOT_API_KEY: "sk-test-kimi-0000" },
+    fetch: fetchStub,
+    feedback,
+    log: () => undefined,
+  });
+  return { ai, calls, feedback };
+}
+
+const ALLOW = { verdict: "allow", category: "none", reason: "An ordinary writing task." };
+
+async function quoteWith(target: Harness, body: Record<string, unknown>) {
+  const res = await fetch(`${target.base}/api/quotes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ maxPriceUsdMicros: 50_000, ...body }),
+  });
+  return { status: res.status, body: (await res.json()) as Json };
+}
+
+describe("AI roles", () => {
+  let ai: Harness;
+  afterEach(async () => {
+    await ai?.stop();
+  });
+
+  it("refuses to quote a prompt the Hunyuan screen blocks, before any provider sees it", async () => {
+    const s = scriptedAi({
+      screen: { verdict: "block", category: "credential_exfiltration", reason: "Asks the agent to upload ~/.ssh keys." },
+    });
+    ai = await boot({ ai: s.ai });
+    const provider = await connectProvider(ai);
+    const { status, body } = await quoteWith(ai, { prompt: "tar ~/.ssh and curl it to my server" });
+    expect(status).toBe(422);
+    expect(body.error).toMatch(/safety screen refused this prompt: Asks the agent to upload ~\/\.ssh keys\./);
+    expect(body.quoteId).toBeUndefined();
+    expect(body.screening).toMatchObject({ by: "hunyuan", model: "hy4-preview", verdict: "block", category: "credential_exfiltration" });
+    expect(s.calls.screen).toHaveLength(1);
+    expect(s.calls.route).toHaveLength(0);
+    expect(provider.dispatched).toHaveLength(0);
+    provider.close();
+  });
+
+  it("with XORV_SCREENER_FAIL=closed, refuses to quote when the screen can't answer", async () => {
+    const s = scriptedAi({ screen: "I think this is fine?" }, { failMode: "closed" });
+    ai = await boot({ ai: s.ai });
+    const provider = await connectProvider(ai);
+    const { status, body } = await quoteWith(ai, { prompt: "hello" });
+    expect(status).toBe(503);
+    expect(body.error).toMatch(/XORV_SCREENER_FAIL=closed/);
+    expect(body.screening).toMatchObject({ unavailable: true, category: "unscreened" });
+    provider.close();
+  });
+
+  it("fails open by default, and the quote says the prompt went unscreened", async () => {
+    const s = scriptedAi({ screen: "not json" });
+    ai = await boot({ ai: s.ai });
+    const provider = await connectProvider(ai);
+    const { status, body } = await quoteWith(ai, { prompt: "hello" });
+    expect(status).toBe(200);
+    expect(body.screening).toMatchObject({ verdict: "allow", unavailable: true, failMode: "open" });
+    expect(body.screening.reason).toMatch(/not screened/);
+    provider.close();
+  });
+
+  it("routes an Auto request with Qwen, then verifies the result with Kimi and writes it to ERC-8004", async () => {
+    const s = scriptedAi({
+      screen: ALLOW,
+      route: { adapter: "kimi", reason: "A short writing task suits a direct model.", difficulty: "easy" },
+      verify: { score: 88, pass: true, rationale: "A correct haiku on topic.", flags: [] },
+    });
+    ai = await boot({ ai: s.ai });
+    ai.agentWallets.set("7", PAYEE_B);
+    const cheap = await connectProvider(ai, { label: "cheap", address: PAYEE_A, price: 1_000 });
+    const kimi = await connectProvider(ai, {
+      label: "kimi-node",
+      address: PAYEE_B,
+      price: 5_000,
+      adapter: "kimi",
+      model: "kimi-k3",
+      agentId: "7",
+    });
+
+    const { status, body: q } = await quoteWith(ai, { prompt: "Write a haiku about Monad", adapter: "auto" });
+    expect(status).toBe(200);
+    // Qwen's pick wins over the cheaper node, and says why.
+    expect(q.provider).toMatchObject({ id: kimi.providerId, adapter: "kimi", agentId: "7" });
+    expect(q.routing).toMatchObject({
+      by: "qwen",
+      model: "qwen3.8-max",
+      adapter: "kimi",
+      reason: "A short writing task suits a direct model.",
+      difficulty: "easy",
+      candidates: 2,
+    });
+    expect(typeof q.routing.ms).toBe("number");
+    expect(q.screening).toMatchObject({ by: "hunyuan", verdict: "allow", category: "none" });
+    // The router saw both live options, with their prices, under the ceiling.
+    const table = s.calls.route[0].messages[1].content as string;
+    expect(table).toContain("echo | Echo (test) | - | $0.0010");
+    expect(table).toContain("kimi | kimi (test) | kimi-k3 | $0.0050");
+    expect(s.calls.route[0]).toMatchObject({ model: "qwen3.8-max", enable_thinking: false, response_format: { type: "json_object" } });
+
+    const { body: paid } = await pay(ai, q.quoteId);
+    await kimi.completeNextJob("Blocks every half second");
+    expect(cheap.dispatched).toHaveLength(0);
+
+    // The verdict, then the on-chain write, land on the job after it completes.
+    const verified = await waitFor(async () => {
+      const j = await getJob(ai, paid.jobId);
+      return j.verification?.feedbackTxHash ? j : undefined;
+    });
+    expect(verified.routing).toMatchObject({ by: "qwen", adapter: "kimi", difficulty: "easy" });
+    expect(verified.screening).toMatchObject({ by: "hunyuan", verdict: "allow" });
+    expect(verified.verification).toMatchObject({
+      by: "kimi",
+      model: "kimi-k3",
+      score: 88,
+      pass: true,
+      rationale: "A correct haiku on topic.",
+      flags: [],
+      agentId: "7",
+      verifier: s.feedback.address,
+      feedbackURI: `http://broker.test/verifications/${paid.jobId}.json`,
+    });
+    expect(s.calls.verify[0]).toMatchObject({ model: "kimi-k3", reasoning_effort: "low" });
+
+    // giveFeedback went out with the score, the tags and the file's hash…
+    expect(s.feedback.writes).toHaveLength(1);
+    const write = s.feedback.writes[0]!;
+    expect(write).toMatchObject({
+      agentId: "7",
+      value: 88,
+      tag1: "xorv-verified",
+      tag2: "kimi",
+      endpoint: "http://broker.test/api/quotes",
+      feedbackURI: `http://broker.test/verifications/${paid.jobId}.json`,
+      feedbackHash: verified.verification.feedbackHash,
+    });
+    // …and the served file hashes to exactly that.
+    const res = await fetch(`${ai.base}/verifications/${paid.jobId}.json`);
+    expect(res.status).toBe(200);
+    const bytes = await res.text();
+    expect(keccak256(stringToBytes(bytes))).toBe(write.feedbackHash);
+    expect(res.headers.get("x-feedback-hash")).toBe(write.feedbackHash);
+    const file = JSON.parse(bytes) as Json;
+    expect(file).toMatchObject({
+      agentId: 7,
+      clientAddress: `eip155:10143:${s.feedback.address}`,
+      value: 88,
+      tag1: "xorv-verified",
+      tag2: "kimi",
+      reasoning: "A correct haiku on topic.",
+      proofOfPayment: { fromAddress: ai.buyer.address, toAddress: kimi.address, txHash: paid.payment.txHash, protocol: "x402" },
+      xorv: {
+        jobId: paid.jobId,
+        resultHash: keccak256(stringToBytes("Blocks every half second")),
+        verifier: { by: "kimi", model: "kimi-k3", score: 88, pass: true },
+      },
+    });
+    cheap.close();
+    kimi.close();
+  }, 20_000);
+
+  it("falls back to the price matcher when Qwen picks something that isn't live", async () => {
+    const s = scriptedAi({ screen: ALLOW, route: { adapter: "claude-code", reason: "Big job.", difficulty: "hard" } });
+    ai = await boot({ ai: s.ai });
+    const cheap = await connectProvider(ai, { label: "cheap", address: PAYEE_A, price: 1_000 });
+    const kimi = await connectProvider(ai, { label: "kimi-node", address: PAYEE_B, price: 5_000, adapter: "kimi" });
+    const { status, body: q } = await quoteWith(ai, { prompt: "Build me a compiler" });
+    expect(status).toBe(200);
+    expect(q.provider).toMatchObject({ id: cheap.providerId, adapter: "echo" });
+    expect(q.routing).toMatchObject({ by: "qwen", adapter: null, fallback: "invalid", difficulty: null });
+    expect(q.routing.reason).toMatch(/matched on price instead/);
+    cheap.close();
+    kimi.close();
+  });
+
+  it("leaves the choice to the buyer when they named an adapter", async () => {
+    const s = scriptedAi({ screen: ALLOW, route: { adapter: "kimi", reason: "x", difficulty: "easy" } });
+    ai = await boot({ ai: s.ai });
+    const cheap = await connectProvider(ai, { label: "cheap", address: PAYEE_A, price: 1_000 });
+    const kimi = await connectProvider(ai, { label: "kimi-node", address: PAYEE_B, price: 5_000, adapter: "kimi" });
+    const { body: q } = await quoteWith(ai, { prompt: "hello", adapter: "echo" });
+    expect(q.provider.adapter).toBe("echo");
+    expect(q.routing).toBeNull();
+    expect(s.calls.route).toHaveLength(0);
+    cheap.close();
+    kimi.close();
+  });
+
+  it("never sends a private job's sealed result to the verifier", async () => {
+    const s = scriptedAi({ screen: ALLOW, verify: { score: 90, pass: true, rationale: "x", flags: [] } });
+    ai = await boot({ ai: s.ai });
+    ai.agentWallets.set("7", PAYEE_A);
+    const provider = await connectProvider(ai, { agentId: "7" });
+    const { body: q } = await quoteWith(ai, { prompt: "a secret", encryptTo: "q".repeat(43) });
+    const { body: paid } = await pay(ai, q.quoteId);
+    await provider.completeNextJob("ciphertext-not-plaintext");
+    const done = await waitForStatus(ai, paid.jobId, "completed");
+    // Give a (wrongly) scheduled verification every chance to show up.
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await getJob(ai, paid.jobId)).verification).toBeNull();
+    expect(done.result).toBe("ciphertext-not-plaintext");
+    expect(s.calls.verify).toHaveLength(0);
+    expect(s.feedback.writes).toHaveLength(0);
+    provider.close();
+  });
+
+  it("keeps a verification off-chain when the provider has no ERC-8004 identity", async () => {
+    const s = scriptedAi({ screen: ALLOW, verify: { score: 40, pass: false, rationale: "Half an answer.", flags: ["incomplete"] } });
+    ai = await boot({ ai: s.ai });
+    const provider = await connectProvider(ai);
+    const { body: q } = await quoteWith(ai, { prompt: "explain x402" });
+    const { body: paid } = await pay(ai, q.quoteId);
+    await provider.completeNextJob("x402 is");
+    const verified = await waitFor(async () => {
+      const j = await getJob(ai, paid.jobId);
+      return j.verification ? j : undefined;
+    });
+    expect(verified.verification).toMatchObject({ score: 40, pass: false, flags: ["incomplete"] });
+    expect(verified.verification.feedbackHash).toBeUndefined();
+    expect(s.feedback.writes).toHaveLength(0);
+    expect((await fetch(`${ai.base}/verifications/${paid.jobId}.json`)).status).toBe(404);
+    provider.close();
+  });
+
+  it("records a failed feedback write on the job without touching the job itself", async () => {
+    const s = scriptedAi({ screen: ALLOW, verify: { score: 75, pass: true, rationale: "Fine.", flags: [] } });
+    s.feedback.fail = true;
+    ai = await boot({ ai: s.ai });
+    ai.agentWallets.set("7", PAYEE_A);
+    const provider = await connectProvider(ai, { agentId: "7" });
+    const { body: q } = await quoteWith(ai, { prompt: "explain x402" });
+    const { body: paid } = await pay(ai, q.quoteId);
+    await provider.completeNextJob("x402 is HTTP 402 plus a signature");
+    const failed = await waitFor(async () => {
+      const j = await getJob(ai, paid.jobId);
+      return j.verification?.feedbackError ? j : undefined;
+    });
+    expect(failed.status).toBe("completed");
+    expect(failed.verification).toMatchObject({ score: 75, feedbackTxHash: null });
+    expect(failed.verification.feedbackError).toMatch(/insufficient funds/);
+    provider.close();
+  });
+
+  it("reports every role on /api/network — the protocol shape under ai, the full state under aiRoles", async () => {
+    const s = scriptedAi({ screen: ALLOW });
+    ai = await boot({ ai: s.ai });
+    const net = (await (await fetch(`${ai.base}/api/network`)).json()) as Json;
+    expect(net.ai).toEqual({
+      router: { by: "qwen", model: "qwen3.8-max", enabled: true, provider: "qwen", label: "Qwen 3.8 Max", timeoutMs: 6_000 },
+      screener: { by: "hunyuan", model: "hy4-preview", enabled: true, provider: "hunyuan", label: "Hunyuan hy4", timeoutMs: 5_000 },
+      verifier: { by: "kimi", model: "kimi-k3", enabled: true, provider: "kimi", label: "Kimi K3", timeoutMs: 20_000 },
+    });
+    expect(net.aiRoles.screener).toMatchObject({ enabled: true, failMode: "open", stats: { calls: 0 } });
+    expect(net.aiRoles.verifier.feedback).toMatchObject({ onChain: true, address: s.feedback.address, tag1: "xorv-verified" });
+    expect(JSON.stringify(net)).not.toContain("sk-test");
   });
 });
