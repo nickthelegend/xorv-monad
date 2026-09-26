@@ -125,6 +125,16 @@ export interface JobRequest {
   title?: string | null;
   /** Hard deadline in epoch ms; the broker won't assign past it. */
   deadlineAt?: number | null;
+  /**
+   * A private job: the buyer's X25519 public key (base64url, 32 bytes), derived
+   * from their passkey. When set, the provider seals the result to this key
+   * before it leaves the node, so the broker only ever stores and serves
+   * ciphertext, and the on-chain resultHash commits to that ciphertext.
+   * The prompt itself stays readable, because routing and safety screening
+   * need it; anything that needs the plaintext *result* (the AI verifier) is
+   * skipped for private jobs.
+   */
+  encryptTo?: string | null;
 }
 
 /** A single streamed step from the provider while the job runs. */
