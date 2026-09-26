@@ -1,7 +1,7 @@
 {
   "name": "@xorv/cli",
-  "version": "0.1.0",
-  "description": "Rent out your idle Claude / Codex / Grok subscription and get paid per job in USDC over x402 on Hedera.",
+  "version": "0.2.0",
+  "description": "Rent out your idle Claude / Codex / Grok / Qwen / Kimi / Hunyuan capacity and get paid per job in USDC over x402 on Monad.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
   "homepage": "https://github.com/nickthelegend/xorv#readme",
@@ -29,19 +29,23 @@
   },
   "keywords": [
     "x402",
-    "hedera",
+    "monad",
+    "evm",
     "usdc",
+    "erc-8004",
     "ai",
     "claude-code",
     "codex",
     "grok",
+    "qwen",
+    "kimi",
+    "hunyuan",
     "micropayments",
     "cli",
-    "passive-income",
     "agent-marketplace"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "build": "tsc -p tsconfig.json && node scripts/make-executable.mjs dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm build",
@@ -49,13 +53,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@hiero-ledger/sdk": "2.85.0",
-    "@x402/core": "~2.20.0",
-    "@x402/fetch": "~2.20.0",
-    "@x402/hedera": "~2.20.0",
+    "@x402/core": "~2.27.0",
+    "@x402/evm": "~2.27.0",
+    "@x402/fetch": "~2.27.0",
     "@xorv/protocol": "workspace:*",
     "commander": "^13.1.0",
     "picocolors": "^1.1.1",
+    "viem": "^2.56.9",
     "ws": "^8.18.0"
   },
   "devDependencies": {
