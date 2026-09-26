@@ -1,0 +1,1477 @@
+{
+  "total_duration_s": 62.4,
+  "width": 1920,
+  "height": 1080,
+  "groups": [
+    {
+      "id": "caption-group-0",
+      "frame": 1,
+      "start": 0.05,
+      "end": 0.52,
+      "text": "You pay",
+      "words": [
+        {
+          "id": "caption-word-0-0",
+          "text": "You",
+          "start": 0.05,
+          "end": 0.26
+        },
+        {
+          "id": "caption-word-0-1",
+          "text": "pay",
+          "start": 0.26,
+          "end": 0.52
+        }
+      ]
+    },
+    {
+      "id": "caption-group-1",
+      "frame": 1,
+      "start": 0.52,
+      "end": 1.75,
+      "text": "for Claude every",
+      "words": [
+        {
+          "id": "caption-word-1-0",
+          "text": "for",
+          "start": 0.52,
+          "end": 0.78
+        },
+        {
+          "id": "caption-word-1-1",
+          "text": "Claude",
+          "start": 0.78,
+          "end": 1.29
+        },
+        {
+          "id": "caption-word-1-2",
+          "text": "every",
+          "start": 1.29,
+          "end": 1.63
+        }
+      ]
+    },
+    {
+      "id": "caption-group-2",
+      "frame": 1,
+      "start": 1.76,
+      "end": 2.31,
+      "text": "month,",
+      "words": [
+        {
+          "id": "caption-word-2-0",
+          "text": "month,",
+          "start": 1.76,
+          "end": 2.31
+        }
+      ]
+    },
+    {
+      "id": "caption-group-3",
+      "frame": 1,
+      "start": 2.31,
+      "end": 2.64,
+      "text": "most of",
+      "words": [
+        {
+          "id": "caption-word-3-0",
+          "text": "most",
+          "start": 2.31,
+          "end": 2.52
+        },
+        {
+          "id": "caption-word-3-1",
+          "text": "of",
+          "start": 2.53,
+          "end": 2.63
+        }
+      ]
+    },
+    {
+      "id": "caption-group-4",
+      "frame": 1,
+      "start": 2.64,
+      "end": 3,
+      "text": "the day",
+      "words": [
+        {
+          "id": "caption-word-4-0",
+          "text": "the",
+          "start": 2.64,
+          "end": 2.81
+        },
+        {
+          "id": "caption-word-4-1",
+          "text": "day",
+          "start": 2.81,
+          "end": 2.98
+        }
+      ]
+    },
+    {
+      "id": "caption-group-5",
+      "frame": 1,
+      "start": 3,
+      "end": 3.98,
+      "text": "it sits idle.",
+      "words": [
+        {
+          "id": "caption-word-5-0",
+          "text": "it",
+          "start": 3,
+          "end": 3.13
+        },
+        {
+          "id": "caption-word-5-1",
+          "text": "sits",
+          "start": 3.14,
+          "end": 3.42
+        },
+        {
+          "id": "caption-word-5-2",
+          "text": "idle.",
+          "start": 3.42,
+          "end": 3.86
+        }
+      ]
+    },
+    {
+      "id": "caption-group-6",
+      "frame": 2,
+      "start": 4.68,
+      "end": 6.1,
+      "text": "Someone else needs",
+      "words": [
+        {
+          "id": "caption-word-6-0",
+          "text": "Someone",
+          "start": 4.68,
+          "end": 5.22
+        },
+        {
+          "id": "caption-word-6-1",
+          "text": "else",
+          "start": 5.28,
+          "end": 5.63
+        },
+        {
+          "id": "caption-word-6-2",
+          "text": "needs",
+          "start": 5.63,
+          "end": 6.1
+        }
+      ]
+    },
+    {
+      "id": "caption-group-7",
+      "frame": 2,
+      "start": 6.1,
+      "end": 6.56,
+      "text": "one job",
+      "words": [
+        {
+          "id": "caption-word-7-0",
+          "text": "one",
+          "start": 6.1,
+          "end": 6.38
+        },
+        {
+          "id": "caption-word-7-1",
+          "text": "job",
+          "start": 6.38,
+          "end": 6.56
+        }
+      ]
+    },
+    {
+      "id": "caption-group-8",
+      "frame": 2,
+      "start": 6.56,
+      "end": 7.16,
+      "text": "run and",
+      "words": [
+        {
+          "id": "caption-word-8-0",
+          "text": "run",
+          "start": 6.56,
+          "end": 7.03
+        },
+        {
+          "id": "caption-word-8-1",
+          "text": "and",
+          "start": 7.03,
+          "end": 7.16
+        }
+      ]
+    },
+    {
+      "id": "caption-group-9",
+      "frame": 2,
+      "start": 7.16,
+      "end": 7.48,
+      "text": "has to",
+      "words": [
+        {
+          "id": "caption-word-9-0",
+          "text": "has",
+          "start": 7.16,
+          "end": 7.35
+        },
+        {
+          "id": "caption-word-9-1",
+          "text": "to",
+          "start": 7.41,
+          "end": 7.48
+        }
+      ]
+    },
+    {
+      "id": "caption-group-10",
+      "frame": 2,
+      "start": 7.48,
+      "end": 7.8,
+      "text": "buy a",
+      "words": [
+        {
+          "id": "caption-word-10-0",
+          "text": "buy",
+          "start": 7.48,
+          "end": 7.72
+        },
+        {
+          "id": "caption-word-10-1",
+          "text": "a",
+          "start": 7.72,
+          "end": 7.8
+        }
+      ]
+    },
+    {
+      "id": "caption-group-11",
+      "frame": 2,
+      "start": 7.8,
+      "end": 8.6,
+      "text": "whole plan",
+      "words": [
+        {
+          "id": "caption-word-11-0",
+          "text": "whole",
+          "start": 7.8,
+          "end": 8.13
+        },
+        {
+          "id": "caption-word-11-1",
+          "text": "plan",
+          "start": 8.23,
+          "end": 8.6
+        }
+      ]
+    },
+    {
+      "id": "caption-group-12",
+      "frame": 2,
+      "start": 8.6,
+      "end": 9.28,
+      "text": "to get it.",
+      "words": [
+        {
+          "id": "caption-word-12-0",
+          "text": "to",
+          "start": 8.6,
+          "end": 8.75
+        },
+        {
+          "id": "caption-word-12-1",
+          "text": "get",
+          "start": 8.76,
+          "end": 8.99
+        },
+        {
+          "id": "caption-word-12-2",
+          "text": "it.",
+          "start": 8.99,
+          "end": 9.16
+        }
+      ]
+    },
+    {
+      "id": "caption-group-13",
+      "frame": 3,
+      "start": 9.85,
+      "end": 10.86,
+      "text": "One command turns",
+      "words": [
+        {
+          "id": "caption-word-13-0",
+          "text": "One",
+          "start": 9.85,
+          "end": 10.01
+        },
+        {
+          "id": "caption-word-13-1",
+          "text": "command",
+          "start": 10.01,
+          "end": 10.51
+        },
+        {
+          "id": "caption-word-13-2",
+          "text": "turns",
+          "start": 10.51,
+          "end": 10.86
+        }
+      ]
+    },
+    {
+      "id": "caption-group-14",
+      "frame": 3,
+      "start": 10.86,
+      "end": 11.92,
+      "text": "your machine into",
+      "words": [
+        {
+          "id": "caption-word-14-0",
+          "text": "your",
+          "start": 10.86,
+          "end": 11.14
+        },
+        {
+          "id": "caption-word-14-1",
+          "text": "machine",
+          "start": 11.14,
+          "end": 11.64
+        },
+        {
+          "id": "caption-word-14-2",
+          "text": "into",
+          "start": 11.64,
+          "end": 11.92
+        }
+      ]
+    },
+    {
+      "id": "caption-group-15",
+      "frame": 3,
+      "start": 11.92,
+      "end": 12.87,
+      "text": "a provider.",
+      "words": [
+        {
+          "id": "caption-word-15-0",
+          "text": "a",
+          "start": 11.92,
+          "end": 11.99
+        },
+        {
+          "id": "caption-word-15-1",
+          "text": "provider.",
+          "start": 11.99,
+          "end": 12.82
+        }
+      ]
+    },
+    {
+      "id": "caption-group-16",
+      "frame": 3,
+      "start": 12.87,
+      "end": 14.04,
+      "text": "Zorv checks what's",
+      "words": [
+        {
+          "id": "caption-word-16-0",
+          "text": "Xorv",
+          "start": 12.87,
+          "end": 13.09
+        },
+        {
+          "id": "caption-word-16-1",
+          "text": "checks",
+          "start": 13.14,
+          "end": 13.56
+        },
+        {
+          "id": "caption-word-16-2",
+          "text": "what's",
+          "start": 13.61,
+          "end": 14.04
+        }
+      ]
+    },
+    {
+      "id": "caption-group-17",
+      "frame": 3,
+      "start": 14.04,
+      "end": 14.94,
+      "text": "installed,",
+      "words": [
+        {
+          "id": "caption-word-17-0",
+          "text": "installed,",
+          "start": 14.04,
+          "end": 14.94
+        }
+      ]
+    },
+    {
+      "id": "caption-group-18",
+      "frame": 3,
+      "start": 14.94,
+      "end": 15.42,
+      "text": "what's signed",
+      "words": [
+        {
+          "id": "caption-word-18-0",
+          "text": "what's",
+          "start": 14.94,
+          "end": 15.16
+        },
+        {
+          "id": "caption-word-18-1",
+          "text": "signed",
+          "start": 15.16,
+          "end": 15.3
+        }
+      ]
+    },
+    {
+      "id": "caption-group-19",
+      "frame": 3,
+      "start": 15.91,
+      "end": 16.17,
+      "text": "in,",
+      "words": [
+        {
+          "id": "caption-word-19-0",
+          "text": "in,",
+          "start": 15.91,
+          "end": 16.12
+        }
+      ]
+    },
+    {
+      "id": "caption-group-20",
+      "frame": 3,
+      "start": 16.17,
+      "end": 16.71,
+      "text": "and what's",
+      "words": [
+        {
+          "id": "caption-word-20-0",
+          "text": "and",
+          "start": 16.17,
+          "end": 16.32
+        },
+        {
+          "id": "caption-word-20-1",
+          "text": "what's",
+          "start": 16.32,
+          "end": 16.71
+        }
+      ]
+    },
+    {
+      "id": "caption-group-21",
+      "frame": 3,
+      "start": 16.71,
+      "end": 17.64,
+      "text": "safe to run.",
+      "words": [
+        {
+          "id": "caption-word-21-0",
+          "text": "safe",
+          "start": 16.71,
+          "end": 16.93
+        },
+        {
+          "id": "caption-word-21-1",
+          "text": "to",
+          "start": 16.97,
+          "end": 17.1
+        },
+        {
+          "id": "caption-word-21-2",
+          "text": "run.",
+          "start": 17.1,
+          "end": 17.52
+        }
+      ]
+    },
+    {
+      "id": "caption-group-22",
+      "frame": 4,
+      "start": 18.1,
+      "end": 19.48,
+      "text": "A buyer describes",
+      "words": [
+        {
+          "id": "caption-word-22-0",
+          "text": "A",
+          "start": 18.1,
+          "end": 18.12
+        },
+        {
+          "id": "caption-word-22-1",
+          "text": "buyer",
+          "start": 18.12,
+          "end": 18.59
+        },
+        {
+          "id": "caption-word-22-2",
+          "text": "describes",
+          "start": 18.59,
+          "end": 19.48
+        }
+      ]
+    },
+    {
+      "id": "caption-group-23",
+      "frame": 4,
+      "start": 19.48,
+      "end": 20.32,
+      "text": "the work,",
+      "words": [
+        {
+          "id": "caption-word-23-0",
+          "text": "the",
+          "start": 19.48,
+          "end": 19.62
+        },
+        {
+          "id": "caption-word-23-1",
+          "text": "work,",
+          "start": 19.74,
+          "end": 20.3
+        }
+      ]
+    },
+    {
+      "id": "caption-group-24",
+      "frame": 4,
+      "start": 20.32,
+      "end": 20.76,
+      "text": "before any",
+      "words": [
+        {
+          "id": "caption-word-24-0",
+          "text": "before",
+          "start": 20.32,
+          "end": 20.61
+        },
+        {
+          "id": "caption-word-24-1",
+          "text": "any",
+          "start": 20.61,
+          "end": 20.76
+        }
+      ]
+    },
+    {
+      "id": "caption-group-25",
+      "frame": 4,
+      "start": 20.76,
+      "end": 21.48,
+      "text": "money moves",
+      "words": [
+        {
+          "id": "caption-word-25-0",
+          "text": "money",
+          "start": 20.76,
+          "end": 21.03
+        },
+        {
+          "id": "caption-word-25-1",
+          "text": "moves",
+          "start": 21.03,
+          "end": 21.48
+        }
+      ]
+    },
+    {
+      "id": "caption-group-26",
+      "frame": 4,
+      "start": 21.48,
+      "end": 22,
+      "text": "the network",
+      "words": [
+        {
+          "id": "caption-word-26-0",
+          "text": "the",
+          "start": 21.48,
+          "end": 21.6
+        },
+        {
+          "id": "caption-word-26-1",
+          "text": "network",
+          "start": 21.6,
+          "end": 21.98
+        }
+      ]
+    },
+    {
+      "id": "caption-group-27",
+      "frame": 4,
+      "start": 22,
+      "end": 23.67,
+      "text": "answers with terms,",
+      "words": [
+        {
+          "id": "caption-word-27-0",
+          "text": "answers",
+          "start": 22,
+          "end": 22.4
+        },
+        {
+          "id": "caption-word-27-1",
+          "text": "with",
+          "start": 22.4,
+          "end": 22.61
+        },
+        {
+          "id": "caption-word-27-2",
+          "text": "terms,",
+          "start": 22.63,
+          "end": 23.58
+        }
+      ]
+    },
+    {
+      "id": "caption-group-28",
+      "frame": 4,
+      "start": 23.67,
+      "end": 24,
+      "text": "who will",
+      "words": [
+        {
+          "id": "caption-word-28-0",
+          "text": "who",
+          "start": 23.67,
+          "end": 23.68
+        },
+        {
+          "id": "caption-word-28-1",
+          "text": "will",
+          "start": 23.8,
+          "end": 24
+        }
+      ]
+    },
+    {
+      "id": "caption-group-29",
+      "frame": 4,
+      "start": 24,
+      "end": 24.39,
+      "text": "run it",
+      "words": [
+        {
+          "id": "caption-word-29-0",
+          "text": "run",
+          "start": 24,
+          "end": 24.24
+        },
+        {
+          "id": "caption-word-29-1",
+          "text": "it",
+          "start": 24.24,
+          "end": 24.39
+        }
+      ]
+    },
+    {
+      "id": "caption-group-30",
+      "frame": 4,
+      "start": 24.39,
+      "end": 25.42,
+      "text": "and exactly what",
+      "words": [
+        {
+          "id": "caption-word-30-0",
+          "text": "and",
+          "start": 24.39,
+          "end": 24.64
+        },
+        {
+          "id": "caption-word-30-1",
+          "text": "exactly",
+          "start": 24.64,
+          "end": 25.2
+        },
+        {
+          "id": "caption-word-30-2",
+          "text": "what",
+          "start": 25.2,
+          "end": 25.3
+        }
+      ]
+    },
+    {
+      "id": "caption-group-31",
+      "frame": 4,
+      "start": 25.53,
+      "end": 25.78,
+      "text": "it",
+      "words": [
+        {
+          "id": "caption-word-31-0",
+          "text": "it",
+          "start": 25.53,
+          "end": 25.66
+        }
+      ]
+    },
+    {
+      "id": "caption-group-32",
+      "frame": 4,
+      "start": 25.98,
+      "end": 26.24,
+      "text": "costs.",
+      "words": [
+        {
+          "id": "caption-word-32-0",
+          "text": "costs.",
+          "start": 25.98,
+          "end": 26.12
+        }
+      ]
+    },
+    {
+      "id": "caption-group-33",
+      "frame": 5,
+      "start": 26.86,
+      "end": 27.99,
+      "text": "They sign.",
+      "words": [
+        {
+          "id": "caption-word-33-0",
+          "text": "They",
+          "start": 26.86,
+          "end": 27.2
+        },
+        {
+          "id": "caption-word-33-1",
+          "text": "sign.",
+          "start": 27.2,
+          "end": 27.92
+        }
+      ]
+    },
+    {
+      "id": "caption-group-34",
+      "frame": 5,
+      "start": 27.99,
+      "end": 28.59,
+      "text": "It settles",
+      "words": [
+        {
+          "id": "caption-word-34-0",
+          "text": "It",
+          "start": 27.99,
+          "end": 28.05
+        },
+        {
+          "id": "caption-word-34-1",
+          "text": "settles",
+          "start": 28.09,
+          "end": 28.59
+        }
+      ]
+    },
+    {
+      "id": "caption-group-35",
+      "frame": 5,
+      "start": 28.59,
+      "end": 29.11,
+      "text": "in about",
+      "words": [
+        {
+          "id": "caption-word-35-0",
+          "text": "in",
+          "start": 28.59,
+          "end": 28.74
+        },
+        {
+          "id": "caption-word-35-1",
+          "text": "about",
+          "start": 28.74,
+          "end": 29.11
+        }
+      ]
+    },
+    {
+      "id": "caption-group-36",
+      "frame": 5,
+      "start": 29.11,
+      "end": 29.88,
+      "text": "3 seconds",
+      "words": [
+        {
+          "id": "caption-word-36-0",
+          "text": "3",
+          "start": 29.11,
+          "end": 29.33
+        },
+        {
+          "id": "caption-word-36-1",
+          "text": "seconds",
+          "start": 29.33,
+          "end": 29.88
+        }
+      ]
+    },
+    {
+      "id": "caption-group-37",
+      "frame": 5,
+      "start": 29.88,
+      "end": 31.4,
+      "text": "in USDC",
+      "words": [
+        {
+          "id": "caption-word-37-0",
+          "text": "in",
+          "start": 29.88,
+          "end": 30.08
+        },
+        {
+          "id": "caption-word-37-1",
+          "text": "USDC",
+          "start": 30.08,
+          "end": 31.28
+        }
+      ]
+    },
+    {
+      "id": "caption-group-38",
+      "frame": 5,
+      "start": 31.48,
+      "end": 32,
+      "text": "straight to",
+      "words": [
+        {
+          "id": "caption-word-38-0",
+          "text": "straight",
+          "start": 31.48,
+          "end": 31.84
+        },
+        {
+          "id": "caption-word-38-1",
+          "text": "to",
+          "start": 31.92,
+          "end": 32
+        }
+      ]
+    },
+    {
+      "id": "caption-group-39",
+      "frame": 5,
+      "start": 32,
+      "end": 33.08,
+      "text": "the provider,",
+      "words": [
+        {
+          "id": "caption-word-39-0",
+          "text": "the",
+          "start": 32,
+          "end": 32.21
+        },
+        {
+          "id": "caption-word-39-1",
+          "text": "provider,",
+          "start": 32.21,
+          "end": 32.96
+        }
+      ]
+    },
+    {
+      "id": "caption-group-40",
+      "frame": 5,
+      "start": 33.12,
+      "end": 33.3,
+      "text": "and the",
+      "words": [
+        {
+          "id": "caption-word-40-0",
+          "text": "and",
+          "start": 33.12,
+          "end": 33.22
+        },
+        {
+          "id": "caption-word-40-1",
+          "text": "the",
+          "start": 33.22,
+          "end": 33.3
+        }
+      ]
+    },
+    {
+      "id": "caption-group-41",
+      "frame": 5,
+      "start": 33.3,
+      "end": 34.94,
+      "text": "buyer never touched",
+      "words": [
+        {
+          "id": "caption-word-41-0",
+          "text": "buyer",
+          "start": 33.3,
+          "end": 33.64
+        },
+        {
+          "id": "caption-word-41-1",
+          "text": "never",
+          "start": 33.7,
+          "end": 34.17
+        },
+        {
+          "id": "caption-word-41-2",
+          "text": "touched",
+          "start": 34.17,
+          "end": 34.92
+        }
+      ]
+    },
+    {
+      "id": "caption-group-42",
+      "frame": 5,
+      "start": 34.94,
+      "end": 35.68,
+      "text": "HBAR.",
+      "words": [
+        {
+          "id": "caption-word-42-0",
+          "text": "HBAR.",
+          "start": 34.94,
+          "end": 35.68
+        }
+      ]
+    },
+    {
+      "id": "caption-group-43",
+      "frame": 5,
+      "start": 35.68,
+      "end": 37.41,
+      "text": "Hetera's facilitator pays the",
+      "words": [
+        {
+          "id": "caption-word-43-0",
+          "text": "Hedera's",
+          "start": 35.68,
+          "end": 36.19
+        },
+        {
+          "id": "caption-word-43-1",
+          "text": "facilitator",
+          "start": 36.19,
+          "end": 36.92
+        },
+        {
+          "id": "caption-word-43-2",
+          "text": "pays",
+          "start": 36.92,
+          "end": 37.18
+        },
+        {
+          "id": "caption-word-43-3",
+          "text": "the",
+          "start": 37.18,
+          "end": 37.37
+        }
+      ]
+    },
+    {
+      "id": "caption-group-44",
+      "frame": 5,
+      "start": 37.41,
+      "end": 37.95,
+      "text": "gas.",
+      "words": [
+        {
+          "id": "caption-word-44-0",
+          "text": "gas.",
+          "start": 37.41,
+          "end": 37.83
+        }
+      ]
+    },
+    {
+      "id": "caption-group-45",
+      "frame": 6,
+      "start": 38.93,
+      "end": 39.95,
+      "text": "Every job leaves",
+      "words": [
+        {
+          "id": "caption-word-45-0",
+          "text": "Every",
+          "start": 38.93,
+          "end": 39.2
+        },
+        {
+          "id": "caption-word-45-1",
+          "text": "job",
+          "start": 39.25,
+          "end": 39.46
+        },
+        {
+          "id": "caption-word-45-2",
+          "text": "leaves",
+          "start": 39.46,
+          "end": 39.95
+        }
+      ]
+    },
+    {
+      "id": "caption-group-46",
+      "frame": 6,
+      "start": 39.95,
+      "end": 40.61,
+      "text": "a receipt",
+      "words": [
+        {
+          "id": "caption-word-46-0",
+          "text": "a",
+          "start": 39.95,
+          "end": 40.03
+        },
+        {
+          "id": "caption-word-46-1",
+          "text": "receipt",
+          "start": 40.03,
+          "end": 40.61
+        }
+      ]
+    },
+    {
+      "id": "caption-group-47",
+      "frame": 6,
+      "start": 40.61,
+      "end": 42.12,
+      "text": "on Heterotestnet.",
+      "words": [
+        {
+          "id": "caption-word-47-0",
+          "text": "on",
+          "start": 40.61,
+          "end": 40.8
+        },
+        {
+          "id": "caption-word-47-1",
+          "text": "Hedera testnet.",
+          "start": 40.8,
+          "end": 42
+        }
+      ]
+    },
+    {
+      "id": "caption-group-48",
+      "frame": 6,
+      "start": 42.13,
+      "end": 42.69,
+      "text": "Public,",
+      "words": [
+        {
+          "id": "caption-word-48-0",
+          "text": "Public,",
+          "start": 42.13,
+          "end": 42.69
+        }
+      ]
+    },
+    {
+      "id": "caption-group-49",
+      "frame": 6,
+      "start": 42.69,
+      "end": 44.22,
+      "text": "ordered permanent.",
+      "words": [
+        {
+          "id": "caption-word-49-0",
+          "text": "ordered",
+          "start": 42.69,
+          "end": 43.29
+        },
+        {
+          "id": "caption-word-49-1",
+          "text": "permanent.",
+          "start": 43.29,
+          "end": 44.1
+        }
+      ]
+    },
+    {
+      "id": "caption-group-50",
+      "frame": 6,
+      "start": 44.23,
+      "end": 44.74,
+      "text": "The payment,",
+      "words": [
+        {
+          "id": "caption-word-50-0",
+          "text": "The",
+          "start": 44.23,
+          "end": 44.26
+        },
+        {
+          "id": "caption-word-50-1",
+          "text": "payment,",
+          "start": 44.26,
+          "end": 44.74
+        }
+      ]
+    },
+    {
+      "id": "caption-group-51",
+      "frame": 6,
+      "start": 44.74,
+      "end": 45.46,
+      "text": "the provider,",
+      "words": [
+        {
+          "id": "caption-word-51-0",
+          "text": "the",
+          "start": 44.74,
+          "end": 44.9
+        },
+        {
+          "id": "caption-word-51-1",
+          "text": "provider,",
+          "start": 44.9,
+          "end": 45.46
+        }
+      ]
+    },
+    {
+      "id": "caption-group-52",
+      "frame": 6,
+      "start": 45.46,
+      "end": 45.71,
+      "text": "and a",
+      "words": [
+        {
+          "id": "caption-word-52-0",
+          "text": "and",
+          "start": 45.46,
+          "end": 45.65
+        },
+        {
+          "id": "caption-word-52-1",
+          "text": "a",
+          "start": 45.65,
+          "end": 45.71
+        }
+      ]
+    },
+    {
+      "id": "caption-group-53",
+      "frame": 6,
+      "start": 45.71,
+      "end": 46.1,
+      "text": "hash of",
+      "words": [
+        {
+          "id": "caption-word-53-0",
+          "text": "hash",
+          "start": 45.71,
+          "end": 45.97
+        },
+        {
+          "id": "caption-word-53-1",
+          "text": "of",
+          "start": 45.97,
+          "end": 46.1
+        }
+      ]
+    },
+    {
+      "id": "caption-group-54",
+      "frame": 6,
+      "start": 46.1,
+      "end": 46.94,
+      "text": "the result.",
+      "words": [
+        {
+          "id": "caption-word-54-0",
+          "text": "the",
+          "start": 46.1,
+          "end": 46.29
+        },
+        {
+          "id": "caption-word-54-1",
+          "text": "result.",
+          "start": 46.29,
+          "end": 46.82
+        }
+      ]
+    },
+    {
+      "id": "caption-group-55",
+      "frame": 7,
+      "start": 47.69,
+      "end": 49.35,
+      "text": "Jobs run sandboxed,",
+      "words": [
+        {
+          "id": "caption-word-55-0",
+          "text": "Jobs",
+          "start": 47.69,
+          "end": 47.99
+        },
+        {
+          "id": "caption-word-55-1",
+          "text": "run",
+          "start": 47.99,
+          "end": 48.3
+        },
+        {
+          "id": "caption-word-55-2",
+          "text": "sandboxed,",
+          "start": 48.3,
+          "end": 49.35
+        }
+      ]
+    },
+    {
+      "id": "caption-group-56",
+      "frame": 7,
+      "start": 49.35,
+      "end": 50.37,
+      "text": "so a stranger's",
+      "words": [
+        {
+          "id": "caption-word-56-0",
+          "text": "so",
+          "start": 49.35,
+          "end": 49.42
+        },
+        {
+          "id": "caption-word-56-1",
+          "text": "a",
+          "start": 49.42,
+          "end": 49.69
+        },
+        {
+          "id": "caption-word-56-2",
+          "text": "stranger's",
+          "start": 49.69,
+          "end": 50.37
+        }
+      ]
+    },
+    {
+      "id": "caption-group-57",
+      "frame": 7,
+      "start": 50.37,
+      "end": 51.44,
+      "text": "prompt can't reach",
+      "words": [
+        {
+          "id": "caption-word-57-0",
+          "text": "prompt",
+          "start": 50.37,
+          "end": 50.74
+        },
+        {
+          "id": "caption-word-57-1",
+          "text": "can't",
+          "start": 50.9,
+          "end": 51.13
+        },
+        {
+          "id": "caption-word-57-2",
+          "text": "reach",
+          "start": 51.2,
+          "end": 51.44
+        }
+      ]
+    },
+    {
+      "id": "caption-group-58",
+      "frame": 7,
+      "start": 51.44,
+      "end": 52.9,
+      "text": "your keys.",
+      "words": [
+        {
+          "id": "caption-word-58-0",
+          "text": "your",
+          "start": 51.44,
+          "end": 51.95
+        },
+        {
+          "id": "caption-word-58-1",
+          "text": "keys.",
+          "start": 52.02,
+          "end": 52.8
+        }
+      ]
+    },
+    {
+      "id": "caption-group-59",
+      "frame": 7,
+      "start": 52.9,
+      "end": 53.92,
+      "text": "And agents can",
+      "words": [
+        {
+          "id": "caption-word-59-0",
+          "text": "And",
+          "start": 52.9,
+          "end": 53.08
+        },
+        {
+          "id": "caption-word-59-1",
+          "text": "agents",
+          "start": 53.08,
+          "end": 53.64
+        },
+        {
+          "id": "caption-word-59-2",
+          "text": "can",
+          "start": 53.66,
+          "end": 53.92
+        }
+      ]
+    },
+    {
+      "id": "caption-group-60",
+      "frame": 7,
+      "start": 53.92,
+      "end": 55.62,
+      "text": "buy capacity too over",
+      "words": [
+        {
+          "id": "caption-word-60-0",
+          "text": "buy",
+          "start": 53.92,
+          "end": 54.2
+        },
+        {
+          "id": "caption-word-60-1",
+          "text": "capacity",
+          "start": 54.21,
+          "end": 54.97
+        },
+        {
+          "id": "caption-word-60-2",
+          "text": "too",
+          "start": 54.97,
+          "end": 55.25
+        },
+        {
+          "id": "caption-word-60-3",
+          "text": "over",
+          "start": 55.25,
+          "end": 55.62
+        }
+      ]
+    },
+    {
+      "id": "caption-group-61",
+      "frame": 7,
+      "start": 55.62,
+      "end": 56.36,
+      "text": "MCP.",
+      "words": [
+        {
+          "id": "caption-word-61-0",
+          "text": "MCP.",
+          "start": 55.62,
+          "end": 56.24
+        }
+      ]
+    },
+    {
+      "id": "caption-group-62",
+      "frame": 8,
+      "start": 56.97,
+      "end": 58.23,
+      "text": "ZORV Idle Quota",
+      "words": [
+        {
+          "id": "caption-word-62-0",
+          "text": "Xorv",
+          "start": 56.97,
+          "end": 57.3
+        },
+        {
+          "id": "caption-word-62-1",
+          "text": "Idle",
+          "start": 57.3,
+          "end": 57.71
+        },
+        {
+          "id": "caption-word-62-2",
+          "text": "quota",
+          "start": 57.71,
+          "end": 58.23
+        }
+      ]
+    },
+    {
+      "id": "caption-group-63",
+      "frame": 8,
+      "start": 58.23,
+      "end": 60.07,
+      "text": "turned into income,",
+      "words": [
+        {
+          "id": "caption-word-63-0",
+          "text": "turned",
+          "start": 58.23,
+          "end": 58.85
+        },
+        {
+          "id": "caption-word-63-1",
+          "text": "into",
+          "start": 58.85,
+          "end": 59.26
+        },
+        {
+          "id": "caption-word-63-2",
+          "text": "income,",
+          "start": 59.26,
+          "end": 60.07
+        }
+      ]
+    },
+    {
+      "id": "caption-group-64",
+      "frame": 8,
+      "start": 60.07,
+      "end": 60.47,
+      "text": "live on",
+      "words": [
+        {
+          "id": "caption-word-64-0",
+          "text": "live",
+          "start": 60.07,
+          "end": 60.34
+        },
+        {
+          "id": "caption-word-64-1",
+          "text": "on",
+          "start": 60.34,
+          "end": 60.47
+        }
+      ]
+    },
+    {
+      "id": "caption-group-65",
+      "frame": 8,
+      "start": 60.47,
+      "end": 61.54,
+      "text": "Hedera Testnet.",
+      "words": [
+        {
+          "id": "caption-word-65-0",
+          "text": "Hedera",
+          "start": 60.47,
+          "end": 60.81
+        },
+        {
+          "id": "caption-word-65-1",
+          "text": "Testnet.",
+          "start": 60.87,
+          "end": 61.42
+        }
+      ]
+    }
+  ]
+}

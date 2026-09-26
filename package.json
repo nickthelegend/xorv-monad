@@ -1,0 +1,42 @@
+{
+  "name": "xorv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Xorv \u2014 a decentralized AI capacity network. Rent out your idle Claude/Codex/Grok subscription, get paid per job in USDC over x402 on Hedera.",
+  "license": "MIT",
+  "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
+  "homepage": "https://github.com/nickthelegend/xorv#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "build": "pnpm -r --filter=./packages/** --filter=./services/** build",
+    "build:all": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --filter=./packages/** --filter=./services/** --filter=xorv-app test",
+    "broker": "pnpm --filter @xorv/broker dev",
+    "app": "pnpm --filter xorv-app dev",
+    "landing": "pnpm --filter xorv-landing dev",
+    "cli": "pnpm --filter xorv dev",
+    "setup:hedera": "pnpm --filter @xorv/broker setup",
+    "demo": "pnpm --filter @xorv/broker demo",
+    "mcp": "pnpm --filter @xorv/mcp dev",
+    "usdc": "pnpm --filter @xorv/broker usdc"
+  },
+  "keywords": [
+    "x402",
+    "hedera",
+    "usdc",
+    "ai-agents",
+    "micropayments",
+    "claude-code",
+    "marketplace",
+    "agentic-payments"
+  ]
+}

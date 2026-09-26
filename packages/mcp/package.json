@@ -1,0 +1,33 @@
+{
+  "name": "@xorv/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Xorv — lets any agent buy AI capacity from the network and pay for it over x402 on Hedera.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "xorv-mcp": "./dist/index.js" },
+  "main": "./dist/index.js",
+  "files": ["dist", "README.md"],
+  "publishConfig": { "access": "public" },
+  "keywords": ["mcp", "x402", "hedera", "usdc", "ai-agents", "model-context-protocol"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hiero-ledger/sdk": "2.85.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@x402/core": "~2.20.0",
+    "@x402/fetch": "~2.20.0",
+    "@x402/hedera": "~2.20.0",
+    "@xorv/protocol": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.23.1",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.4"
+  }
+}

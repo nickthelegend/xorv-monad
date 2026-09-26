@@ -1,0 +1,380 @@
+<template>
+  <style>
+    /* ── 03-provider — "One command" ────────────────────────────────────────
+       Broadside/dark register. Canvas #000, terminal surface #0a0a0a with a
+       1px hairline. Flat plane: no shadow, no radius, no gradient.
+       Accent #4ade80 appears on the three ✔ glyphs and nowhere else.
+       Everything inside the terminal is monospace — a machine is speaking. */
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      color: #fafafa;
+    }
+
+    /* ── full-bleed ground (its own clip layer, never on #root) ───────────── */
+    .f03-provider-bg {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+    }
+    .f03-provider-grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 1920px;
+      height: 1080px;
+    }
+
+    /* ── the collapsing split inherited from the previous beat ────────────── */
+    .f03-provider-seam {
+      position: absolute;
+      top: 186px;
+      left: 960px;
+      width: 1px;
+      height: 520px;
+      background: rgba(255, 255, 255, 0.22);
+    }
+
+    /* ── terminal surface ─────────────────────────────────────────────────── */
+    .f03-provider-term {
+      position: absolute;
+      top: 186px;
+      left: 288px;
+      width: 1344px;
+      height: 520px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      overflow: hidden;
+    }
+
+    .f03-provider-chrome {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 56px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+    }
+    .f03-provider-dots {
+      display: flex;
+      gap: 10px;
+    }
+    .f03-provider-dot {
+      width: 9px;
+      height: 9px;
+      background: rgba(250, 250, 250, 0.14);
+    }
+    .f03-provider-shell {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 14px;
+      letter-spacing: 0.14em;
+      color: #8A8A8A;
+    }
+
+    .f03-provider-body {
+      position: absolute;
+      top: 56px;
+      left: 0;
+      width: 100%;
+      padding: 52px 56px 40px;
+    }
+
+    /* ── output rows — column alignment is structural, not space-padded ────
+       The product pads its key field to 13 columns ("sandbox" + 6 spaces,
+       "claude-code" + 2, "usdc" + 9). `13ch` in a monospace face reproduces
+       that exactly and survives any font fallback. No letter-spacing here —
+       tracking would break the ch math. */
+    .f03-provider-row {
+      display: flex;
+      align-items: baseline;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 36px;
+      line-height: 62px;
+      letter-spacing: 0;
+      white-space: pre;
+    }
+    .f03-provider-sig {
+      flex: none;
+      width: 2ch;
+      color: #8A8A8A;
+    }
+    .f03-provider-mark {
+      flex: none;
+      width: 2ch;
+      display: inline-block;
+      color: #4ade80; /* the only colour in the frame */
+    }
+    .f03-provider-line {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: baseline;
+    }
+    .f03-provider-key {
+      flex: none;
+      width: 13ch;
+      color: #fafafa;
+    }
+    .f03-provider-desc {
+      flex: 1;
+      min-width: 0;
+      color: #a1a1a1;
+    }
+    .f03-provider-cmd {
+      color: #fafafa;
+    }
+    .f03-provider-caret {
+      display: inline-block;
+      width: 0.6ch;
+      height: 38px;
+      background: #fafafa;
+      vertical-align: -6px;
+    }
+    .f03-provider-gap {
+      height: 34px;
+    }
+  </style>
+
+  <div data-hf-id="hf-k704" id="root" data-composition-id="03-provider" data-width="1920" data-height="1080">
+    <!-- ground -->
+    <div data-hf-id="hf-y2tk" class="clip" data-start="0" data-duration="8.2" data-track-index="0" style="position: absolute; inset: 0">
+      <div data-hf-id="hf-1plz" class="f03-provider-bg"></div>
+      <svg data-hf-id="hf-3tdr" id="f03-provider-grid" class="f03-provider-grid" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <defs data-hf-id="hf-mh0t">
+          <pattern data-hf-id="hf-hvuh" id="f03-provider-grid-pattern" width="120" height="120" patternUnits="userSpaceOnUse">
+            <path data-hf-id="hf-p2z0" d="M120 0 L0 0 L0 120" fill="none" stroke="#fafafa" stroke-width="1" stroke-opacity="0.06" />
+          </pattern>
+        </defs>
+        <rect data-hf-id="hf-qgsk" width="1920" height="1080" fill="url(#f03-provider-grid-pattern)" />
+      </svg>
+    </div>
+
+    <!-- terminal -->
+    <div data-hf-id="hf-efyr" class="clip" data-start="0" data-duration="8.2" data-track-index="1" style="position: absolute; inset: 0">
+      <div data-hf-id="hf-r866" id="f03-provider-term" class="f03-provider-term">
+        <div data-hf-id="hf-m2py" id="f03-provider-chrome" class="f03-provider-chrome">
+          <div data-hf-id="hf-r1z6" class="f03-provider-dots">
+            <div data-hf-id="hf-tz83" class="f03-provider-dot"></div>
+            <div data-hf-id="hf-3q43" class="f03-provider-dot"></div>
+            <div data-hf-id="hf-3bt2" class="f03-provider-dot"></div>
+          </div>
+          <div data-hf-id="hf-ed6p" class="f03-provider-shell">ZSH</div>
+        </div>
+
+        <div data-hf-id="hf-gj4y" class="f03-provider-body">
+          <div data-hf-id="hf-lnkb" id="f03-provider-cmd1" class="f03-provider-row">
+            <span data-hf-id="hf-rvgc" class="f03-provider-sig">$</span><span data-hf-id="hf-1pzr" class="f03-provider-line"><span data-hf-id="hf-x2ik" id="f03-provider-t1" class="f03-provider-cmd"></span><span data-hf-id="hf-5aeq" id="f03-provider-c1" class="f03-provider-caret"></span></span>
+          </div>
+
+          <div data-hf-id="hf-czog" id="f03-provider-cmd2" class="f03-provider-row">
+            <span data-hf-id="hf-np10" class="f03-provider-sig">$</span><span data-hf-id="hf-s8uv" class="f03-provider-line"><span data-hf-id="hf-7y07" id="f03-provider-t2" class="f03-provider-cmd"></span><span data-hf-id="hf-1cap" id="f03-provider-c2" class="f03-provider-caret"></span></span>
+          </div>
+
+          <div data-hf-id="hf-am9m" class="f03-provider-gap"></div>
+
+          <div data-hf-id="hf-py82" class="f03-provider-row">
+            <span data-hf-id="hf-tgec" id="f03-provider-m1" class="f03-provider-mark">✔</span><span data-hf-id="hf-jm3o" id="f03-provider-l1" class="f03-provider-line"><span data-hf-id="hf-zm1h" class="f03-provider-key">sandbox</span><span data-hf-id="hf-uch6" class="f03-provider-desc">macOS seatbelt — credentials unreadable</span></span>
+          </div>
+
+          <div data-hf-id="hf-vyli" class="f03-provider-row">
+            <span data-hf-id="hf-gwid" id="f03-provider-m2" class="f03-provider-mark">✔</span><span data-hf-id="hf-s9zj" id="f03-provider-l2" class="f03-provider-line"><span data-hf-id="hf-saa6" class="f03-provider-key">claude-code</span><span data-hf-id="hf-td02" class="f03-provider-desc">Claude Code · signed in · selling</span></span>
+          </div>
+
+          <div data-hf-id="hf-wcwj" class="f03-provider-row">
+            <span data-hf-id="hf-67v6" id="f03-provider-m3" class="f03-provider-mark">✔</span><span data-hf-id="hf-obvi" id="f03-provider-l3" class="f03-provider-line"><span data-hf-id="hf-v0gb" class="f03-provider-key">usdc</span><span data-hf-id="hf-k356" class="f03-provider-desc">associated with 0.0.429274</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- the split, collapsing inward (rides above the surface it hands off to) -->
+    <div data-hf-id="hf-c1z2" class="clip" data-start="0" data-duration="8.2" data-track-index="2" style="position: absolute; inset: 0">
+      <div data-hf-id="hf-emc9" id="f03-provider-sl" class="f03-provider-seam"></div>
+      <div data-hf-id="hf-xe1y" id="f03-provider-sc" class="f03-provider-seam"></div>
+      <div data-hf-id="hf-meyv" id="f03-provider-sr" class="f03-provider-seam"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var DUR = 8.2;
+
+      /* real strings the product prints */
+      var CMD1 = "npm i -g @xorv/cli";
+      var CMD2 = "xorv start";
+
+      /* type-on windows + caret windows (blueprint: typewriter-reveal) */
+      var T1S = 1.8,
+        T1E = 2.44,
+        C1_ON = 1.05,
+        C1_OFF = 2.62;
+      var T2S = 2.78,
+        T2E = 3.14,
+        C2_ON = 2.72,
+        C2_OFF = 3.24;
+      var BLINK = 0.62; /* one cycle per 0.62s */
+
+      var q = function (id) {
+        return document.getElementById(id);
+      };
+      var t1 = q("f03-provider-t1"),
+        t2 = q("f03-provider-t2");
+      var c1 = q("f03-provider-c1"),
+        c2 = q("f03-provider-c2");
+
+      function slice(s, t, a, b) {
+        if (t <= a) return "";
+        if (t >= b) return s;
+        return s.slice(0, Math.floor(((t - a) / (b - a)) * s.length));
+      }
+
+      var drv = { t: 0 };
+      function paint(t) {
+        t1.textContent = slice(CMD1, t, T1S, T1E);
+        t2.textContent = slice(CMD2, t, T2S, T2E);
+        /* deterministic square-wave blink — no CSS animation, seek-safe */
+        var on = Math.sin((t / BLINK) * Math.PI * 2) > 0 ? 1 : 0;
+        var typing1 = t >= T1S && t < T1E;
+        var typing2 = t >= T2S && t < T2E;
+        c1.style.opacity = t >= C1_ON && t < C1_OFF ? (typing1 ? 1 : on) : 0;
+        c2.style.opacity = t >= C2_ON && t < C2_OFF ? (typing2 ? 1 : on) : 0;
+      }
+      paint(0);
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* ── Scene 1 (0.0–1.8): the split collapses inward, the terminal rises ── */
+      tl.fromTo(
+        "#f03-provider-grid",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.9, ease: "power2.out" },
+        0.1,
+      );
+
+      tl.fromTo(
+        "#f03-provider-sl",
+        { x: -340, opacity: 1 },
+        { x: 0, duration: 0.4, ease: "power4.in" },
+        0,
+      );
+      tl.fromTo(
+        "#f03-provider-sr",
+        { x: 340, opacity: 1 },
+        { x: 0, duration: 0.4, ease: "power4.in" },
+        0,
+      );
+      tl.fromTo(
+        "#f03-provider-sc",
+        { scaleY: 1, opacity: 1 },
+        { scaleY: 0.04, opacity: 0, duration: 0.4, ease: "power4.in" },
+        0,
+      );
+      /* the three lines meet on one column and hand the frame to the terminal */
+      tl.to(
+        ["#f03-provider-sl", "#f03-provider-sr"],
+        { opacity: 0, duration: 0.06, ease: "none" },
+        0.36,
+      );
+
+      tl.fromTo(
+        "#f03-provider-term",
+        { y: 62, scale: 0.82, opacity: 0, filter: "blur(14px)" },
+        {
+          y: 0,
+          scale: 1,
+          opacity: 1,
+          filter: "blur(0px)",
+          duration: 0.78,
+          ease: "expo.out",
+        },
+        0.36,
+      );
+      /* macro push underneath — stops before the Scene 5 hold */
+      tl.to(
+        "#f03-provider-term",
+        { scale: 1.012, duration: 5.4, ease: "none" },
+        1.2,
+      );
+
+      tl.fromTo(
+        "#f03-provider-chrome",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.32, ease: "power2.out" },
+        0.78,
+      );
+      /* the prompt lands and its caret starts blinking */
+      tl.fromTo(
+        "#f03-provider-cmd1",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.26, ease: "power2.out" },
+        0.95,
+      );
+
+      /* ── Scene 2 (1.8–3.2): the two commands type on with the caret ──────── */
+      /* The type-on + caret blink ride a `modifiers` driver rather than
+         `onUpdate`: modifiers run inside GSAP's render pass, so they still fire
+         when the renderer seeks with events suppressed. */
+      tl.to(
+        drv,
+        {
+          t: DUR,
+          duration: DUR,
+          ease: "none",
+          modifiers: {
+            t: function (v) {
+              paint(parseFloat(v));
+              return v;
+            },
+          },
+        },
+        0,
+      );
+      tl.fromTo(
+        "#f03-provider-cmd2",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.16, ease: "none" },
+        2.66,
+      );
+
+      /* ── Scenes 3/4/5: the doctor lines resolve ONE PER BEAT ──────────────
+         Each line prints as a left-to-right wipe, then its ✔ resolves a beat
+         later — a list building, never a dump. */
+      var LINES = [
+        { line: "#f03-provider-l1", mark: "#f03-provider-m1", at: 3.3 },
+        { line: "#f03-provider-l2", mark: "#f03-provider-m2", at: 5.04 },
+        { line: "#f03-provider-l3", mark: "#f03-provider-m3", at: 6.62 },
+      ];
+      for (var i = 0; i < LINES.length; i++) {
+        tl.fromTo(
+          LINES[i].line,
+          { clipPath: "inset(0% 100% 0% 0%)", opacity: 0 },
+          {
+            clipPath: "inset(0% 0% 0% 0%)",
+            opacity: 1,
+            duration: 0.32,
+            ease: "power2.out",
+          },
+          LINES[i].at,
+        );
+        tl.fromTo(
+          LINES[i].mark,
+          { opacity: 0, scale: 0.34 },
+          { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2.2)" },
+          LINES[i].at + 0.4,
+        );
+      }
+
+      window.__timelines["03-provider"] = tl;
+    })();
+  </script>
+</template>

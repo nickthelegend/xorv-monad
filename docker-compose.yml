@@ -1,0 +1,28 @@
+services:
+  broker:
+    build: .
+    ports:
+      - "8402:8402"
+    environment:
+      # A funded testnet account takes ~60s at https://portal.hedera.com
+      HEDERA_OPERATOR_ID: ${HEDERA_OPERATOR_ID:?set this in .env}
+      HEDERA_OPERATOR_KEY: ${HEDERA_OPERATOR_KEY:?set this in .env}
+      XORV_NETWORK: ${XORV_NETWORK:-hedera:testnet}
+      XORV_TOPIC_REGISTRY: ${XORV_TOPIC_REGISTRY:-}
+      XORV_TOPIC_HEARTBEAT: ${XORV_TOPIC_HEARTBEAT:-}
+      XORV_TOPIC_RECEIPTS: ${XORV_TOPIC_RECEIPTS:-}
+      # Must be the URL clients actually reach this broker on — not the
+      # in-container one. The node now rewrites the advertised control-channel
+      # host to match, so a mismatch no longer breaks dispatch, but an
+      # externally reachable value here keeps links in receipts correct.
+      XORV_BROKER_URL: ${XORV_BROKER_URL:-http://localhost:8402}
+      XORV_CORS_ORIGINS: ${XORV_CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
+      # Behind a reverse proxy, set this so rate limiting sees real client IPs.
+      XORV_TRUST_PROXY: ${XORV_TRUST_PROXY:-0}
+    volumes:
+      # Jobs and lifetime earnings. Without this they go with the container.
+      - xorv-data:/data
+    restart: unless-stopped
+
+volumes:
+  xorv-data:

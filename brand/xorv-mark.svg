@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Xorv">
+  <title>Xorv</title>
+  <defs>
+    <linearGradient id="xorvBeam" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7C5CFF"/>
+      <stop offset="0.5" stop-color="#4C9BFF"/>
+      <stop offset="1" stop-color="#3DDCFF"/>
+    </linearGradient>
+    <linearGradient id="xorvBeam2" x1="56" y1="8" x2="8" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3DDCFF"/>
+      <stop offset="0.55" stop-color="#5BC8FF"/>
+      <stop offset="1" stop-color="#7C5CFF"/>
+    </linearGradient>
+    <linearGradient id="xorvCore" x1="26" y1="26" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9F8BFF"/>
+      <stop offset="1" stop-color="#50F0C8"/>
+    </linearGradient>
+  </defs>
+
+  <!--
+    Two beams crossing, stopping short of centre so a diamond of negative space
+    opens where they would meet: supply and demand routed through a hub rather
+    than simply colliding. The four terminals are the network's nodes.
+  -->
+  <g stroke-linecap="round" fill="none">
+    <path d="M14 14 L27 27" stroke="url(#xorvBeam)" stroke-width="7"/>
+    <path d="M37 37 L50 50" stroke="url(#xorvBeam)" stroke-width="7"/>
+    <path d="M50 14 L37 27" stroke="url(#xorvBeam2)" stroke-width="7"/>
+    <path d="M27 37 L14 50" stroke="url(#xorvBeam2)" stroke-width="7"/>
+  </g>
+
+  <!-- The routing hub. -->
+  <rect x="27.6" y="27.6" width="8.8" height="8.8" rx="2.2"
+        transform="rotate(45 32 32)" fill="url(#xorvCore)"/>
+
+  <!-- Node terminals. -->
+  <g fill="#3DDCFF">
+    <circle cx="14" cy="14" r="3.1" fill="#7C5CFF"/>
+    <circle cx="50" cy="50" r="3.1" fill="#3DDCFF"/>
+    <circle cx="50" cy="14" r="3.1" fill="#3DDCFF"/>
+    <circle cx="14" cy="50" r="3.1" fill="#7C5CFF"/>
+  </g>
+</svg>

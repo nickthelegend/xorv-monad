@@ -1,0 +1,68 @@
+{
+  "name": "@xorv/cli",
+  "version": "0.1.0",
+  "description": "Rent out your idle Claude / Codex / Grok subscription and get paid per job in USDC over x402 on Hedera.",
+  "license": "MIT",
+  "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
+  "homepage": "https://github.com/nickthelegend/xorv#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/nickthelegend/xorv/issues",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "bin": {
+    "xorv": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "x402",
+    "hedera",
+    "usdc",
+    "ai",
+    "claude-code",
+    "codex",
+    "grok",
+    "micropayments",
+    "cli",
+    "passive-income",
+    "agent-marketplace"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "pnpm build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@hiero-ledger/sdk": "2.85.0",
+    "@x402/core": "~2.20.0",
+    "@x402/fetch": "~2.20.0",
+    "@x402/hedera": "~2.20.0",
+    "@xorv/protocol": "workspace:*",
+    "commander": "^13.1.0",
+    "picocolors": "^1.1.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.1",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.4"
+  }
+}

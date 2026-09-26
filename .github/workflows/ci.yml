@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # The broker's persistence layer uses node:sqlite, which is only present
+    # from 22.5. The CLI itself still supports 20.11 — that's checked below.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.x", "24.x"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # Every test in the repo runs with no Hedera credentials and no network:
+      # the two pieces that would touch the ledger — the facilitator and the HCS
+      # writer — are stubbed, so CI proves the logic without spending testnet
+      # HBAR or depending on a mirror node being up.
+      - name: Test
+        run: pnpm test
+
+      - name: Build the frontends
+        run: pnpm build:all
+
+  cli-node-floor:
+    name: CLI runs on its minimum Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.11"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @xorv/protocol build
+      - run: pnpm --filter xorv build
+      # The floor that matters for `npm i -g @xorv/cli`: it has to at least start.
+      - run: node packages/cli/dist/index.js --version
+
+  secrets:
+    name: No keys in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for committed key material
+        run: |
+          # A private key in a repo that handles money is the one mistake worth
+          # failing the build over.
+          if grep -rIn --exclude-dir=node_modules --exclude-dir=.git \
+               -E '(ghp_[A-Za-z0-9]{30,}|30740201010420[0-9a-f]{40,}|"privateKey"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{60,}")' .; then
+            echo "::error::possible secret committed"
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::.env is tracked"
+            exit 1
+          fi
+          echo "clean"

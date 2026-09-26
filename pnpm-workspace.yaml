@@ -1,0 +1,11 @@
+packages:
+  - "packages/*"
+  - "services/*"
+  - "apps/*"
+
+# The Hiero SDK ships protobuf builders that run on install.
+onlyBuiltDependencies:
+  - protobufjs
+  - "@hiero-ledger/proto"
+  - esbuild
+  - sharp

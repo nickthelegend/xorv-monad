@@ -1,0 +1,44 @@
+{
+  "lines": [
+    {
+      "id": "02",
+      "sfx": [
+        "click-soft"
+      ]
+    },
+    {
+      "id": "03",
+      "sfx": [
+        "key-press",
+        "click-soft"
+      ]
+    },
+    {
+      "id": "04",
+      "sfx": [
+        "click-soft"
+      ]
+    },
+    {
+      "id": "05",
+      "sfx": [
+        "chime"
+      ]
+    },
+    {
+      "id": "06",
+      "sfx": [
+        "click-soft"
+      ]
+    },
+    {
+      "id": "07",
+      "sfx": [
+        "error"
+      ]
+    }
+  ],
+  "bgm": {
+    "mode": "none"
+  }
+}

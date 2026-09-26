@@ -1,0 +1,650 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+  <style>
+    @font-face {
+      font-family: "Inter";
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/Inter-Regular.woff2") format("woff2");
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+      color: #fafafa;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---------- track 0 -- full-bleed ground (rides on .clip, never on #root) ---------- */
+    .bg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+      background: #000000;
+      z-index: 1;
+    }
+    .grid {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1920px;
+      height: 1080px;
+    }
+
+    /* ---------- track 1 -- the continuous surface stage ---------- */
+    .stage {
+      position: absolute;
+      left: 290px;
+      top: 220px;
+      width: 1340px;
+      height: 600px;
+      transform-origin: 50% 50%;
+      z-index: 2;
+    }
+
+    /* the surface handed over from frame 03 -- same centre, same hairline language */
+    .legacy {
+      position: absolute;
+      inset: 0;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      transform-origin: 50% 50%;
+    }
+    .legacy-bar {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 56px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    /* the app's composer -- same centre, similar footprint */
+    .composer {
+      position: absolute;
+      left: 30px;
+      top: 90px;
+      width: 1280px;
+      height: 420px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      transform-origin: 50% 50%;
+      opacity: 0;
+    }
+    .chead {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 60px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    }
+    .chead-label {
+      position: absolute;
+      left: 44px;
+      top: 22px;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.26em;
+      text-transform: uppercase;
+      color: #4a4a4a;
+    }
+    .cbody {
+      position: absolute;
+      left: 0;
+      top: 60px;
+      width: 100%;
+      height: 244px;
+    }
+    .placeholder,
+    .promptline {
+      position: absolute;
+      left: 44px;
+      top: 40px;
+      font-size: 38px;
+      font-weight: 400;
+      line-height: 1.15;
+      white-space: nowrap;
+    }
+    .placeholder {
+      color: #4a4a4a;
+    }
+    .promptline {
+      color: #fafafa;
+    }
+    .ch {
+      display: none;
+    }
+    .caret {
+      display: inline-block;
+      width: 2px;
+      height: 40px;
+      margin-left: 3px;
+      vertical-align: -7px;
+      background: #fafafa;
+      opacity: 0;
+    }
+    .cfoot {
+      position: absolute;
+      left: 0;
+      top: 304px;
+      width: 100%;
+      height: 116px;
+      border-top: 1px solid rgba(255, 255, 255, 0.09);
+    }
+    .picker {
+      position: absolute;
+      left: 44px;
+      top: 30px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 18px;
+      background: #121212;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+    }
+    .mark {
+      width: 21px;
+      height: 21px;
+      display: block;
+      color: #fafafa;
+    }
+    .picker-label {
+      font-size: 18px;
+      font-weight: 500;
+      color: #fafafa;
+    }
+    .chev {
+      width: 13px;
+      height: 13px;
+      margin-left: 6px;
+      color: #6e6e6e;
+    }
+    .submit-wrap {
+      position: absolute;
+      right: 32px;
+      top: 22px;
+      width: 72px;
+      height: 72px;
+    }
+    .burst {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(250, 250, 250, 0.3);
+      border-radius: 8px;
+      transform-origin: 50% 50%;
+      opacity: 0;
+      z-index: 1;
+    }
+    .submit {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #121212;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      color: #fafafa;
+      transform-origin: 50% 50%;
+      z-index: 2;
+    }
+    .submit svg {
+      width: 26px;
+      height: 26px;
+      display: block;
+    }
+
+    /* ---------- track 2 -- the quote panel (asymmetric 60/40) ---------- */
+    .panel {
+      position: absolute;
+      left: 320px;
+      top: 400px;
+      width: 1280px;
+      height: 340px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      transform-origin: 50% 50%;
+      opacity: 0;
+      z-index: 3;
+    }
+    .col-label {
+      position: absolute;
+      top: 40px;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.26em;
+      text-transform: uppercase;
+      color: #4a4a4a;
+      opacity: 0;
+    }
+    .col-label-l {
+      left: 40px;
+    }
+    .col-label-r {
+      left: 808px;
+    }
+    .vdiv {
+      position: absolute;
+      left: 768px;
+      top: 40px;
+      width: 1px;
+      height: 180px;
+      background: rgba(255, 255, 255, 0.09);
+      transform-origin: 50% 0%;
+    }
+    .provider-name {
+      position: absolute;
+      left: 40px;
+      top: 74px;
+      font-size: 44px;
+      font-weight: 500;
+      line-height: 1.1;
+      letter-spacing: -0.01em;
+      color: #fafafa;
+      opacity: 0;
+    }
+    .provider-meta {
+      position: absolute;
+      left: 40px;
+      top: 140px;
+      font-size: 23px;
+      font-weight: 400;
+      color: #a1a1a1;
+      opacity: 0;
+    }
+    .price {
+      position: absolute;
+      left: 808px;
+      top: 68px;
+      font-family: ui-monospace, monospace;
+      font-size: 62px;
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: -0.01em;
+      color: #4ade80;
+      transform-origin: 0% 50%;
+      opacity: 0;
+    }
+    .pays {
+      position: absolute;
+      left: 808px;
+      top: 146px;
+      font-family: ui-monospace, monospace;
+      font-size: 22px;
+      color: #a1a1a1;
+      opacity: 0;
+    }
+    .foot-rule {
+      position: absolute;
+      left: 40px;
+      top: 244px;
+      width: 1200px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+      transform-origin: 0% 50%;
+    }
+    .foot-note {
+      position: absolute;
+      left: 40px;
+      top: 268px;
+      font-size: 21px;
+      font-weight: 400;
+      color: #6e6e6e;
+      opacity: 0;
+    }
+
+    /* ---------- tracks 3 / 4 -- the signature beat ---------- */
+    .status-code {
+      position: absolute;
+      left: 0;
+      top: 348px;
+      width: 1920px;
+      text-align: center;
+      font-family: ui-monospace, monospace;
+      font-size: 300px;
+      font-weight: 500;
+      line-height: 0.86;
+      letter-spacing: -0.02em;
+      color: #fafafa;
+      transform-origin: 50% 50%;
+      opacity: 0;
+      z-index: 4;
+    }
+    .status-reason {
+      position: absolute;
+      left: 0;
+      top: 672px;
+      width: 1920px;
+      text-align: center;
+      font-family: ui-monospace, monospace;
+      font-size: 21px;
+      line-height: 1.14;
+      letter-spacing: 0.42em;
+      text-indent: 0.42em;
+      color: #a1a1a1;
+      transform-origin: 50% 50%;
+      opacity: 0;
+      z-index: 5;
+    }
+  </style>
+
+  <div data-hf-id="hf-b36i" id="root" data-composition-id="04-quote" data-width="1920" data-height="1080">
+    <!-- ground -->
+    <div data-hf-id="hf-7b4y" id="q04-bg" class="bg clip" data-start="0" data-duration="8.8" data-track-index="0">
+      <svg data-hf-id="hf-ri3r" id="q04-grid" class="grid" width="1920" height="1080" viewBox="0 0 1920 1080" xmlns="http://www.w3.org/2000/svg">
+        <defs data-hf-id="hf-mh0t">
+          <pattern data-hf-id="hf-byw3" id="q04-gridpat" width="80" height="80" patternUnits="userSpaceOnUse">
+            <path data-hf-id="hf-00kg" d="M80 0H0V80" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1" />
+          </pattern>
+        </defs>
+        <rect data-hf-id="hf-08d6" width="1920" height="1080" fill="url(#q04-gridpat)" />
+      </svg>
+    </div>
+
+    <!-- the surface: frame 03's plane, scale-swapped into the app's composer -->
+    <div data-hf-id="hf-hwz3" id="q04-stage" class="stage clip" data-start="0" data-duration="8.8" data-track-index="1">
+      <div data-hf-id="hf-z8xk" id="q04-legacy" class="legacy">
+        <div data-hf-id="hf-ga4l" class="legacy-bar"></div>
+      </div>
+
+      <div data-hf-id="hf-y9ns" id="q04-composer" class="composer">
+        <div data-hf-id="hf-9v79" class="chead">
+          <div data-hf-id="hf-8pby" id="q04-chead" class="chead-label">New job</div>
+        </div>
+
+        <div data-hf-id="hf-9ldv" class="cbody">
+          <div data-hf-id="hf-67ij" id="q04-placeholder" class="placeholder">
+            Tell the network what to build…
+          </div>
+          <div data-hf-id="hf-5rww" id="q04-promptline" class="promptline">
+            <span data-hf-id="hf-2dia" id="q04-prompt"></span><span data-hf-id="hf-j9h7" id="q04-caret" class="caret"></span>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-1m5z" class="cfoot">
+          <div data-hf-id="hf-iko8" id="q04-picker" class="picker">
+            <svg data-hf-id="hf-ktic" class="mark" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <g data-hf-id="hf-g1zz" fill="currentColor">
+                <rect data-hf-id="hf-leuf" x="11" y="1.5" width="2" height="21" rx="1" />
+                <rect data-hf-id="hf-u8ii" x="11" y="3.5" width="2" height="17" rx="1" transform="rotate(45 12 12)" />
+                <rect data-hf-id="hf-99kv" x="11" y="1.5" width="2" height="21" rx="1" transform="rotate(90 12 12)" />
+                <rect data-hf-id="hf-9zue" x="11" y="3.5" width="2" height="17" rx="1" transform="rotate(135 12 12)" />
+              </g>
+            </svg>
+            <span data-hf-id="hf-b9s5" class="picker-label">Claude Code</span>
+            <svg data-hf-id="hf-ggzx" class="chev" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path data-hf-id="hf-03rp" d="M5 9l7 7 7-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+
+          <div data-hf-id="hf-577a" id="q04-submit-wrap" class="submit-wrap">
+            <div data-hf-id="hf-08ok" id="q04-burst" class="burst"></div>
+            <div data-hf-id="hf-vr1s" id="q04-submit" class="submit">
+              <svg data-hf-id="hf-v4ww" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path data-hf-id="hf-38mu" d="M12 19V6M6 12l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- the machine-readable terms -->
+    <div data-hf-id="hf-dpsm" id="q04-panel" class="panel clip" data-start="0" data-duration="8.8" data-track-index="2">
+      <div data-hf-id="hf-19oe" id="q04-lbl-provider" class="col-label col-label-l">Provider</div>
+      <div data-hf-id="hf-584u" id="q04-provider" class="provider-name">nivesh-macbook</div>
+      <div data-hf-id="hf-esfg" id="q04-provider-meta" class="provider-meta">Claude Code · 17 done</div>
+
+      <div data-hf-id="hf-n5hg" id="q04-vdiv" class="vdiv"></div>
+
+      <div data-hf-id="hf-pkee" id="q04-lbl-price" class="col-label col-label-r">Price</div>
+      <div data-hf-id="hf-b625" id="q04-price" class="price">$0.2500</div>
+      <div data-hf-id="hf-u5kl" id="q04-pays" class="pays">pays → 0.0.9848438</div>
+
+      <div data-hf-id="hf-kjsm" id="q04-foot-rule" class="foot-rule"></div>
+      <div data-hf-id="hf-aq3n" id="q04-foot-note" class="foot-note">nothing has been paid</div>
+    </div>
+
+    <div data-hf-id="hf-rrtn" id="q04-402" class="status-code clip" data-start="0" data-duration="8.8" data-track-index="3">
+      402
+    </div>
+    <div data-hf-id="hf-ex6a" id="q04-reason" class="status-reason clip" data-start="0" data-duration="8.8" data-track-index="4">
+      PAYMENT REQUIRED
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      /* ------------------------------------------------------------------
+         Scene 1 (0.0-1.6) -- rule scale-swap-transition. The surface handed over
+         from frame 03 becomes the app's composer at the SAME centre.
+         TRIGGER 0.28 / EXIT_DUR 0.42 / OVERLAP 0.16 / ENTER_DUR 0.62 /
+         EXIT_SCALE 0.78 / BOUNCE 1.5 / SUB_REVEAL_DELAY 0.3.
+      ------------------------------------------------------------------ */
+      const TRIGGER = 0.28;
+      const EXIT_DUR = 0.42;
+      const OVERLAP = 0.16;
+      const EXIT_SCALE = 0.78;
+
+      tl.fromTo(
+        "#q04-legacy",
+        { scale: 1, opacity: 1 },
+        { scale: EXIT_SCALE, opacity: 0, duration: EXIT_DUR, ease: "power2.in" },
+        TRIGGER,
+      );
+
+      tl.fromTo(
+        "#q04-composer",
+        { scale: EXIT_SCALE, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.62, ease: "back.out(1.5)" },
+        TRIGGER + EXIT_DUR - OVERLAP,
+      );
+
+      // inner content reveals only once the container has settled
+      const composerBits = [
+        "#q04-chead",
+        "#q04-placeholder",
+        "#q04-picker",
+        "#q04-submit-wrap",
+      ];
+      for (let i = 0; i < composerBits.length; i++) {
+        tl.fromTo(
+          composerBits[i],
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.44, ease: "power3.out" },
+          TRIGGER + EXIT_DUR + 0.3 + i * 0.07,
+        );
+      }
+
+      /* ------------------------------------------------------------------
+         Scene 2 (1.6-3.4) -- "a buyer describes the work": the ask types on
+         character-by-character behind a caret; ONE slow push-in underneath.
+      ------------------------------------------------------------------ */
+      const PROMPT = "Run my test suite and summarize the failures";
+      const host = document.getElementById("q04-prompt");
+      const chars = [];
+      for (let i = 0; i < PROMPT.length; i++) {
+        const s = document.createElement("span");
+        s.className = "ch";
+        s.textContent = PROMPT.charAt(i) === " " ? "\u00a0" : PROMPT.charAt(i);
+        host.appendChild(s);
+        chars.push(s);
+      }
+
+      tl.set("#q04-caret", { opacity: 1 }, 1.52);
+      tl.set("#q04-placeholder", { opacity: 0 }, 1.56); // placeholder clear
+
+      const TYPE_START = 1.6;
+      const TYPE_END = 3.3;
+      const step = (TYPE_END - TYPE_START) / chars.length;
+      for (let i = 0; i < chars.length; i++) {
+        tl.set(chars[i], { display: "inline" }, TYPE_START + i * step);
+      }
+
+      // camera: one slow push-in on the surface, decelerating to a hold
+      tl.fromTo(
+        "#q04-stage",
+        { scale: 1 },
+        { scale: 1.03, duration: 1.8, ease: "power1.inOut" },
+        1.6,
+      );
+
+      // the caret blinks once on the finished ask, then goes out at the submit
+      tl.set("#q04-caret", { opacity: 0 }, 3.34);
+      tl.set("#q04-caret", { opacity: 1 }, 3.4);
+      tl.set("#q04-caret", { opacity: 0 }, 3.46);
+
+      /* ------------------------------------------------------------------
+         Scene 3 (3.4-4.4) -- press-release-spring on the up-arrow submit.
+         Linear compression, spring release, state continuity by adjacency
+         (RELEASE_START = PRESS_START + PRESS_DUR). This system has no
+         shadow, so the press reads through a colour dip plus a hairline
+         release ring instead of a shadow shrink / radial burst.
+      ------------------------------------------------------------------ */
+      const PRESS_START = 3.44;
+      const PRESS_DUR = 0.14;
+      const RELEASE_START = PRESS_START + PRESS_DUR;
+
+      tl.to(
+        "#q04-submit",
+        {
+          scale: 0.92,
+          backgroundColor: "#050505",
+          duration: PRESS_DUR,
+          ease: "power1.in",
+        },
+        PRESS_START,
+      );
+      tl.to(
+        "#q04-submit",
+        { scale: 1, backgroundColor: "#121212", duration: 0.5, ease: "back.out(1.8)" },
+        RELEASE_START,
+      );
+      tl.fromTo(
+        "#q04-burst",
+        { scale: 1, opacity: 0 },
+        { scale: 1.9, opacity: 0.5, duration: 0.34, ease: "power2.out" },
+        RELEASE_START,
+      );
+      tl.to(
+        "#q04-burst",
+        { opacity: 0, duration: 0.34, ease: "power2.in" },
+        RELEASE_START + 0.3,
+      );
+
+      // the composer hands the frame over -- dims to ~40%; the typed ask drops
+      // further still so it cannot compete with the 402 that lands on top of it
+      tl.to("#q04-composer", { opacity: 0.4, duration: 0.44, ease: "power2.inOut" }, 3.98);
+      tl.to("#q04-promptline", { opacity: 0.3, duration: 0.44, ease: "power2.inOut" }, 3.98);
+      tl.to("#q04-grid", { opacity: 0.45, duration: 0.44, ease: "power2.inOut" }, 3.98);
+
+      /* ------------------------------------------------------------------
+         Scene 4 (4.4-6.4) -- THE BEAT. 402 HARD-CUTS in at display scale over
+         the dimmed composer and HOLDS ALONE. Nothing else arrives until 6.4.
+      ------------------------------------------------------------------ */
+      tl.set("#q04-402", { opacity: 1 }, 4.4); // hard cut -- deliberately not a tween
+      tl.fromTo(
+        "#q04-reason",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" },
+        4.74,
+      );
+
+      /* ------------------------------------------------------------------
+         Scene 5 (6.4-8.8) -- 402 shrinks into a label and the terms resolve
+         under it on "who will run it, and exactly what it costs".
+      ------------------------------------------------------------------ */
+      tl.to("#q04-402", { scale: 0.21, y: -164, duration: 0.72, ease: "power3.inOut" }, 6.4);
+      tl.to(
+        "#q04-reason",
+        { scale: 0.8, y: -280, duration: 0.72, ease: "power3.inOut" },
+        6.4,
+      );
+      tl.to("#q04-composer", { opacity: 0.12, duration: 0.5, ease: "power2.out" }, 6.42);
+
+      tl.fromTo(
+        "#q04-panel",
+        { opacity: 0, y: 26, scale: 0.985 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.55, ease: "power3.out" },
+        6.56,
+      );
+
+      // who will run it
+      tl.fromTo(
+        "#q04-lbl-provider",
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+        6.94,
+      );
+      tl.fromTo(
+        "#q04-provider",
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+        7.02,
+      );
+      tl.fromTo(
+        "#q04-provider-meta",
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" },
+        7.14,
+      );
+      tl.fromTo("#q04-vdiv", { scaleY: 0 }, { scaleY: 1, duration: 0.45, ease: "power2.out" }, 7.24);
+
+      // and exactly what it costs -- the only accent in the frame
+      tl.fromTo(
+        "#q04-lbl-price",
+        { opacity: 0, y: 12 },
+        { opacity: 1, y: 0, duration: 0.36, ease: "power3.out" },
+        7.36,
+      );
+      tl.fromTo(
+        "#q04-price",
+        { opacity: 0, scale: 0.9 },
+        { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" },
+        7.44,
+      );
+      tl.fromTo(
+        "#q04-pays",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" },
+        7.74,
+      );
+
+      // and still, nothing has moved
+      tl.fromTo(
+        "#q04-foot-rule",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.42, ease: "power2.out" },
+        7.94,
+      );
+      tl.fromTo(
+        "#q04-foot-note",
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" },
+        8.0,
+      );
+
+      // hold the resolved terms out to the cut
+      tl.set("#q04-bg", { opacity: 1 }, 8.8);
+
+      window.__timelines["04-quote"] = tl;
+    })();
+  </script>
+</template>

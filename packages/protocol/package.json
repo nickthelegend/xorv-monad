@@ -1,0 +1,32 @@
+{
+  "name": "@xorv/protocol",
+  "version": "0.1.0",
+  "description": "Shared Xorv protocol types, money math, Hedera helpers and x402 wiring.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@hiero-ledger/sdk": "2.85.0",
+    "@x402/core": "~2.20.0",
+    "@x402/hedera": "~2.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.4"
+  }
+}

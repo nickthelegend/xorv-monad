@@ -1,0 +1,427 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+  <style>
+    /* Brand font — variable Inter (wght axis), shipped locally. Root-relative path. */
+    @font-face {
+      font-family: "Inter";
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/Inter-Regular.woff2") format("woff2");
+    }
+
+    /* Root is styled by #root (never a class) — a class here is scoped away at render. */
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "Inter", system-ui, sans-serif;
+      color: #fafafa;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    /* ── full-bleed ground (its own clip layer, never on #root) ───────────── */
+    .f07-safety-bg {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+    }
+
+    /* The split stage. perspective lives here so the two panels can arrive from
+       opposite wings with mirrored book-open rotateY — comparison-split's
+       signature move, adapted: the halves are UNEQUAL (60/40) and the tilt
+       settles flat, because the brand plane is flat. */
+    .f07-safety-stage {
+      position: absolute;
+      inset: 0;
+      perspective: 2400px;
+    }
+
+    /* ── the 60/40 divider ────────────────────────────────────────────────── */
+    #f07-safety-rule {
+      position: absolute;
+      left: 1160px;
+      top: 150px;
+      width: 1px;
+      height: 730px;
+      background: rgba(255, 255, 255, 0.09);
+      transform-origin: 50% 0%;
+    }
+
+    /* ── mono chrome labels (uppercase, tracked) ──────────────────────────── */
+    .f07-safety-label {
+      position: absolute;
+      top: 200px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 18px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #6e6e6e;
+      opacity: 0;
+    }
+    #f07-safety-kicker {
+      left: 100px;
+    }
+    #f07-safety-mcp-label {
+      left: 1220px;
+    }
+
+    /* ── LEFT 60% — the objection, answered with the real transcript ──────── */
+    #f07-safety-term {
+      position: absolute;
+      left: 100px;
+      top: 268px;
+      width: 1000px;
+      padding: 54px 56px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      transform-style: preserve-3d;
+      opacity: 0;
+    }
+    /* Everything inside the terminal is monospace — a machine is speaking. */
+    .f07-safety-line {
+      display: flex;
+      align-items: center;
+      height: 66px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 44px;
+      font-weight: 400;
+      line-height: 66px;
+      white-space: nowrap;
+    }
+    /* Fixed gutter so `$` and `✖` sit in the same column and both bodies of
+       text start at the same x — the reply lands directly under the command. */
+    .f07-safety-gutter {
+      flex: 0 0 auto;
+      width: 44px;
+      color: #6e6e6e;
+    }
+    #f07-safety-cmd {
+      flex: 0 0 auto;
+      width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      color: #fafafa;
+    }
+    #f07-safety-caret {
+      flex: 0 0 auto;
+      width: 24px;
+      height: 44px;
+      margin-left: 2px;
+      background: #6e6e6e;
+    }
+    .f07-safety-gap {
+      height: 30px;
+    }
+    /* The one failure colour in the entire video — used exactly once. */
+    #f07-safety-denial {
+      opacity: 0;
+      transform-origin: 0% 50%;
+    }
+    #f07-safety-denial .f07-safety-gutter {
+      color: #f87171;
+    }
+
+    /* ── refused the same way, stated without narration ───────────────────── */
+    #f07-safety-paths {
+      position: absolute;
+      left: 100px;
+      top: 636px;
+      display: flex;
+      align-items: center;
+      gap: 60px;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    .f07-safety-path {
+      display: flex;
+      align-items: center;
+      font-size: 28px;
+      color: #6e6e6e;
+      opacity: 0;
+      white-space: nowrap;
+    }
+    /* muted grey — NOT the failure colour; the red above keeps its scarcity.
+       Selector is id-qualified so it outranks the `#root *` margin reset. */
+    #f07-safety-paths .f07-safety-x {
+      margin-left: 20px;
+      font-size: 24px;
+      color: #a1a1a1;
+      opacity: 0;
+    }
+
+    /* ── RIGHT 40% — a one-line aside: agents buy capacity over MCP ───────── */
+    #f07-safety-mcp {
+      position: absolute;
+      left: 1220px;
+      top: 268px;
+      width: 600px;
+      padding: 40px 42px;
+      background: rgba(10, 10, 10, 0);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      transform-style: preserve-3d;
+      opacity: 0;
+    }
+    .f07-safety-mcp-line {
+      display: flex;
+      align-items: center;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-weight: 400;
+      white-space: nowrap;
+    }
+    .f07-safety-arrow {
+      flex: 0 0 auto;
+      width: 34px;
+      font-size: 26px;
+      color: #4a4a4a;
+    }
+    #f07-safety-call {
+      height: 50px;
+      font-size: 34px;
+      line-height: 50px;
+      color: #fafafa;
+      opacity: 0;
+    }
+    #f07-safety-result {
+      height: 42px;
+      margin-top: 24px;
+      font-size: 28px;
+      line-height: 42px;
+      color: #a1a1a1;
+      opacity: 0;
+    }
+  </style>
+
+  <div data-hf-id="hf-vlsr" id="root" data-composition-id="07-safety" data-width="1920" data-height="1080">
+    <!-- ground -->
+    <div data-hf-id="hf-5nn8" class="clip" data-start="0" data-duration="9.3" data-track-index="0" style="position: absolute; inset: 0">
+      <div data-hf-id="hf-mtxc" class="f07-safety-bg"></div>
+    </div>
+
+    <!-- content -->
+    <div data-hf-id="hf-6ewf" class="clip" data-start="0" data-duration="9.3" data-track-index="1" style="position: absolute; inset: 0">
+      <div data-hf-id="hf-f5xl" class="f07-safety-stage">
+        <div data-hf-id="hf-52zk" id="f07-safety-rule"></div>
+
+        <div data-hf-id="hf-13mm" id="f07-safety-kicker" class="f07-safety-label">Sandbox</div>
+        <div data-hf-id="hf-tacf" id="f07-safety-mcp-label" class="f07-safety-label">MCP</div>
+
+        <!-- the real transcript -->
+        <div data-hf-id="hf-u8lw" id="f07-safety-term">
+          <div data-hf-id="hf-3fxr" class="f07-safety-line">
+            <span data-hf-id="hf-4941" class="f07-safety-gutter">$</span>
+            <span data-hf-id="hf-xa14" id="f07-safety-cmd">cat ~/.xorv/config.json</span>
+            <span data-hf-id="hf-q44g" id="f07-safety-caret"></span>
+          </div>
+          <div data-hf-id="hf-fghn" class="f07-safety-gap"></div>
+          <div data-hf-id="hf-rd73" id="f07-safety-denial" class="f07-safety-line">
+            <span data-hf-id="hf-iq97" class="f07-safety-gutter">✖</span>
+            <span data-hf-id="hf-eihv">Operation not permitted</span>
+          </div>
+        </div>
+
+        <div data-hf-id="hf-sm7a" id="f07-safety-paths">
+          <div data-hf-id="hf-ap54" class="f07-safety-path">
+            <span data-hf-id="hf-ns4q">~/.ssh</span><span data-hf-id="hf-mik2" id="f07-safety-x1" class="f07-safety-x">✖</span>
+          </div>
+          <div data-hf-id="hf-k5kw" class="f07-safety-path">
+            <span data-hf-id="hf-ugph">~/.aws</span><span data-hf-id="hf-6k2f" id="f07-safety-x2" class="f07-safety-x">✖</span>
+          </div>
+          <div data-hf-id="hf-iynt" class="f07-safety-path">
+            <span data-hf-id="hf-gl69">keychain</span><span data-hf-id="hf-k3h0" id="f07-safety-x3" class="f07-safety-x">✖</span>
+          </div>
+        </div>
+
+        <!-- the machine-to-machine case, one line -->
+        <div data-hf-id="hf-6w4u" id="f07-safety-mcp">
+          <div data-hf-id="hf-ug1t" id="f07-safety-call" class="f07-safety-mcp-line">
+            <span data-hf-id="hf-t3ht" class="f07-safety-arrow">→</span><span data-hf-id="hf-4lkq">xorv_run_job</span>
+          </div>
+          <div data-hf-id="hf-p2gm" id="f07-safety-result" class="f07-safety-mcp-line">
+            <span data-hf-id="hf-tw3v" class="f07-safety-arrow">←</span><span data-hf-id="hf-w3e4">accepted</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* Hidden-at-rest guards, pinned at t=0. On a backward seek GSAP renders
+         children in reverse order, so these land LAST and win over any
+         not-yet-started fromTo reverting to its from-state. */
+      tl.set("#f07-safety-kicker", { opacity: 0 }, 0);
+      tl.set("#f07-safety-mcp-label", { opacity: 0 }, 0);
+      tl.set("#f07-safety-term", { opacity: 0 }, 0);
+      tl.set("#f07-safety-mcp", { opacity: 0 }, 0);
+      tl.set("#f07-safety-cmd", { width: "0ch" }, 0);
+      tl.set("#f07-safety-caret", { opacity: 1 }, 0);
+      tl.set("#f07-safety-denial", { opacity: 0 }, 0);
+      tl.set(".f07-safety-path", { opacity: 0 }, 0);
+      tl.set(".f07-safety-x", { opacity: 0 }, 0);
+      tl.set("#f07-safety-call", { opacity: 0 }, 0);
+      tl.set("#f07-safety-result", { opacity: 0 }, 0);
+
+      /* ── Scene 1 (0.0–1.4) — the split establishes, 60/40 ─────────────────
+         The divider draws down, then the two panels arrive from opposite wings
+         with mirrored book-open rotateY (comparison-split's signature). Adapted:
+         the halves are unequal, the tilt settles flat, no shadow, no idle. */
+      tl.fromTo(
+        "#f07-safety-rule",
+        { scaleY: 0 },
+        { scaleY: 1, duration: 0.8, ease: "power3.out" },
+        0,
+      );
+      tl.fromTo(
+        "#f07-safety-term",
+        { x: -170, rotateY: 8, opacity: 0 },
+        { x: 0, rotateY: 0, opacity: 1, duration: 0.95, ease: "power3.out", immediateRender: false },
+        0.05,
+      );
+      tl.fromTo(
+        "#f07-safety-mcp",
+        { x: 170, rotateY: -8, opacity: 0 },
+        {
+          x: 0,
+          rotateY: 0,
+          opacity: 0.34,
+          duration: 0.95,
+          ease: "power3.out",
+          immediateRender: false,
+        },
+        0.25,
+      );
+      /* labels slide DOWN into place against the side-arriving panels (the
+         blueprint's non-conflicting T-shape), landing on "sandboxed" */
+      tl.fromTo(
+        "#f07-safety-kicker",
+        { y: -16, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.5, ease: "power3.out", immediateRender: false },
+        0.62,
+      );
+      tl.fromTo(
+        "#f07-safety-mcp-label",
+        { y: -16, opacity: 0 },
+        { y: 0, opacity: 0.34, duration: 0.5, ease: "power3.out", immediateRender: false },
+        0.8,
+      );
+
+      /* ── Scene 2 (1.55–3.6) — the stranger's prompt types itself, then the
+         reply HARD-CUTS in. VO: "so a stranger's prompt … can't reach your keys"
+         (typing under 1.74–3.15, denial on "can't" at 3.22).
+         23 characters of `cat ~/.xorv/config.json`, stepped one glyph at a time
+         so the block caret walks with it. */
+      tl.fromTo(
+        "#f07-safety-cmd",
+        { width: "0ch" },
+        { width: "23ch", duration: 1.5, ease: "steps(23)", immediateRender: false },
+        1.55,
+      );
+      /* command submitted — the caret goes with it, at the cut frame */
+      tl.set("#f07-safety-caret", { opacity: 0 }, 3.3);
+      /* The hard cut: no fade-up. The reply is SET at the cut frame already
+         oversized and blurred, then retracts into the focal plane — the cut
+         catalog's inverse zoom-through (arrival register, 10px text-scale blur). */
+      tl.fromTo(
+        "#f07-safety-denial",
+        { opacity: 0.15, scale: 1.06, filter: "blur(10px)" },
+        {
+          opacity: 1,
+          scale: 1,
+          filter: "blur(0px)",
+          duration: 0.28,
+          ease: "expo.out",
+          immediateRender: false,
+        },
+        3.3,
+      );
+      /* the thunk — 3px of impact on the surface, settled inside a quarter second */
+      tl.fromTo(
+        "#f07-safety-term",
+        { y: -3 },
+        { y: 0, duration: 0.26, ease: "power2.out", immediateRender: false },
+        3.3,
+      );
+
+      /* ── Scene 3 (3.62–4.82) — refused the same way, three more times, muted.
+         The marks tick under "reach your keys" (3.49–4.92). Grey, not red. */
+      tl.fromTo(
+        ".f07-safety-path",
+        { y: 10, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.34,
+          stagger: 0.09,
+          ease: "power2.out",
+          immediateRender: false,
+        },
+        3.62,
+      );
+      var MARKS = [
+        { el: "#f07-safety-x1", at: 3.98 },
+        { el: "#f07-safety-x2", at: 4.32 },
+        { el: "#f07-safety-x3", at: 4.66 },
+      ];
+      for (var i = 0; i < MARKS.length; i++) {
+        tl.fromTo(
+          MARKS[i].el,
+          { opacity: 0, scale: 0.55 },
+          { opacity: 1, scale: 1, duration: 0.16, ease: "power3.out", immediateRender: false },
+          MARKS[i].at,
+        );
+      }
+
+      /* ── Scene 4 (5.02–7.6) — the right half resolves. VO: "And agents can buy
+         capacity, too, over MCP." The outline gains its surface and its ink; the
+         call lands on "agents", the result on "too". Then both halves hold STILL. */
+      tl.fromTo(
+        "#f07-safety-mcp",
+        { opacity: 0.34, backgroundColor: "rgba(10,10,10,0)" },
+        {
+          opacity: 1,
+          backgroundColor: "rgba(10,10,10,1)",
+          duration: 0.5,
+          ease: "power2.out",
+          immediateRender: false,
+        },
+        5.02,
+      );
+      tl.fromTo(
+        "#f07-safety-mcp-label",
+        { opacity: 0.34 },
+        { opacity: 1, duration: 0.5, ease: "power2.out", immediateRender: false },
+        5.02,
+      );
+      tl.fromTo(
+        "#f07-safety-call",
+        { y: 12, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.42, ease: "power3.out", immediateRender: false },
+        5.3,
+      );
+      tl.fromTo(
+        "#f07-safety-result",
+        { y: 10, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.4, ease: "power3.out", immediateRender: false },
+        7.2,
+      );
+
+      /* full-span anchor — the shot holds, no exit (the root transition is the exit) */
+      tl.to({}, { duration: 9.3 }, 0);
+
+      window.__timelines["07-safety"] = tl;
+    })();
+  </script>
+</template>

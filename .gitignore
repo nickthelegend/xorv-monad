@@ -1,0 +1,52 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# secrets — never commit keys
+.env
+.env.local
+.env.*.local
+*.pem
+.xorv/
+
+# reference clones (not part of this repo)
+references_/
+
+# runtime state
+data/
+*.db
+*.sqlite
+*.log
+logs/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# tooling caches
+.turbo/
+.eslintcache
+coverage/
+
+# Video project — the source and the finished render are tracked; everything
+# below is regenerable from SCRIPT.md / STORYBOARD.md and would only bloat the
+# repo (voice wavs, a MusicGen bed, site capture, snapshot sheets).
+videos/*/assets/voice/
+videos/*/assets/bgm/
+videos/*/capture/
+videos/*/snapshots/
+videos/*/.hyperframes/
+videos/*/node_modules/
+videos/*/.thumbnails/
+videos/*/.waveform-cache/
+videos/*/audio_engine_meta.json

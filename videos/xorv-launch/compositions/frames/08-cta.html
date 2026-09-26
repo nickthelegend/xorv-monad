@@ -1,0 +1,382 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+  <style>
+    @font-face {
+      font-family: "Inter";
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/Inter-Regular.woff2") format("woff2");
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ---- full-bleed ground: black field + the hairline grid the video is drawn on ---- */
+    .f08cta-ground {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+    }
+    .f08cta-gridwrap {
+      position: absolute;
+      inset: 0;
+    }
+    /* oversized so the converge (rotate + scale) never exposes an edge.
+       offset so grid lines land exactly on x=670 / y=284 — the point the mark is born at. */
+    .f08cta-grid {
+      position: absolute;
+      left: -410px;
+      top: -436px;
+      width: 2880px;
+      height: 2040px;
+    }
+    /* the two lead hairlines carried in from the previous frame — they rotate,
+       converge onto the grid cross at (670, 284), then settle to hairline value */
+    .f08cta-lead {
+      position: absolute;
+      background: rgba(255, 255, 255, 0.26);
+    }
+    .f08cta-lead-h {
+      left: -260px;
+      right: -260px;
+      top: 284px;
+      height: 1px;
+    }
+    .f08cta-lead-v {
+      top: -420px;
+      bottom: -420px;
+      left: 670px;
+      width: 1px;
+    }
+
+    /* ---- the lockup ---- */
+    .f08cta-stack {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 190px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .f08cta-logo {
+      display: block;
+      /* The wordmark's artwork is not centred inside its 0 0 260 64 viewBox --
+         the source SVG has ~100 units of trailing space. Measured on a real
+         render, the ink sits 135px left inside the element. A centre-aligned
+         flex item shifts right by half its left margin, so 270px corrects it
+         without touching the SVG, whose reveal wipe is bound to a glyph
+         extent measured at runtime. */
+      /* viewBox tightened to the artwork bounds; 151.78 x 2.954px per unit
+         keeps the mark the same on-screen size it had at 768/260. */
+      width: 420px;
+      height: 189px;
+    }
+    .f08cta-rule {
+      margin-top: 76px;
+      width: 768px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+    .f08cta-mono {
+      font-family: ui-monospace, monospace;
+      font-weight: 400;
+      white-space: pre;
+      font-variant-ligatures: none;
+      color: #fafafa;
+    }
+    .f08cta-cmd {
+      margin-top: 56px;
+      font-size: 42px;
+      line-height: 50px;
+      letter-spacing: 0.02em;
+    }
+    .f08cta-url {
+      margin-top: 34px;
+      font-size: 32px;
+      line-height: 40px;
+      letter-spacing: 0.04em;
+    }
+    .f08cta-live {
+      margin-top: 62px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .f08cta-dot {
+      display: block;
+      width: 40px;
+      height: 40px;
+    }
+    .f08cta-livelabel {
+      font-family: "Inter", sans-serif;
+      font-weight: 400;
+      font-size: 28px;
+      line-height: 34px;
+      letter-spacing: 0.08em;
+      color: #6e6e6e;
+    }
+  </style>
+
+  <div data-hf-id="hf-prpg" id="root" data-composition-id="08-cta" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-6ktm" class="clip f08cta-ground" id="f08cta-ground" data-start="0" data-duration="5.5" data-track-index="0">
+      <div data-hf-id="hf-ammc" class="f08cta-gridwrap" id="f08cta-gridwrap">
+        <svg data-hf-id="hf-9jst" class="f08cta-grid" viewBox="0 0 2880 2040" width="2880" height="2040" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs data-hf-id="hf-mh0t">
+            <pattern data-hf-id="hf-pze0" id="f08cta-gridpat" width="120" height="120" patternUnits="userSpaceOnUse">
+              <path data-hf-id="hf-47tj" d="M120 0 L0 0 L0 120" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="1" />
+            </pattern>
+          </defs>
+          <rect data-hf-id="hf-7xt7" x="0" y="0" width="2880" height="2040" fill="url(#f08cta-gridpat)" />
+        </svg>
+      </div>
+      <div data-hf-id="hf-kggc" class="f08cta-lead f08cta-lead-h" id="f08cta-leadh"></div>
+      <div data-hf-id="hf-ecug" class="f08cta-lead f08cta-lead-v" id="f08cta-leadv"></div>
+    </div>
+
+    <div data-hf-id="hf-5a6b" class="clip f08cta-stack" id="f08cta-stack" data-start="0" data-duration="5.5" data-track-index="1">
+      <!-- the real wordmark from assets/xorv-logo.svg, inlined and rendered FLAT in ink
+           #fafafa. every gradient in the source file is stripped — its linear ramps and
+           the paint references to them are gone; each stroke and fill is the flat token.
+           beams 1 and 3 are direction-reversed only (identical geometry) so every stroke
+           draws outward from the core. -->
+      <svg data-hf-id="hf-zk0j" class="f08cta-logo" id="f08cta-logo" viewBox="66 0 104 64" width="104" height="64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Xorv">
+        <defs data-hf-id="hf-vl9d">
+          <clippath data-hf-id="hf-p9ao" id="f08cta-wordclip">
+            <rect data-hf-id="hf-oavx" id="f08cta-wordclip-rect" x="74" y="2" width="0" height="60" />
+          </clippath>
+        </defs>
+
+        <g data-hf-id="hf-d1p8" clip-path="url(#f08cta-wordclip)">
+          <text data-hf-id="hf-neu7" id="f08cta-word" x="78" y="44" font-family="Inter, sans-serif" font-size="38" font-weight="700" letter-spacing="-1.2" fill="#fafafa">Xorv</text>
+        </g>
+
+        <rect data-hf-id="hf-2hd3" id="f08cta-pen" x="74" y="12" width="0.9" height="40" fill="#fafafa" opacity="0" />
+      </svg>
+
+      <div data-hf-id="hf-sthg" class="f08cta-rule" id="f08cta-rule"></div>
+
+      <div data-hf-id="hf-nn1b" class="f08cta-mono f08cta-cmd"><span data-hf-id="hf-rkfq" id="f08cta-cmdtext">npm i -g @xorv/cli</span></div>
+
+      <div data-hf-id="hf-xyjs" class="f08cta-mono f08cta-url"><span data-hf-id="hf-sn3a" id="f08cta-urltext">xorv.vercel.app</span></div>
+
+      <div data-hf-id="hf-gqxo" class="f08cta-live" id="f08cta-live">
+        <svg data-hf-id="hf-g9hm" class="f08cta-dot" viewBox="0 0 40 40" width="40" height="40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <circle data-hf-id="hf-fqi4" id="f08cta-dotring" cx="20" cy="20" r="6" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0" />
+          <circle data-hf-id="hf-8dq2" id="f08cta-dotcore" cx="20" cy="20" r="5.5" fill="#4ade80" />
+        </svg>
+        <span data-hf-id="hf-nvwl" class="f08cta-livelabel">live on hedera testnet</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var ID = "08-cta";
+      var root = document.querySelector('[data-composition-id="' + ID + '"]');
+      if (!root) return;
+      var q = function (sel) {
+        return root.querySelector(sel);
+      };
+      var qa = function (sel) {
+        return Array.prototype.slice.call(root.querySelectorAll(sel));
+      };
+
+      /* ---------------------------------------------------------------
+         Scene 1 (0.0–1.4s)  hairlines rotate + converge into the grid;
+                             the wordmark assembles out of the cross.
+         Scene 2 (1.4–2.8s)  the two mono lines resolve.
+         Scene 3 (2.8–4.0s)  the accent dot lands and pulses ONCE.
+         Scene 4 (4.0–5.5s)  absolutely still. no fade, no push.
+         --------------------------------------------------------------- */
+
+      var gridwrap = q("#f08cta-gridwrap");
+      var leadH = q("#f08cta-leadh");
+      var leadV = q("#f08cta-leadv");
+      var wordClip = q("#f08cta-wordclip-rect");
+      var wordEl = q("#f08cta-word");
+      var pen = q("#f08cta-pen");
+      var rule = q("#f08cta-rule");
+      var cmdText = q("#f08cta-cmdtext");
+      var urlText = q("#f08cta-urltext");
+      var live = q("#f08cta-live");
+      var dotCore = q("#f08cta-dotcore");
+      var dotRing = q("#f08cta-dotring");
+
+
+      /* the wipe travels the wordmark's real glyph extent, measured — a fixed travel
+         would finish the reveal a third of the way through the tween */
+      var WORD_X0 = 74;
+      var wbox = null;
+      try {
+        wbox = wordEl.getBBox();
+      } catch (e) {
+        wbox = null;
+      }
+      var WORD_X1 = wbox && wbox.width > 20 ? Math.min(wbox.x + wbox.width + 6, 258) : 172;
+
+      /* ---- mono resolve: a pure function of timeline time, so every seek is exact ---- */
+      var CMD = "npm i -g @xorv/cli";
+      var SITE = "xorv.vercel.app";
+      var GLYPHS = "#$%&*+=/?~^!|:;";
+      var CMD_IN = 1.6,
+        CMD_OUT = 2.26;
+      var URL_IN = 2.34,
+        URL_OUT = 2.8;
+
+      function prog(t, a, b) {
+        return t <= a ? 0 : t >= b ? 1 : (t - a) / (b - a);
+      }
+      function resolveText(full, p, head) {
+        if (p >= 1) return full;
+        var n = full.length;
+        var front = p * (n + head);
+        var out = "";
+        for (var i = 0; i < n; i++) {
+          var c = full.charAt(i);
+          if (i < front - head) out += c;
+          else if (i < front && c !== " ")
+            out += GLYPHS.charAt((i * 5 + Math.floor(p * 61)) % GLYPHS.length);
+          else out += " ";
+        }
+        return out;
+      }
+      var clock = { t: 0 };
+      function paint() {
+        cmdText.textContent = resolveText(CMD, prog(clock.t, CMD_IN, CMD_OUT), 3);
+        urlText.textContent = resolveText(SITE, prog(clock.t, URL_IN, URL_OUT), 2);
+      }
+      paint();
+
+      /* Explicit t=0 states, applied at mount: the frame is correct on the very first
+         paint, before the host has seeked anything. Every entrance below is still a
+         fromTo, so any seek — forward or backward — resolves to the same values. */
+      gsap.set(gridwrap, {
+        opacity: 0.5,
+        rotation: -7,
+        scale: 1.12,
+        transformOrigin: "960px 540px",
+      });
+      gsap.set(leadH, { opacity: 0, rotation: 9, transformOrigin: "930px 0px" });
+      gsap.set(leadV, { opacity: 0, rotation: -9, transformOrigin: "0px 704px" });
+      gsap.set(pen, { opacity: 0 });
+      gsap.set(rule, { scaleX: 0, transformOrigin: "50% 50%" });
+      gsap.set(live, { opacity: 0 });
+      gsap.set(dotCore, { scale: 0, svgOrigin: "20 20" });
+      gsap.set(dotRing, { opacity: 0 });
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* ---------------- Scene 1 — the grid converges, the mark assembles ---------------- */
+
+      tl.fromTo(
+        gridwrap,
+        { rotation: -7, scale: 1.12, opacity: 0.5 },
+        {
+          rotation: 0,
+          scale: 1,
+          opacity: 1,
+          duration: 0.9,
+          ease: "power3.out",
+          transformOrigin: "960px 540px",
+        },
+        0,
+      );
+
+      tl.fromTo(
+        leadH,
+        { rotation: 9, opacity: 0 },
+        {
+          rotation: 0,
+          opacity: 1,
+          duration: 0.7,
+          ease: "power3.out",
+          transformOrigin: "930px 0px",
+        },
+        0,
+      );
+      tl.fromTo(
+        leadV,
+        { rotation: -9, opacity: 0 },
+        {
+          rotation: 0,
+          opacity: 1,
+          duration: 0.7,
+          ease: "power3.out",
+          transformOrigin: "0px 704px",
+        },
+        0,
+      );
+      /* they stop being lead lines and become two lines of the grid */
+      tl.to(leadH, { opacity: 0.34, duration: 0.5, ease: "power1.out" }, 0.72);
+      tl.to(leadV, { opacity: 0.34, duration: 0.5, ease: "power1.out" }, 0.72);
+
+
+      /* the wordmark is written out by a hairline pen riding the reveal edge */
+      tl.fromTo(
+        wordClip,
+        { attr: { width: 0 } },
+        { attr: { width: WORD_X1 - WORD_X0 }, duration: 0.38, ease: "power2.out" },
+        1.02,
+      );
+      tl.fromTo(
+        pen,
+        { attr: { x: WORD_X0 } },
+        { attr: { x: WORD_X1 }, duration: 0.38, ease: "power2.out" },
+        1.02,
+      );
+      /* belt and braces: whatever the measurement, the wordmark is whole once the wipe lands */
+      tl.set(wordClip, { attr: { width: 190 } }, 1.4);
+      tl.fromTo(pen, { opacity: 0 }, { opacity: 0.9, duration: 0.06, ease: "none" }, 1.02);
+      tl.to(pen, { opacity: 0, duration: 0.14, ease: "power1.out" }, 1.3);
+
+      /* ---------------- Scene 2 — the machine lines resolve ---------------- */
+
+      tl.fromTo(
+        rule,
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.5, ease: "power3.out", transformOrigin: "50% 50%" },
+        1.36,
+      );
+
+      /* one clock drives both resolves; the strings are a pure function of its time */
+      tl.to(clock, { t: 2.86, duration: 2.86, ease: "none", onUpdate: paint }, 0);
+
+      /* ---------------- Scene 3 — the one accent, one pulse ---------------- */
+
+      tl.fromTo(live, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: "power1.out" }, 2.86);
+
+      tl.fromTo(
+        dotCore,
+        { scale: 0 },
+        { scale: 1, duration: 0.26, ease: "back.out(2.2)", svgOrigin: "20 20" },
+        2.96,
+      );
+      /* the single pulse — up once, back once, then it rests for good */
+      tl.to(dotCore, { scale: 1.45, duration: 0.16, ease: "power2.out", svgOrigin: "20 20" }, 3.24);
+      tl.to(dotCore, { scale: 1, duration: 0.34, ease: "power2.inOut", svgOrigin: "20 20" }, 3.4);
+      /* the ring's visibility is its own fromTo, so the rest state either side of the
+         pulse is opacity 0 — a `from: 0.85` would sit on screen for the whole lead-in */
+      tl.fromTo(dotRing, { opacity: 0 }, { opacity: 0.85, duration: 0.05, ease: "none" }, 3.24);
+      tl.fromTo(
+        dotRing,
+        { attr: { r: 6 } },
+        { attr: { r: 19 }, duration: 0.72, ease: "power2.out" },
+        3.24,
+      );
+      tl.to(dotRing, { opacity: 0, duration: 0.63, ease: "power2.out" }, 3.33);
+
+      /* ---------------- Scene 4 — nothing. the frame holds on black. ---------------- */
+
+      window.__timelines[ID] = tl;
+    })();
+  </script>
+</template>

@@ -1,0 +1,369 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+  <style>
+    /* Brand font — frame.md's font-loading block, verbatim (root-relative path).
+       NOTE: the staged assets/fonts/Inter-Regular.woff2 is a non-Latin subset and
+       contributes no glyphs, so this stack currently resolves to the generic sans.
+       Kept verbatim (same stack as the sibling frames) so the type stays uniform
+       across the cut, and so a corrected staged file fixes every frame at once. */
+    @font-face {
+      font-family: "Inter";
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/Inter-Regular.woff2") format("woff2");
+    }
+
+    /* Root is styled by #root (never a class) — a class here is scoped away at render. */
+    #root {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      font-family: "Inter", sans-serif;
+      color: #fafafa;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    /* Full-bleed ground rides on its own .clip layer, never on #root. */
+    #f02-mismatch-bg {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+    }
+
+    /* ── handoff from 01-idle: the accent word, centred, motionless.
+           Geometry copied from frame 01's landed state so the cut is seamless. */
+    #f02-mismatch-idle {
+      position: absolute;
+      left: 0;
+      top: 370px;
+      width: 1920px;
+      height: 330px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #f02-mismatch-idle-word {
+      font-size: 364.8px;
+      font-weight: 800;
+      line-height: 0.88;
+      letter-spacing: 0.015em;
+      text-transform: lowercase;
+      color: #4ade80; /* the last accent in this frame */
+    }
+
+    /* ── the signature move: one hard vertical hairline, 50/50 ───────────── */
+    #f02-mismatch-divider {
+      position: absolute;
+      left: 960px;
+      top: 0;
+      width: 1px;
+      height: 884px; /* stops clear of the 900px caption band */
+      background: #4a4a4a;
+      transform-origin: top center;
+    }
+
+    /* ── the two-column grid: rows guarantee shared y, cells are exact
+           960px translates of one another (96px pad, 96px gutter each side) ─ */
+    .f02-mismatch-row {
+      position: absolute;
+      left: 0;
+      width: 1920px;
+    }
+    .f02-mismatch-cell {
+      position: absolute;
+      width: 748px;
+    }
+    .f02-mismatch-l {
+      left: 106px;
+    }
+    .f02-mismatch-r {
+      left: 1066px;
+    }
+
+    #f02-mismatch-row-rule {
+      top: 196px;
+      height: 1px;
+    }
+    #f02-mismatch-row-label {
+      top: 256px;
+      height: 40px;
+    }
+    #f02-mismatch-row-meter {
+      top: 392px;
+      height: 18px;
+    }
+    #f02-mismatch-row-unit {
+      top: 438px;
+      height: 20px;
+    }
+    #f02-mismatch-row-price {
+      top: 548px;
+      height: 80px;
+    }
+
+    /* panel top-rule — the only hairline-token structure (stat-card, top border only) */
+    .f02-mismatch-rule {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+    #f02-mismatch-rule-l {
+      transform-origin: left center;
+    }
+    #f02-mismatch-rule-r {
+      transform-origin: right center;
+    }
+
+    /* human-language type — Inter, lowercase, negative-tracked */
+    .f02-mismatch-label {
+      font-size: 40px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      color: #a1a1a1;
+    }
+
+    /* identical meters: left = usage against a whole plan, right = one job against the same plan */
+    .f02-mismatch-track {
+      position: relative;
+      width: 520px;
+      height: 18px;
+      border: 1px solid #4a4a4a;
+    }
+    .f02-mismatch-mark {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      background: #a1a1a1;
+      transform-origin: left center;
+    }
+    #f02-mismatch-fill-l {
+      width: 100%; /* required — a 0-width scaled fill renders as nothing */
+    }
+    #f02-mismatch-token-r {
+      width: 42px; /* one job — the same sliver the meter reads */
+    }
+
+    /* mono chrome — data voice only */
+    .f02-mismatch-unit {
+      font-family: ui-monospace, monospace;
+      font-size: 20px;
+      font-weight: 500;
+      line-height: 1;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #6e6e6e;
+    }
+
+    /* THE argument — same string, same size, same y, exactly 960px apart.
+       Two-tone carried over from frame 01's price: value in ink, unit muted. */
+    .f02-mismatch-price {
+      font-family: ui-monospace, monospace;
+      font-size: 80px;
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: 0.14em;
+      white-space: nowrap;
+      color: #fafafa;
+    }
+    .f02-mismatch-price-u {
+      color: #6e6e6e;
+    }
+    .f02-mismatch-price-wrap {
+      position: relative;
+      display: inline-block;
+      line-height: 1;
+    }
+    /* marker circle — hand-drawn ellipse, grey (nothing here is live) */
+    #f02-mismatch-ring {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 106%;
+      height: 190%;
+      border: 2px solid #6e6e6e;
+      border-radius: 50%;
+    }
+  </style>
+
+  <div data-hf-id="hf-nlgs" id="root" data-composition-id="02-mismatch" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-qinw" id="f02-mismatch-bg" class="clip" data-start="0" data-duration="5.2" data-track-index="0"></div>
+
+    <!-- handoff in: the accent word, centred, opacity 1, motionless -->
+    <div data-hf-id="hf-lprz" id="f02-mismatch-idle"><span data-hf-id="hf-5m2p" id="f02-mismatch-idle-word">idle</span></div>
+
+    <!-- the divider sits above the word so the wipe reads as cutting through it -->
+    <div data-hf-id="hf-vxdo" id="f02-mismatch-divider"></div>
+
+    <div data-hf-id="hf-rzcd" id="f02-mismatch-row-rule" class="f02-mismatch-row">
+      <div data-hf-id="hf-zl2x" id="f02-mismatch-rule-l" class="f02-mismatch-cell f02-mismatch-l f02-mismatch-rule"></div>
+      <div data-hf-id="hf-ldph" id="f02-mismatch-rule-r" class="f02-mismatch-cell f02-mismatch-r f02-mismatch-rule"></div>
+    </div>
+
+    <div data-hf-id="hf-vkmb" id="f02-mismatch-row-label" class="f02-mismatch-row">
+      <div data-hf-id="hf-rnj8" id="f02-mismatch-label-l" class="f02-mismatch-cell f02-mismatch-l f02-mismatch-label">
+        you
+      </div>
+      <div data-hf-id="hf-kfvj" id="f02-mismatch-label-r" class="f02-mismatch-cell f02-mismatch-r f02-mismatch-label">
+        them
+      </div>
+    </div>
+
+    <div data-hf-id="hf-5a6i" id="f02-mismatch-row-meter" class="f02-mismatch-row">
+      <div data-hf-id="hf-2zge" id="f02-mismatch-track-l" class="f02-mismatch-cell f02-mismatch-l">
+        <div data-hf-id="hf-gznr" class="f02-mismatch-track">
+          <div data-hf-id="hf-q727" id="f02-mismatch-fill-l" class="f02-mismatch-mark"></div>
+        </div>
+      </div>
+      <div data-hf-id="hf-6p7a" id="f02-mismatch-track-r" class="f02-mismatch-cell f02-mismatch-r">
+        <div data-hf-id="hf-zx5z" class="f02-mismatch-track">
+          <div data-hf-id="hf-z6dv" id="f02-mismatch-token-r" class="f02-mismatch-mark"></div>
+        </div>
+      </div>
+    </div>
+
+    <div data-hf-id="hf-x9ht" id="f02-mismatch-row-unit" class="f02-mismatch-row">
+      <div data-hf-id="hf-jjbj" id="f02-mismatch-unit-l" class="f02-mismatch-cell f02-mismatch-l f02-mismatch-unit">
+        8% used
+      </div>
+      <div data-hf-id="hf-9njb" id="f02-mismatch-unit-r" class="f02-mismatch-cell f02-mismatch-r f02-mismatch-unit">
+        1 job
+      </div>
+    </div>
+
+    <div data-hf-id="hf-ccs2" id="f02-mismatch-row-price" class="f02-mismatch-row">
+      <div data-hf-id="hf-l2kl" id="f02-mismatch-price-l" class="f02-mismatch-cell f02-mismatch-l f02-mismatch-price"><span data-hf-id="hf-lcdn" class="f02-mismatch-price-wrap">$200 <span data-hf-id="hf-wikl" class="f02-mismatch-price-u">/ MONTH</span></span></div>
+      <div data-hf-id="hf-6t5d" id="f02-mismatch-price-r" class="f02-mismatch-cell f02-mismatch-r f02-mismatch-price"><span data-hf-id="hf-mwgb" class="f02-mismatch-price-wrap">$200 <span data-hf-id="hf-snyx" class="f02-mismatch-price-u">/ MONTH</span><span data-hf-id="hf-ywya" id="f02-mismatch-ring"></span></span></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      var D = 5.2; // fixed upstream — the 7.0s scene spec is compressed x0.743 onto it
+
+      /* ── Scene 1 (0.00–1.04) — the divider is the ONLY motion ─────────────
+         IDLE arrives already on screen from frame 01 (accent, opacity 1, still);
+         one vertical hairline wipes DOWN through it and splits the canvas 50/50. */
+      tl.fromTo(
+        "#f02-mismatch-divider",
+        { scaleY: 0 },
+        { scaleY: 1, duration: 0.78, ease: "power3.inOut" },
+        0.12,
+      );
+      // the word leaves with the accent — from here nothing in the frame is live
+      tl.to("#f02-mismatch-idle", { opacity: 0, duration: 0.26, ease: "none" }, 0.84);
+
+      /* ── Scene 2 (1.04–2.68) — the left half resolves, entering from its
+         own wing (the split's mirrored arrival, flat: no tilt, no shadow) ── */
+      tl.fromTo(
+        "#f02-mismatch-rule-l",
+        { opacity: 0, scaleX: 0 },
+        { opacity: 1, scaleX: 1, duration: 0.5, ease: "power3.out" },
+        1.04,
+      );
+      tl.fromTo(
+        "#f02-mismatch-label-l",
+        { opacity: 0, x: -40 },
+        { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" },
+        1.1,
+      );
+      tl.fromTo(
+        "#f02-mismatch-track-l",
+        { opacity: 0, x: -40 },
+        { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" },
+        1.34,
+      );
+      // progress fill — barely off its floor
+      tl.fromTo(
+        "#f02-mismatch-fill-l",
+        { scaleX: 0 },
+        { scaleX: 0.08, duration: 0.55, ease: "power2.out" },
+        1.62,
+      );
+      tl.fromTo(
+        "#f02-mismatch-unit-l",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.4, ease: "none" },
+        1.92,
+      );
+      tl.fromTo(
+        "#f02-mismatch-price-l",
+        { opacity: 0, y: 26 },
+        { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" },
+        2.06,
+      );
+
+      /* ── Scene 3 (2.68–4.31) — the right half resolves, mirrored: same
+         geometry, same price, landing at the same y as the left ─────────── */
+      tl.fromTo(
+        "#f02-mismatch-rule-r",
+        { opacity: 0, scaleX: 0 },
+        { opacity: 1, scaleX: 1, duration: 0.5, ease: "power3.out" },
+        2.68,
+      );
+      tl.fromTo(
+        "#f02-mismatch-label-r",
+        { opacity: 0, x: 40 },
+        { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" },
+        2.74,
+      );
+      tl.fromTo(
+        "#f02-mismatch-track-r",
+        { opacity: 0, x: 40 },
+        { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" },
+        2.98,
+      );
+      // one job — a single unit against the whole plan
+      tl.fromTo(
+        "#f02-mismatch-token-r",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.42, ease: "power3.out" },
+        3.26,
+      );
+      tl.fromTo(
+        "#f02-mismatch-unit-r",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.4, ease: "none" },
+        3.52,
+      );
+      tl.fromTo(
+        "#f02-mismatch-price-r",
+        { opacity: 0, y: 26 },
+        { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" },
+        3.7,
+      );
+
+      /* ── Scene 4 (4.31–5.20) — the marker circle draws around the
+         right-hand price (circle mode), then stillness ─────────────────── */
+      tl.fromTo(
+        "#f02-mismatch-ring",
+        { xPercent: -50, yPercent: -50, scale: 0.55, rotation: -9, opacity: 0 },
+        {
+          xPercent: -50,
+          yPercent: -50,
+          scale: 1,
+          rotation: -3,
+          opacity: 1,
+          duration: 0.52,
+          ease: "back.out(1.4)",
+        },
+        4.34,
+      );
+
+      // span anchor — the shot holds still to the end of its fixed duration
+      tl.to({}, { duration: D }, 0);
+
+      window.__timelines["02-mismatch"] = tl;
+    })();
+  </script>
+</template>

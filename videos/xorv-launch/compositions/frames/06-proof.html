@@ -1,0 +1,618 @@
+<template>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+
+  <style>
+    /* frame.md font loading — brand file that ships with the project */
+    @font-face {
+      font-family: "Inter";
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+      src: url("assets/fonts/Inter-Regular.woff2") format("woff2");
+    }
+
+    /* ------------------------------------------------------------------
+       06-proof — the receipt.
+       Everything on this frame is machine output, so everything is mono.
+       Canvas #000 · card #0a0a0a on a 1px hairline · ink #fafafa ·
+       accent #4ade80 appears exactly ONCE, on the testnet status dot.
+       ------------------------------------------------------------------ */
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      container-type: size;
+      font-family: "IBM Plex Mono", monospace;
+      font-weight: 400;
+      color: #fafafa;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* full-bleed ground rides on its own .clip layer, never on #root */
+    .proof-ground {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+    }
+
+    .proof-stage {
+      position: absolute;
+      inset: 0;
+    }
+
+    /* ---- chrome ---------------------------------------------------- */
+
+    /* the axis carried in from the previous frame: it lifts off centre
+       and contracts into the frame's top hairline */
+    .proof-axis {
+      position: absolute;
+      left: 0;
+      top: 454px;
+      width: 1920px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.16);
+      transform-origin: 50% 50%;
+    }
+
+    .proof-badge {
+      position: absolute;
+      right: 106px;
+      top: 98px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 14px;
+      line-height: 1;
+      letter-spacing: 0.18em;
+      color: #8A8A8A;
+      text-transform: uppercase;
+    }
+
+    /* the ONE accent in the frame — a live-state dot, nothing else */
+    .proof-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #4ade80;
+    }
+
+    /* ---- the receipt card ------------------------------------------ */
+
+    .proof-card {
+      position: absolute;
+      left: 380px;
+      top: 250px;
+      width: 1160px;
+      height: 460px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+    }
+
+    .proof-meta {
+      position: absolute;
+      left: 48px;
+      top: 48px;
+      font-size: 13px;
+      line-height: 1;
+      letter-spacing: 0.18em;
+      color: #818181;
+      text-transform: uppercase;
+    }
+
+    /* the transaction id — its LENGTH is the proof, so it is never
+       truncated and it is INK, not accent: a fact, not a state */
+    .proof-txn {
+      position: absolute;
+      left: 48px;
+      top: 100px;
+      width: 1064px;
+      height: 64px;
+      font-size: 52px;
+      font-weight: 700;
+      line-height: 64px;
+      letter-spacing: 0;
+      white-space: nowrap;
+      perspective: 1500px;
+    }
+
+    .proof-char {
+      position: relative;
+      display: inline-block;
+      transform-origin: bottom;
+      transform-style: preserve-3d;
+      opacity: 0;
+    }
+
+    /* the real glyph stays IN FLOW, so each cell keeps the font's true
+       advance width and the flicker glyphs stacked on it can never shift
+       the line. Every glyph state is driven by opacity sets only — no
+       callbacks, because the renderer seeks frame by frame. */
+    .proof-r {
+      display: inline-block;
+      color: #fafafa;
+      opacity: 0;
+    }
+
+    .proof-g {
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: #8a8a8a;
+      opacity: 0;
+    }
+
+    /* reserves the line box so flicker glyphs can never shift the row */
+    .proof-ghost {
+      position: absolute;
+      inset: 0 auto auto 0;
+      opacity: 0;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* the empty slot row — the id's exact shape and length, before a single
+       digit is known. Scene 1 states the length; Scene 2 fills it in. */
+    .proof-slots {
+      position: absolute;
+      inset: 0 auto auto 0;
+      color: #232323;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+    }
+
+    .proof-rule {
+      position: absolute;
+      left: 48px;
+      top: 208px;
+      width: 1064px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+      transform-origin: 0% 50%;
+    }
+
+    .proof-rows {
+      position: absolute;
+      left: 48px;
+      top: 248px;
+      width: 1064px;
+      height: 168px;
+    }
+
+    .proof-row {
+      position: absolute;
+      left: 0;
+      width: 1064px;
+      height: 40px;
+      font-size: 30px;
+      line-height: 40px;
+    }
+
+    .proof-k {
+      position: absolute;
+      left: 0;
+      top: 0;
+      color: #8A8A8A;
+    }
+
+    .proof-v {
+      position: absolute;
+      left: 200px;
+      top: 0;
+      color: #fafafa;
+      white-space: nowrap;
+    }
+
+    .proof-vd {
+      color: #8A8A8A;
+    }
+
+    /* ---- the HCS receipts topic ------------------------------------ */
+
+    .proof-topic {
+      position: absolute;
+      left: 1326px;
+      top: 250px;
+      width: 488px;
+      height: 460px;
+      background: #0a0a0a;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      opacity: 0;
+    }
+
+    .proof-tlabel {
+      position: absolute;
+      left: 40px;
+      top: 48px;
+      font-size: 13px;
+      line-height: 1;
+      letter-spacing: 0.18em;
+      color: #818181;
+      text-transform: uppercase;
+    }
+
+    .proof-tid {
+      position: absolute;
+      left: 40px;
+      top: 92px;
+      font-size: 32px;
+      font-weight: 700;
+      line-height: 40px;
+      white-space: nowrap;
+      color: #fafafa;
+    }
+
+    .proof-trule {
+      position: absolute;
+      left: 40px;
+      top: 180px;
+      width: 408px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+      transform-origin: 0% 50%;
+    }
+
+    /* consensus-ordered rows keep running under the hold, behind a fade
+       mask — the record continues past the frame in both directions */
+    .proof-stream {
+      position: absolute;
+      left: 40px;
+      top: 206px;
+      width: 408px;
+      height: 212px;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 1) 34px,
+        rgba(0, 0, 0, 1) 158px,
+        rgba(0, 0, 0, 0) 212px
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, 0) 0px,
+        rgba(0, 0, 0, 1) 34px,
+        rgba(0, 0, 0, 1) 158px,
+        rgba(0, 0, 0, 0) 212px
+      );
+    }
+
+    .proof-scol {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 408px;
+      height: 380px;
+    }
+
+    .proof-srow {
+      position: absolute;
+      left: 0;
+      width: 408px;
+      height: 6px;
+      opacity: 0;
+    }
+
+    .proof-tick {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1px;
+      height: 6px;
+      background: #3d3d3d;
+    }
+
+    .proof-bar {
+      position: absolute;
+      left: 14px;
+      top: 2px;
+      height: 2px;
+      background: #272727;
+    }
+  </style>
+
+  <div data-hf-id="hf-m7su" id="root" data-composition-id="06-proof" data-width="1920" data-height="1080">
+    <div data-hf-id="hf-u16y" class="proof-ground clip" data-start="0" data-duration="8.8" data-track-index="0"></div>
+
+    <div data-hf-id="hf-zo94" class="proof-stage clip" data-start="0" data-duration="8.8" data-track-index="1">
+      <div data-hf-id="hf-e7t6" class="proof-axis" id="proof-axis"></div>
+
+      <div data-hf-id="hf-zkbu" class="proof-badge" id="proof-badge">
+        <span data-hf-id="hf-7rqr" class="proof-dot" id="proof-dot"></span><span data-hf-id="hf-0xur">Hedera testnet</span>
+      </div>
+
+      <div data-hf-id="hf-3eii" class="proof-card" id="proof-card">
+        <div data-hf-id="hf-488y" class="proof-meta" id="proof-meta">Transaction</div>
+
+        <div data-hf-id="hf-4j30" class="proof-txn" id="proof-txn">
+          <span data-hf-id="hf-sixm" class="proof-ghost">0.0.9842030@1785527147.476758713</span>
+          <span data-hf-id="hf-c3qf" class="proof-slots" id="proof-slots"></span>
+        </div>
+
+        <div data-hf-id="hf-4u1q" class="proof-rule" id="proof-rule"></div>
+
+        <div data-hf-id="hf-x2cc" class="proof-rows">
+          <div data-hf-id="hf-qguu" class="proof-row" style="top: 0px">
+            <span data-hf-id="hf-o68x" class="proof-k" id="proof-k0">payment</span>
+            <span data-hf-id="hf-thd8" class="proof-v" id="proof-v0">0.2500 <span data-hf-id="hf-19q5" class="proof-vd">USDC</span></span>
+          </div>
+          <div data-hf-id="hf-8ux0" class="proof-row" style="top: 64px">
+            <span data-hf-id="hf-7mmx" class="proof-k" id="proof-k1">provider</span>
+            <span data-hf-id="hf-fa9a" class="proof-v" id="proof-v1">0.0.9848438</span>
+          </div>
+          <div data-hf-id="hf-g50l" class="proof-row" style="top: 128px">
+            <span data-hf-id="hf-2kjy" class="proof-k" id="proof-k2">result</span>
+            <span data-hf-id="hf-1m1g" class="proof-v" id="proof-v2"><span data-hf-id="hf-csdn" class="proof-vd">sha256</span> 88dd9f84…</span>
+          </div>
+        </div>
+      </div>
+
+      <div data-hf-id="hf-a1b6" class="proof-topic" id="proof-topic">
+        <div data-hf-id="hf-qpr2" class="proof-tlabel" id="proof-tlabel">HCS receipts topic</div>
+        <div data-hf-id="hf-34k2" class="proof-tid" id="proof-tid">0.0.9848247</div>
+        <div data-hf-id="hf-ne8w" class="proof-trule" id="proof-trule"></div>
+        <div data-hf-id="hf-nrrf" class="proof-stream">
+          <div data-hf-id="hf-brgr" class="proof-scol" id="proof-scol" data-layout-allow-overflow=""></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var TXN = "0.0.9842030@1785527147.476758713";
+      var DIGITS = "0123456789";
+
+      /* ---------- build the decode row (mono, so widths never move) ---------- */
+      var txnEl = document.getElementById("proof-txn");
+      var charEls = [];
+      var slots = "";
+      for (var s = 0; s < TXN.length; s++) {
+        var sc = TXN.charAt(s);
+        /* digits become empty slots; "." and "@" stay, so the id's exact
+           shape is legible before any value is */
+        slots += sc >= "0" && sc <= "9" ? "·" : sc;
+      }
+      document.getElementById("proof-slots").textContent = slots;
+
+      var FLICKS = 3; /* decoy glyphs each digit cycles before it locks */
+
+      for (var i = 0; i < TXN.length; i++) {
+        var ch = TXN.charAt(i);
+        /* only the digits scramble — the "." and "@" hold the id's shape
+           from the first frame, so the structure is never in doubt */
+        var isDigit = ch >= "0" && ch <= "9";
+
+        var cell = document.createElement("span");
+        cell.className = "proof-char";
+
+        var real = document.createElement("span");
+        real.className = "proof-r";
+        real.textContent = ch;
+        cell.appendChild(real);
+
+        var decoys = [];
+        if (isDigit) {
+          for (var g = 0; g < FLICKS; g++) {
+            var decoy = document.createElement("span");
+            decoy.className = "proof-g";
+            decoy.textContent = pseudoGlyph(i, g);
+            cell.appendChild(decoy);
+            decoys.push(decoy);
+          }
+        }
+
+        txnEl.appendChild(cell);
+        charEls.push({ cell: cell, real: real, decoys: decoys });
+      }
+
+      /* index + quantised-progress seeded — the same frame always yields
+         the same glyph (deterministic; no Math.random, no Date.now) */
+      function pseudoGlyph(i, step) {
+        var h = (i + 1) * 2654435761 + (step + 1) * 40503;
+        h = ((h % 2147483647) * 48271) % 2147483647;
+        return DIGITS.charAt(h % 10);
+      }
+
+      /* ---------- build the consensus stream ---------- */
+      var WIDTHS = [318, 246, 372, 204, 290, 348, 232, 300, 264, 384, 218, 336];
+      var scol = document.getElementById("proof-scol");
+      var streamRows = [];
+      for (var r = 0; r < WIDTHS.length; r++) {
+        var row = document.createElement("div");
+        row.className = "proof-srow";
+        row.style.top = r * 34 + "px";
+        var tick = document.createElement("i");
+        tick.className = "proof-tick";
+        var bar = document.createElement("i");
+        bar.className = "proof-bar";
+        bar.style.width = WIDTHS[r] + "px";
+        row.appendChild(tick);
+        row.appendChild(bar);
+        scol.appendChild(row);
+        streamRows.push(row);
+      }
+
+      /* ---------------------------------------------------------------- */
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      var card = document.getElementById("proof-card");
+
+      /* ---- Scene 1 (0.0–1.6s) — the axis lifts away, the receipt rises ---- */
+      tl.fromTo(
+        "#proof-axis",
+        { y: 0, scaleX: 1, opacity: 1 },
+        { y: -304, scaleX: 0.889583, opacity: 0.56, duration: 0.9, ease: "power3.inOut" },
+        0,
+      );
+      tl.fromTo(
+        card,
+        { y: 46, scale: 0.985 },
+        { y: 0, scale: 1, duration: 0.95, ease: "power3.out" },
+        0.08,
+      );
+      tl.fromTo(card, { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, 0.08);
+
+      /* HEDERA TESTNET sets small, upper-right, and stays for the whole frame */
+      tl.fromTo(
+        "#proof-badge",
+        { opacity: 0, x: 16 },
+        { opacity: 1, x: 0, duration: 0.5, ease: "power3.out" },
+        0.34,
+      );
+      tl.fromTo(
+        "#proof-dot",
+        { opacity: 0, scale: 0.3 },
+        { opacity: 1, scale: 1, duration: 0.34, ease: "power3.out" },
+        0.62,
+      );
+      tl.fromTo(
+        "#proof-meta",
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" },
+        0.74,
+      );
+      /* the empty id slots state the length before the value exists */
+      tl.fromTo(
+        "#proof-slots",
+        { opacity: 0 },
+        { opacity: 1, duration: 0.5, ease: "power2.out" },
+        0.94,
+      );
+
+      /* ---- Scene 2 (1.6–3.6s) — the id decodes character by character ----
+         One LINEAR tween per char; the power3.out flap curve is computed from
+         it. Driving the glyph off eased progress would crush the whole flicker
+         phase into the first ~4 frames of the flip. */
+      var DECODE_AT = 1.62;
+      var FLIP = 0.68;
+      var STAGGER = 0.0303;
+      var LOCK_IN = FLIP * 0.6; /* the real glyph clicks in at 60% of the flip */
+      var STEP = LOCK_IN / FLICKS; /* 0.136s per decoy — ~4 frames at 30fps */
+
+      charEls.forEach(function (c, i) {
+        var at = DECODE_AT + i * STAGGER;
+
+        /* the flap — hinged at the bottom edge, through the line's perspective */
+        tl.fromTo(
+          c.cell,
+          { rotationX: 90 },
+          { rotationX: 0, duration: FLIP, ease: "power3.out", transformOrigin: "50% 100%" },
+          at,
+        );
+        tl.fromTo(
+          c.cell,
+          { opacity: 0 },
+          { opacity: 1, duration: FLIP * 0.5, ease: "power1.out" },
+          at,
+        );
+
+        /* reset every glyph state at 0 so any seek lands on the right frame */
+        tl.set(c.decoys.concat([c.real]), { opacity: 0 }, 0);
+        for (var g = 0; g < c.decoys.length; g++) {
+          tl.set(c.decoys[g], { opacity: 1 }, at + g * STEP);
+          tl.set(c.decoys[g], { opacity: 0 }, at + (g + 1) * STEP);
+        }
+        /* separators were never secret — they read from the first frame */
+        tl.set(c.real, { opacity: 1 }, c.decoys.length ? at + LOCK_IN : at);
+      });
+
+      /* the slots hand off to the real characters as the decode sweeps
+         across them (a within-scene swap, not an exit) */
+      tl.fromTo(
+        "#proof-slots",
+        { opacity: 1 },
+        { opacity: 0, duration: 0.12, ease: "none", immediateRender: false },
+        1.66,
+      );
+
+      /* the lock: the line takes the weight and the rule snaps across */
+      tl.fromTo(
+        "#proof-txn",
+        { y: -6 },
+        { y: 0, duration: 0.38, ease: "power4.out", immediateRender: false },
+        3.22,
+      );
+      tl.fromTo(
+        "#proof-rule",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.46, ease: "power4.out" },
+        3.24,
+      );
+
+      /* ---- Scene 3 (3.6–5.8s) — one row per word ---- */
+      for (var n = 0; n < 3; n++) {
+        var at = 3.62 + n * 0.66;
+        tl.fromTo(
+          "#proof-k" + n,
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" },
+          at,
+        );
+        tl.fromTo(
+          "#proof-v" + n,
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.44, ease: "power3.out" },
+          at + 0.07,
+        );
+      }
+
+      /* ---- Scene 4 (5.8–8.8s) — reframe, the receipts topic arrives ---- */
+      /* card carries leftward; the topic enters from the right on the same
+         path and decelerates into place (cut-the-curve, no cut) */
+      tl.fromTo(
+        card,
+        { x: 0 },
+        { x: -274, duration: 0.74, ease: "power3.inOut", immediateRender: false },
+        5.8,
+      );
+      tl.fromTo(
+        "#proof-topic",
+        { opacity: 0, x: 96 },
+        { opacity: 1, x: 0, duration: 0.66, ease: "power4.out" },
+        6.02,
+      );
+      tl.fromTo(
+        "#proof-tlabel",
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" },
+        6.3,
+      );
+      tl.fromTo(
+        "#proof-tid",
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" },
+        6.46,
+      );
+      tl.fromTo(
+        "#proof-trule",
+        { scaleX: 0 },
+        { scaleX: 1, duration: 0.5, ease: "power4.out" },
+        6.62,
+      );
+
+      /* the scroll keeps running under the hold — the subject is doing
+         something, so the frame is never frozen */
+      tl.fromTo("#proof-scol", { y: 0 }, { y: -96, duration: 2.1, ease: "none" }, 6.7);
+      streamRows.forEach(function (el, i) {
+        tl.fromTo(
+          el,
+          { opacity: 0 },
+          { opacity: 1, duration: 0.3, ease: "power2.out" },
+          6.72 + i * 0.13,
+        );
+      });
+
+      /* full-span anchor so the sub-composition timeline covers the window */
+      tl.to({}, { duration: 8.8 }, 0);
+
+      window.__timelines["06-proof"] = tl;
+    })();
+  </script>
+</template>

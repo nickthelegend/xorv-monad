@@ -1,0 +1,700 @@
+<template>
+  <style>
+    /* ---- Inter (variable wght) — the only non-mono face in this frame.
+           The staged assets/fonts/Inter-Regular.woff2 subset carries no A-Z/0-9,
+           so this points at the project's Latin subset of the same variable family. ---- */
+    @font-face {
+      font-family: "Inter";
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: block;
+      src: url("capture/assets/fonts/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2") format("woff2");
+    }
+
+    #root {
+      position: absolute;
+      inset: 0;
+      width: 1920px;
+      height: 1080px;
+      overflow: hidden;
+      color: #fafafa;
+      font-family: ui-monospace, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .s05-layer {
+      position: absolute;
+      inset: 0;
+    }
+
+    /* ---------- depth layer 1 — ground + strip structure ---------- */
+    .s05-ground {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+    }
+    .s05-strip-rule {
+      position: absolute;
+      left: 0;
+      top: 750px;
+      width: 1920px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+    .s05-tick {
+      position: absolute;
+      top: 615px;
+      width: 1px;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    /* ---------- chrome ---------- */
+    .s05-chrome-l,
+    .s05-chrome-r {
+      position: absolute;
+      top: 56px;
+      font-size: 18px;
+      line-height: 22px;
+      letter-spacing: 0.14em;
+      color: #8A8A8A;
+    }
+    .s05-chrome-l {
+      left: 140px;
+    }
+    .s05-chrome-r {
+      left: 1140px;
+      width: 640px;
+      text-align: right;
+    }
+    .s05-chrome-rule {
+      position: absolute;
+      left: 140px;
+      top: 112px;
+      width: 1640px;
+      height: 1px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+
+    /* ---------- depth layer 2 — the ledger axis ---------- */
+    .s05-axis-outer-l,
+    .s05-axis-outer-r,
+    .s05-axis-inner,
+    .s05-trace {
+      position: absolute;
+      top: 620px;
+      height: 1px;
+    }
+    .s05-axis-outer-l {
+      left: 0;
+      width: 330px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+    .s05-axis-outer-r {
+      left: 1590px;
+      width: 330px;
+      background: rgba(255, 255, 255, 0.09);
+    }
+    .s05-axis-inner {
+      left: 330px;
+      width: 1260px;
+      background: rgba(255, 255, 255, 0.16);
+    }
+    .s05-trace {
+      left: 450px;
+      width: 1000px;
+      background: rgba(250, 250, 250, 0.45);
+    }
+
+    /* ---------- depth layer 3 — nodes, ids, values ---------- */
+    .s05-node {
+      position: absolute;
+      top: 607px;
+      width: 26px;
+      height: 26px;
+      border: 1px solid rgba(250, 250, 250, 0.3);
+      background: #000000;
+    }
+    .s05-node-fill {
+      position: absolute;
+      inset: 4px;
+      background: #4ade80;
+    }
+
+    .s05-col {
+      position: absolute;
+      width: 520px;
+      text-align: center;
+    }
+    .s05-id {
+      top: 508px;
+      font-size: 34px;
+      line-height: 40px;
+      letter-spacing: 0.02em;
+      color: #fafafa;
+    }
+    .s05-role {
+      top: 560px;
+      font-size: 18px;
+      line-height: 22px;
+      letter-spacing: 0.14em;
+      color: #9A9A9A;
+    }
+    .s05-bal {
+      top: 672px;
+      font-size: 28px;
+      line-height: 34px;
+      letter-spacing: 0.02em;
+    }
+    .s05-sub {
+      top: 716px;
+      font-size: 17px;
+      line-height: 20px;
+      letter-spacing: 0.14em;
+    }
+
+    .s05-bal-in {
+      position: relative;
+      display: inline-block;
+    }
+    .s05-strike {
+      position: absolute;
+      left: -8px;
+      right: -8px;
+      top: 18px;
+      height: 1px;
+      background: rgba(250, 250, 250, 0.55);
+    }
+
+    /* ---------- the travelling value ---------- */
+    .s05-token {
+      position: absolute;
+      left: 335px;
+      top: 593px;
+      width: 230px;
+      height: 54px;
+      border: 1px solid rgba(250, 250, 250, 0.3);
+      background: #000000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      letter-spacing: 0.02em;
+      color: #fafafa;
+    }
+
+    /* ---------- the three-second counter ---------- */
+    .s05-counter-block {
+      position: absolute;
+      left: 700px;
+      top: 648px;
+      width: 520px;
+      text-align: center;
+    }
+    .s05-elapsed {
+      font-size: 17px;
+      line-height: 20px;
+      letter-spacing: 0.14em;
+      color: #8A8A8A;
+    }
+    .s05-counter-wrap {
+      margin-top: 10px;
+      height: 62px;
+    }
+    .s05-counter {
+      display: inline-block;
+      font-size: 58px;
+      line-height: 62px;
+      letter-spacing: 0.01em;
+      color: #fafafa;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- the handoff row carried in from frame 04 ---------- */
+    .s05-pays {
+      position: absolute;
+      left: 545px;
+      top: 606px;
+      width: 320px;
+      text-align: right;
+      font-size: 24px;
+      line-height: 28px;
+      letter-spacing: 0.02em;
+      color: #9A9A9A;
+    }
+
+    /* ---------- the gas line ---------- */
+    .s05-gas-riser,
+    .s05-gas-redirect {
+      position: absolute;
+      left: 960px;
+      width: 1px;
+      background: rgba(250, 250, 250, 0.35);
+    }
+    .s05-gas-riser {
+      top: 470px;
+      height: 150px;
+    }
+    .s05-gas-redirect {
+      top: 343px;
+      height: 127px;
+    }
+    .s05-gas-rail {
+      position: absolute;
+      left: 470px;
+      top: 470px;
+      width: 490px;
+      height: 1px;
+      background: rgba(250, 250, 250, 0.35);
+    }
+    .s05-gas-stop {
+      position: absolute;
+      left: 470px;
+      top: 446px;
+      width: 1px;
+      height: 48px;
+      background: rgba(250, 250, 250, 0.55);
+    }
+    .s05-gas-ghost {
+      position: absolute;
+      left: 330px;
+      top: 470px;
+      width: 0;
+      height: 137px;
+      border-left: 1px dashed #4a4a4a;
+    }
+    .s05-gas-label {
+      position: absolute;
+      left: 984px;
+      top: 488px;
+      font-size: 17px;
+      line-height: 20px;
+      letter-spacing: 0.14em;
+      color: #9A9A9A;
+    }
+    .s05-fac-label {
+      position: absolute;
+      left: 700px;
+      top: 262px;
+      width: 520px;
+      text-align: center;
+      font-size: 26px;
+      line-height: 32px;
+      letter-spacing: 0.02em;
+      color: #fafafa;
+    }
+
+    /* ---------- the payoff ---------- */
+    .s05-payoff {
+      position: absolute;
+      left: 0;
+      top: 772px;
+      width: 1920px;
+      text-align: center;
+      font-family: "Inter", sans-serif;
+      font-weight: 800;
+      font-size: 118px;
+      line-height: 118px;
+      letter-spacing: -0.01em;
+      color: #fafafa;
+    }
+    .s05-pw {
+      display: inline-block;
+    }
+  </style>
+
+  <div data-hf-id="hf-8q3c" id="root" data-composition-id="05-settlement" data-width="1920" data-height="1080">
+    <!-- ============ track 0 — full-bleed ground + strip structure ============ -->
+    <div data-hf-id="hf-uxxh" class="s05-layer clip" data-start="0" data-duration="12" data-track-index="0">
+      <div data-hf-id="hf-9ene" class="s05-ground"></div>
+      <div data-hf-id="hf-h1g9" class="s05-layer" id="s05-settlement-chrome">
+        <div data-hf-id="hf-5g55" class="s05-chrome-l">SETTLEMENT</div>
+        <div data-hf-id="hf-fij0" class="s05-chrome-r">0.2500 USDC</div>
+        <div data-hf-id="hf-swd8" class="s05-chrome-rule"></div>
+      </div>
+      <div data-hf-id="hf-i2t6" class="s05-strip-rule" id="s05-settlement-strip-rule"></div>
+      <div data-hf-id="hf-c00f" class="s05-layer" id="s05-settlement-ticks">
+        <div data-hf-id="hf-0ocs" class="s05-tick" style="left: 120px"></div>
+        <div data-hf-id="hf-ziod" class="s05-tick" style="left: 240px"></div>
+        <div data-hf-id="hf-4uze" class="s05-tick" style="left: 360px"></div>
+        <div data-hf-id="hf-fq73" class="s05-tick" style="left: 480px"></div>
+        <div data-hf-id="hf-alcl" class="s05-tick" style="left: 600px"></div>
+        <div data-hf-id="hf-2lsy" class="s05-tick" style="left: 720px"></div>
+        <div data-hf-id="hf-zl3r" class="s05-tick" style="left: 840px"></div>
+        <div data-hf-id="hf-1qpk" class="s05-tick" style="left: 960px"></div>
+        <div data-hf-id="hf-zlv2" class="s05-tick" style="left: 1080px"></div>
+        <div data-hf-id="hf-twd8" class="s05-tick" style="left: 1200px"></div>
+        <div data-hf-id="hf-pg3j" class="s05-tick" style="left: 1320px"></div>
+        <div data-hf-id="hf-yame" class="s05-tick" style="left: 1440px"></div>
+        <div data-hf-id="hf-6lol" class="s05-tick" style="left: 1560px"></div>
+        <div data-hf-id="hf-vnts" class="s05-tick" style="left: 1680px"></div>
+        <div data-hf-id="hf-tiym" class="s05-tick" style="left: 1800px"></div>
+      </div>
+    </div>
+
+    <!-- ============ track 1 — the ledger ============ -->
+    <div data-hf-id="hf-u69o" class="s05-layer clip" data-start="0" data-duration="12" data-track-index="1">
+      <div data-hf-id="hf-gbri" class="s05-axis-outer-l" id="s05-settlement-axis-l"></div>
+      <div data-hf-id="hf-dscu" class="s05-axis-outer-r" id="s05-settlement-axis-r"></div>
+      <div data-hf-id="hf-hk3s" class="s05-axis-inner" id="s05-settlement-axis-inner"></div>
+      <div data-hf-id="hf-tpqy" class="s05-trace" id="s05-settlement-trace"></div>
+
+      <div data-hf-id="hf-2yov" class="s05-pays" id="s05-settlement-pays">pays →</div>
+
+      <div data-hf-id="hf-ecm6" class="s05-node" id="s05-settlement-buyer-node" style="left: 317px"></div>
+      <div data-hf-id="hf-ouhd" class="s05-node" id="s05-settlement-provider-node" style="left: 1577px">
+        <div data-hf-id="hf-d6r7" class="s05-node-fill" id="s05-settlement-provider-fill"></div>
+      </div>
+
+      <div data-hf-id="hf-6taw" class="s05-col s05-id" id="s05-settlement-buyer-id" style="left: 70px">0.0.9848440</div>
+      <div data-hf-id="hf-2382" class="s05-col s05-role" id="s05-settlement-buyer-role" style="left: 70px">BUYER</div>
+      <div data-hf-id="hf-kbl8" class="s05-col s05-bal" id="s05-settlement-buyer-bal" style="left: 70px; color: #a1a1a1">
+        <span data-hf-id="hf-8c3e" class="s05-bal-in">0.0000 ℏ<i data-hf-id="hf-knhk" class="s05-strike" id="s05-settlement-strike"></i></span>
+      </div>
+      <div data-hf-id="hf-a1pi" class="s05-col s05-sub" id="s05-settlement-buyer-sub" style="left: 70px; color: #8A8A8A">
+        HBAR BALANCE
+      </div>
+
+      <div data-hf-id="hf-t31h" class="s05-col s05-id" id="s05-settlement-provider-id" style="left: 1330px">
+        0.0.9848438
+      </div>
+      <div data-hf-id="hf-a49y" class="s05-col s05-role" id="s05-settlement-provider-role" style="left: 1330px">
+        PROVIDER
+      </div>
+      <div data-hf-id="hf-87nc" class="s05-col s05-bal" id="s05-settlement-provider-bal" style="left: 1330px; color: #fafafa">
+        +<span data-hf-id="hf-7qap" id="s05-settlement-provider-value">0.0000 USDC</span>
+      </div>
+      <div data-hf-id="hf-ngyb" class="s05-col s05-sub" id="s05-settlement-provider-sub" style="left: 1330px; color: #4ade80">
+        SETTLED
+      </div>
+
+      <div data-hf-id="hf-8yr6" class="s05-token" id="s05-settlement-token">0.2500 USDC</div>
+
+      <div data-hf-id="hf-5fgi" class="s05-counter-block" id="s05-settlement-counter-block">
+        <div data-hf-id="hf-ttba" class="s05-elapsed" id="s05-settlement-elapsed">ELAPSED</div>
+        <div data-hf-id="hf-eflm" class="s05-counter-wrap">
+          <span data-hf-id="hf-r5f2" class="s05-counter" id="s05-settlement-counter">0.0s</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ track 2 — the gas line ============ -->
+    <div data-hf-id="hf-2u5j" class="s05-layer clip" data-start="0" data-duration="12" data-track-index="2">
+      <div data-hf-id="hf-ra06" class="s05-gas-ghost" id="s05-settlement-gas-ghost"></div>
+      <div data-hf-id="hf-bn9m" class="s05-gas-riser" id="s05-settlement-gas-riser"></div>
+      <div data-hf-id="hf-t31k" class="s05-gas-rail" id="s05-settlement-gas-rail"></div>
+      <div data-hf-id="hf-u9fo" class="s05-gas-stop" id="s05-settlement-gas-stop"></div>
+      <div data-hf-id="hf-0ym8" class="s05-gas-redirect" id="s05-settlement-gas-redirect"></div>
+      <div data-hf-id="hf-a5e7" class="s05-gas-label" id="s05-settlement-gas-label">gas</div>
+      <div data-hf-id="hf-0gwl" class="s05-node" id="s05-settlement-fac-node" style="left: 947px; top: 317px">
+        <div data-hf-id="hf-26ec" class="s05-node-fill" id="s05-settlement-fac-fill"></div>
+      </div>
+      <div data-hf-id="hf-9p2m" class="s05-fac-label" id="s05-settlement-fac-label">facilitator 0.0.9842030</div>
+    </div>
+
+    <!-- ============ track 3 — the payoff ============ -->
+    <div data-hf-id="hf-yw1i" class="s05-layer clip" data-start="0" data-duration="12" data-track-index="3">
+      <div data-hf-id="hf-37lm" class="s05-payoff" id="s05-settlement-payoff">
+        <span data-hf-id="hf-pndo" class="s05-pw">BUYER</span> <span data-hf-id="hf-o3ob" class="s05-pw">PAID</span>
+        <span data-hf-id="hf-63v3" class="s05-pw">ZERO</span> <span data-hf-id="hf-8j0u" class="s05-pw">GAS</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var el = function (n) {
+        return document.getElementById("s05-settlement-" + n);
+      };
+
+      var chrome = el("chrome"),
+        stripRule = el("strip-rule"),
+        ticks = el("ticks"),
+        axisL = el("axis-l"),
+        axisR = el("axis-r"),
+        axisInner = el("axis-inner"),
+        trace = el("trace"),
+        pays = el("pays"),
+        buyerId = el("buyer-id"),
+        buyerRole = el("buyer-role"),
+        buyerNode = el("buyer-node"),
+        buyerBal = el("buyer-bal"),
+        buyerSub = el("buyer-sub"),
+        strike = el("strike"),
+        providerId = el("provider-id"),
+        providerRole = el("provider-role"),
+        providerNode = el("provider-node"),
+        providerFill = el("provider-fill"),
+        providerBal = el("provider-bal"),
+        providerSub = el("provider-sub"),
+        providerValue = el("provider-value"),
+        token = el("token"),
+        counterBlock = el("counter-block"),
+        elapsed = el("elapsed"),
+        counter = el("counter"),
+        gasGhost = el("gas-ghost"),
+        gasRiser = el("gas-riser"),
+        gasRail = el("gas-rail"),
+        gasStop = el("gas-stop"),
+        gasRedirect = el("gas-redirect"),
+        gasLabel = el("gas-label"),
+        facNode = el("fac-node"),
+        facFill = el("fac-fill"),
+        facLabel = el("fac-label"),
+        payoffWords = el("payoff").querySelectorAll(".s05-pw");
+
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      /* ============ SCENE 1 — vo "They sign." (0.06–1.12) ============
+         The quote row holds motionless, then extends into the full-width
+         hairline ledger axis; the provider id migrates onto its node. */
+
+      tl.fromTo(chrome, { opacity: 0 }, { opacity: 1, duration: 0.55, ease: "power1.out" }, 0.12);
+
+      // the row becomes the rule — the axis grows outward from where the row sat
+      tl.fromTo(
+        axisInner,
+        { scaleX: 0, transformOrigin: "50% 50%" },
+        { scaleX: 1, duration: 0.8, ease: "power2.inOut" },
+        0.18,
+      );
+      tl.fromTo(
+        axisL,
+        { scaleX: 0, transformOrigin: "100% 50%" },
+        { scaleX: 1, duration: 0.55, ease: "power2.out" },
+        0.58,
+      );
+      tl.fromTo(
+        axisR,
+        { scaleX: 0, transformOrigin: "0% 50%" },
+        { scaleX: 1, duration: 0.55, ease: "power2.out" },
+        0.58,
+      );
+
+      // "pays →" is not part of the ledger. The id is.
+      tl.to(pays, { opacity: 0, duration: 0.36, ease: "power1.in" }, 0.26);
+      tl.fromTo(
+        providerId,
+        { x: -630, y: 92, scale: 0.7059, transformOrigin: "50% 50%" },
+        { x: 0, y: 0, scale: 1, duration: 0.88, ease: "power2.inOut" },
+        0.28,
+      );
+
+      tl.fromTo(stripRule, { opacity: 0 }, { opacity: 1, duration: 0.65, ease: "power1.out" }, 0.48);
+      tl.fromTo(
+        buyerId,
+        { opacity: 0, y: 14 },
+        { opacity: 1, y: 0, duration: 0.46, ease: "power2.out" },
+        0.6,
+      );
+      tl.fromTo(
+        buyerRole,
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" },
+        0.74,
+      );
+      tl.fromTo(
+        providerRole,
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" },
+        0.8,
+      );
+      tl.fromTo(
+        buyerNode,
+        { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" },
+        { opacity: 1, scale: 1, duration: 0.32, ease: "power3.out" },
+        0.88,
+      );
+      tl.fromTo(
+        providerNode,
+        { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" },
+        { opacity: 1, scale: 1, duration: 0.32, ease: "power3.out" },
+        0.94,
+      );
+      tl.fromTo(ticks, { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.out" }, 0.98);
+      tl.fromTo(
+        [buyerBal, buyerSub],
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.42, ease: "power2.out" },
+        1.0,
+      );
+
+      /* ====== SCENE 2 — vo "It settles in about 3 seconds" (1.19–3.08) ======
+         0.2500 USDC departs the buyer and travels the rule; beneath it a
+         value-scaled counter paces the travel 0.0s → 3.0s, landing the count
+         on the word "seconds". */
+
+      tl.fromTo(
+        token,
+        { opacity: 0, scale: 0.92, transformOrigin: "50% 50%" },
+        { opacity: 1, scale: 1, duration: 0.26, ease: "power2.out" },
+        1.22,
+      );
+      tl.fromTo(elapsed, { opacity: 0 }, { opacity: 1, duration: 0.38, ease: "power1.out" }, 1.3);
+      tl.fromTo(counter, { opacity: 0 }, { opacity: 1, duration: 0.34, ease: "power1.out" }, 1.32);
+
+      var TRAVEL = 1.7;
+      var TRAVEL_EASE = "power2.inOut";
+
+      tl.fromTo(token, { x: 0 }, { x: 1000, duration: TRAVEL, ease: TRAVEL_EASE }, 1.42);
+      tl.fromTo(
+        trace,
+        { scaleX: 0, transformOrigin: "0% 50%" },
+        { scaleX: 1, duration: TRAVEL, ease: TRAVEL_EASE },
+        1.42,
+      );
+
+      // counting-dynamic-scale: value + transform scale, same position, same ease.
+      // The value is a ladder of zero-duration sets, not an onUpdate callback —
+      // the renderer seeks frame-by-frame and suppresses callbacks; sets render.
+      var travelEase = gsap.parseEase(TRAVEL_EASE);
+      var i, p;
+      for (i = 0; i <= 51; i++) {
+        p = i / 51;
+        tl.set(
+          counter,
+          { innerText: (travelEase(p) * 3).toFixed(1) + "s" },
+          1.42 + p * TRAVEL,
+        );
+      }
+      tl.fromTo(
+        counter,
+        { scale: 0.55, transformOrigin: "50% 50%" },
+        { scale: 1, duration: TRAVEL, ease: TRAVEL_EASE },
+        1.42,
+      );
+
+      /* ====== SCENE 3 — vo "in USDC" (3.08–4.48), then
+                            "straight to the provider," (4.68–6.16) ======
+         The amount lands on "USDC"; the destination lands on "provider". */
+
+      tl.to(token, { scale: 1.045, duration: 0.1, ease: "power2.out" }, 3.12);
+      tl.to(token, { scale: 1, duration: 0.22, ease: "power2.inOut" }, 3.22);
+      tl.fromTo(
+        providerBal,
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.3, ease: "power2.out" },
+        3.2,
+      );
+
+      var balEase = gsap.parseEase("power2.out");
+      for (i = 0; i <= 26; i++) {
+        p = i / 26;
+        tl.set(
+          providerValue,
+          { innerText: (balEase(p) * 0.25).toFixed(4) + " USDC" },
+          3.26 + p * 0.85,
+        );
+      }
+
+      // the elapsed record settles back so the gas beat can own the frame
+      tl.to(counterBlock, { opacity: 0.45, duration: 0.5, ease: "power1.inOut" }, 4.55);
+
+      // "…provider," — the node goes live and the ledger marks it settled
+      tl.fromTo(
+        providerFill,
+        { scale: 0, transformOrigin: "50% 50%" },
+        { scale: 1, duration: 0.3, ease: "power3.out" },
+        5.45,
+      );
+      tl.fromTo(
+        providerSub,
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" },
+        5.62,
+      );
+
+      /* ====== SCENE 4 — THE USP BEAT ======
+         vo "and the buyer never touched HBAR" (6.32–8.88)
+         vo "Hedera's facilitator"             (8.88–10.12)
+         A third line labelled gas reaches for the BUYER, is refused, reverses,
+         and re-anchors to the facilitator. Three distinct moments. */
+
+      // the gas leaves the transaction
+      tl.fromTo(
+        gasRiser,
+        { scaleY: 0, transformOrigin: "50% 100%" },
+        { scaleY: 1, duration: 0.34, ease: "power2.out" },
+        6.2,
+      );
+      tl.fromTo(gasLabel, { opacity: 0 }, { opacity: 1, duration: 0.34, ease: "power1.out" }, 6.42);
+      // the connection the buyer would have had to make on any other chain
+      tl.fromTo(gasGhost, { opacity: 0 }, { opacity: 1, duration: 0.42, ease: "power1.out" }, 6.55);
+
+      // MOMENT 1 — the reach, across "never touched" (6.90 → 8.12)
+      tl.fromTo(
+        gasRail,
+        { scaleX: 0, transformOrigin: "100% 50%" },
+        { scaleX: 1, duration: 0.9, ease: "power2.out" },
+        6.85,
+      );
+
+      // MOMENT 2 — the refusal: it hits, it flinches, then nothing moves at all
+      tl.fromTo(
+        gasStop,
+        { scaleY: 0, transformOrigin: "50% 50%" },
+        { scaleY: 1, duration: 0.14, ease: "power3.out" },
+        7.73,
+      );
+      tl.to(gasRail, { scaleX: 0.962, duration: 0.2, ease: "power2.inOut" }, 7.85);
+      // 8.05 → 8.35: the gas line holds absolutely still
+
+      // the buyer's HBAR balance sets struck through, on "HBAR." (8.14 → 8.88)
+      tl.fromTo(
+        strike,
+        { scaleX: 0, transformOrigin: "0% 50%" },
+        { scaleX: 1, duration: 0.55, ease: "power2.inOut" },
+        8.2,
+      );
+      tl.to(buyerBal, { color: "#9A9A9A", duration: 0.5, ease: "power1.inOut" }, 8.28);
+
+      // MOMENT 3 — the reverse and the re-anchor, on "Hedera's facilitator"
+      tl.to(gasRail, { scaleX: 0, duration: 0.5, ease: "power2.in" }, 8.8);
+      // the stop mark stays behind as residue of the refusal, but recedes
+      tl.to(gasStop, { opacity: 0.4, duration: 0.4, ease: "power1.inOut" }, 9.1);
+      tl.fromTo(
+        gasRedirect,
+        { scaleY: 0, transformOrigin: "50% 100%" },
+        { scaleY: 1, duration: 0.44, ease: "power2.out" },
+        9.22,
+      );
+      tl.fromTo(
+        facNode,
+        { opacity: 0, scale: 0.6, transformOrigin: "50% 50%" },
+        { opacity: 1, scale: 1, duration: 0.3, ease: "power3.out" },
+        9.46,
+      );
+      tl.fromTo(
+        facLabel,
+        { opacity: 0, y: 10 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" },
+        9.52,
+      );
+      tl.fromTo(
+        facFill,
+        { scale: 0, transformOrigin: "50% 50%" },
+        { scale: 1, duration: 0.28, ease: "power3.out" },
+        9.72,
+      );
+
+      /* ====== SCENE 5 — vo "pays the gas." (10.12–11.03) ======
+         The sentence sets. Then the frame holds absolutely still. */
+
+      tl.fromTo(
+        payoffWords,
+        { opacity: 0, y: 24 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.52,
+          ease: "power4.out",
+          stagger: 0.075,
+        },
+        10.08,
+      );
+
+      window.__timelines["05-settlement"] = tl;
+    })();
+  </script>
+</template>
