@@ -107,6 +107,8 @@ export interface NansenStatus {
 }
 
 const DEFAULT_REFRESH_MS = 6 * 3_600_000;
+/** A signal some of whose calls failed is retried sooner — only the failed calls cost anything (the rest are cached). */
+const DEGRADED_RETRY_MS = 10 * 60_000;
 const MAX_SIGNALS = 2_000;
 
 function paidView(p: PaidCall) {
@@ -186,7 +188,8 @@ export class NansenTrust {
   watch(address: string): void {
     if (!this.enabled) return;
     const existing = this.peek(address);
-    if (existing && this.now() - Date.parse(existing.fetchedAt) < this.refreshMs) return;
+    const freshFor = existing?.degraded ? Math.min(this.refreshMs, DEGRADED_RETRY_MS) : this.refreshMs;
+    if (existing && this.now() - Date.parse(existing.fetchedAt) < freshFor) return;
     void this.signal(address).catch((err) => this.log(`nansen: signal for ${address} failed: ${String(err)}`));
   }
 

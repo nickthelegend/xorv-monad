@@ -889,3 +889,44 @@ describe("nansen:probe", () => {
     expect(result.check).toMatchObject({ related: false });
   });
 });
+
+describe("NansenTrust refresh", () => {
+  it("refreshes a healthy signal after the refresh interval and retries a degraded one after ten minutes", async () => {
+    let now = NOW;
+    let down = true;
+    let calls = 0;
+    const data = createNansenFixtures({ now: () => now });
+    const flaky = (async (input: string | URL | Request, init?: RequestInit) => {
+      calls += 1;
+      const path = new URL(String(input)).pathname as NansenPath;
+      if (down && path === NANSEN_PATHS.transactions) return new Response("upstream", { status: 503 });
+      return Response.json(data(path, JSON.parse(String(init?.body))));
+    }) as typeof fetch;
+    const trust = new NansenTrust({
+      client: new NansenClient({ mode: "live", apiKey: "k", fetch: flaky, now: () => now }),
+      smartMoney: false,
+      refreshMs: 6 * 3_600_000,
+      now: () => now,
+    });
+    const first = await trust.signal(WALLET);
+    expect(first.degraded).toBe(true);
+    expect(calls).toBe(3);
+
+    now += 5 * 60_000;
+    trust.watch(WALLET);
+    expect(calls).toBe(3); // too soon to retry
+
+    down = false;
+    now += 6 * 60_000;
+    trust.watch(WALLET);
+    await new Promise((r) => setTimeout(r, 0));
+    await trust.signal(WALLET); // joins the running build
+    // Only the failed call is bought again; the answered ones are cached.
+    expect(calls).toBe(4);
+    expect(trust.peek(WALLET)!.degraded).toBe(false);
+
+    now += 60 * 60_000;
+    trust.watch(WALLET);
+    expect(calls).toBe(4); // healthy: not stale for six hours
+  });
+});
