@@ -4,8 +4,8 @@
  * State is in memory on purpose. A provider's membership is *liveness*, not a
  * record: it is only real while heartbeats keep arriving, so there is nothing
  * here worth surviving a restart. The durable half of the story — who
- * registered, who was alive, what each job paid — goes to Hedera Consensus
- * Service, where it is public and append-only rather than trapped in our
+ * registered, who was alive, what each job paid — goes on-chain to XorvLedger
+ * on Monad, where it is public and append-only rather than trapped in our
  * database.
  */
 
@@ -15,11 +15,11 @@ import {
   type AdapterKind,
   type Capability,
   type Provider,
+  type ProviderStats,
   type ProviderStatus,
   type RegisterRequest,
-  newId,
 } from "@xorv/protocol";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { MemoryPersistence, type PersistedProviderStats, type Persistence } from "./store.js";
 
 export interface ProviderRecord extends Provider {
@@ -38,10 +38,39 @@ export interface Match {
   capability: Capability;
 }
 
+/** A registration whose address is already normalized and whose agent id is verified (or null). */
+export type VerifiedRegistration = RegisterRequest & { agentId: string | null };
+
+/**
+ * The public provider id for a node: stable across broker restarts, and not
+ * reversible to the node id.
+ *
+ * Stable matters more on-chain than it ever did in memory: the id is hashed
+ * into XorvLedger events (`providerIdHash`) and baked into the provider's
+ * ERC-8004 registration URI (`/agents/<id>.json`). A random id per broker
+ * process would split one node into a new on-chain provider after every
+ * deploy and break its agent URI. Not reversible matters because the node id
+ * doubles as the node's re-registration credential.
+ */
+export function providerIdFor(nodeId: string): string {
+  const digest = createHash("sha256").update(`xorv:provider:${nodeId}`, "utf8").digest();
+  return `prv_${digest.subarray(0, 9).toString("base64url")}`;
+}
+
+function emptyStats(): ProviderStats {
+  return { jobsCompleted: 0, jobsFailed: 0, earnedUsdcMicros: 0, avgDurationMs: 0 };
+}
+
 export class Registry {
   private providers = new Map<string, ProviderRecord>();
   private byToken = new Map<string, string>();
   private byNodeId = new Map<string, string>();
+  /**
+   * Providers the reaper dropped, kept (bounded) so their public pages — above
+   * all the ERC-8004 registration file their agent URI points at — keep
+   * resolving while they are away, marked inactive rather than 404ing.
+   */
+  private departed = new Map<string, ProviderRecord>();
   private readonly persistence: Persistence;
   /**
    * Lifetime stats from disk, keyed by the node's stable id.
@@ -64,12 +93,7 @@ export class Registry {
 
   private persistStats(provider: ProviderRecord): void {
     try {
-      this.persistence.saveStats(
-        provider.nodeId,
-        provider.label,
-        provider.accountId,
-        provider.stats,
-      );
+      this.persistence.saveStats(provider.nodeId, provider.label, provider.address, provider.stats);
     } catch (err) {
       console.error("[broker] failed to persist stats:", err instanceof Error ? err.message : err);
     }
@@ -82,43 +106,47 @@ export class Registry {
    * restarts is the same provider, and minting a new id would leave a ghost in
    * the fleet view until the reaper caught it, and would reset the earnings
    * counters the operator is watching.
+   *
+   * The caller has already validated and normalized `address` and verified
+   * `agentId` against the Identity Registry — see `validateRegistration` and
+   * `verifyAgent` in app.ts.
    */
-  register(req: RegisterRequest): ProviderRecord {
+  register(req: VerifiedRegistration): ProviderRecord {
     const existingId = this.byNodeId.get(req.nodeId);
     const existing = existingId ? this.providers.get(existingId) : undefined;
     const now = Date.now();
+    const restored = this.restoredStats.get(req.nodeId);
 
     const record: ProviderRecord = {
-      id: existing?.id ?? newId("prv"),
+      id: existing?.id ?? providerIdFor(req.nodeId),
       nodeId: req.nodeId,
       label: req.label,
-      accountId: req.accountId,
+      address: req.address,
+      agentId: req.agentId,
       endpoint: req.endpoint,
       capabilities: req.capabilities,
       status: "online",
-      activeJobs: 0,
+      activeJobs: existing?.activeJobs ?? 0,
       lastHeartbeatAt: now,
       registeredAt: existing?.registeredAt ?? now,
       version: req.version,
       region: req.region ?? null,
       // Earnings and job counts belong to the operator, not to a process
       // lifetime — a restart must not zero them.
-      stats:
-        existing?.stats ??
-        stripKeys(this.restoredStats.get(req.nodeId)) ?? {
-          jobsCompleted: 0,
-          jobsFailed: 0,
-          earnedUsdcMicros: 0,
-          earnedTinybars: 0,
-          avgDurationMs: 0,
-        },
+      stats: existing?.stats ?? (restored ? stripKeys(restored) : emptyStats()),
       token: existing?.token ?? randomBytes(24).toString("base64url"),
       available: Object.fromEntries(req.capabilities.map((c) => [c.id, true])),
       uptimeSeconds: 0,
-      registryConsensusAt: existing?.registryConsensusAt ?? null,
+      // A re-registration that changes the payout address or agent is a new
+      // on-chain fact; the old registration tx no longer describes it.
+      registryTxHash:
+        existing && existing.address === req.address && existing.agentId === req.agentId
+          ? (existing.registryTxHash ?? null)
+          : null,
     };
 
     if (existing) this.byToken.delete(existing.token);
+    this.departed.delete(record.id);
     this.providers.set(record.id, record);
     this.byToken.set(record.token, record.id);
     this.byNodeId.set(record.nodeId, record.id);
@@ -139,6 +167,15 @@ export class Registry {
     if (!provider) return undefined;
     provider.status = deriveStatus(provider);
     return provider;
+  }
+
+  /** A live provider, or one the reaper dropped recently (status "offline"). */
+  find(id: string): ProviderRecord | undefined {
+    const live = this.get(id);
+    if (live) return live;
+    const gone = this.departed.get(id);
+    if (gone) gone.status = "offline";
+    return gone;
   }
 
   byAuthToken(token: string): ProviderRecord | undefined {
@@ -179,14 +216,20 @@ export class Registry {
    * is acceptable — competing on price is the point of a capacity market. Ties
    * break toward the node with the better track record, then the emptier one,
    * so a reliable provider is rewarded and load still spreads.
+   *
+   * `exclude` is for reassignment: a job never goes back to a provider that
+   * already had it.
    */
   match(opts: {
     adapter?: AdapterKind | null;
     maxPriceUsdMicros: number;
+    exclude?: Iterable<string>;
   }): Match | null {
+    const excluded = new Set(opts.exclude ?? []);
     const candidates: Match[] = [];
 
     for (const provider of this.live()) {
+      if (excluded.has(provider.id)) continue;
       for (const capability of provider.capabilities) {
         if (opts.adapter && capability.adapter !== opts.adapter) continue;
         if (capability.priceUsdMicros > opts.maxPriceUsdMicros) continue;
@@ -220,10 +263,7 @@ export class Registry {
   }
 
   /** Note that a job finished, folding the outcome into the provider's stats. */
-  jobFinished(
-    id: string,
-    outcome: { ok: boolean; durationMs: number; usdcMicros?: number; tinybars?: number },
-  ): void {
+  jobFinished(id: string, outcome: { ok: boolean; durationMs: number; usdcMicros?: number }): void {
     const provider = this.providers.get(id);
     if (!provider) return;
     provider.activeJobs = Math.max(0, provider.activeJobs - 1);
@@ -235,11 +275,39 @@ export class Registry {
         (provider.stats.avgDurationMs * n + outcome.durationMs) / (n + 1),
       );
       provider.stats.earnedUsdcMicros += outcome.usdcMicros ?? 0;
-      provider.stats.earnedTinybars += outcome.tinybars ?? 0;
     } else {
       provider.stats.jobsFailed += 1;
     }
     this.persistStats(provider);
+  }
+
+  /**
+   * Free a provider's slot without judging it — for a job the *buyer*
+   * cancelled, which says nothing about the provider's reliability.
+   */
+  jobReleased(id: string): void {
+    const provider = this.providers.get(id);
+    if (provider) provider.activeJobs = Math.max(0, provider.activeJobs - 1);
+  }
+
+  /**
+   * Credit money to the provider that actually received it.
+   *
+   * Used when a paid job was reassigned: the USDC went to the quoted provider's
+   * address at settlement, so that is whose earnings it is — not the provider
+   * that happened to finish the job.
+   */
+  creditEarnings(id: string, usdcMicros: number): void {
+    const provider = this.providers.get(id);
+    if (!provider || usdcMicros <= 0) return;
+    provider.stats.earnedUsdcMicros += usdcMicros;
+    this.persistStats(provider);
+  }
+
+  /** Record the XorvLedger registration tx once it lands. */
+  setRegistryTx(id: string, txHash: string): void {
+    const provider = this.providers.get(id);
+    if (provider) provider.registryTxHash = txHash;
   }
 
   /** Drop providers that have been silent long enough to be gone for good. */
@@ -251,6 +319,11 @@ export class Registry {
         this.providers.delete(id);
         this.byToken.delete(provider.token);
         this.byNodeId.delete(provider.nodeId);
+        this.departed.set(id, provider);
+        if (this.departed.size > 1_000) {
+          const oldest = this.departed.keys().next().value;
+          if (oldest !== undefined) this.departed.delete(oldest);
+        }
         removed.push(id);
       }
     }
@@ -282,10 +355,12 @@ function successScore(provider: ProviderRecord): number {
   return jobsCompleted / total;
 }
 
-
 /** Drop the identity columns, leaving just the ProviderStats shape. */
-function stripKeys(row: PersistedProviderStats | undefined) {
-  if (!row) return undefined;
-  const { nodeId: _n, label: _l, accountId: _a, ...stats } = row;
-  return stats;
+function stripKeys(row: PersistedProviderStats): ProviderStats {
+  return {
+    jobsCompleted: row.jobsCompleted,
+    jobsFailed: row.jobsFailed,
+    earnedUsdcMicros: row.earnedUsdcMicros,
+    avgDurationMs: row.avgDurationMs,
+  };
 }
