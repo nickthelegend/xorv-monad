@@ -1,7 +1,9 @@
-# @xorv/broker — AI roles
+# @xorv/broker — AI roles and Nansen trust
 
-Three sponsor models take a turn on every Xorv job. They are part of the broker's
-core loop, not optional adapters a buyer has to go looking for:
+Three sponsor models take a turn on every Xorv job, and Nansen's wallet data
+guards the reputation they feed ([Nansen trust signals](#nansen-trust-signals),
+below). They are part of the broker's core loop, not optional adapters a buyer
+has to go looking for:
 
 ```
 POST /api/quotes ─► Hunyuan screens the prompt ─► Qwen routes "Auto" ─► matcher ─► frozen quote
@@ -97,6 +99,66 @@ What the models see: Hunyuan and Qwen read the buyer's prompt (Qwen at most its
 first 6,000 characters); Kimi reads the prompt and the result of non-private jobs.
 Nothing else leaves the broker.
 
+## Nansen trust signals
+
+The broker buys wallet intelligence from Nansen, per call, in USDC over x402 on
+Monad **mainnet** (`eip155:143`, the only Monad row Nansen's 402s offer), and uses
+it in three places (`src/trust/`, full design in [docs/NANSEN.md](../../docs/NANSEN.md)):
+
+```
+POST /api/providers/register ─► trust.watch(payout wallet)   (background; never delays registration)
+  first-funder (chain "all") + related-wallets (monad) + transactions (monad, 90 d) ─► 0-100 score
+  ─► /api/providers, /api/providers/:id, /api/leaderboard  (public view, "Powered by Nansen")
+  ─► Registry.candidates: price, then reliability ± 0.1 × trust  (TRUST_TIEBREAK_WEIGHT)
+POST /api/jobs/:id/rate ─► payer signature verified ─► trust.checkRelated(buyer, provider)
+  same wallet · one funded the other · shared non-exchange first funder · related wallets
+  ─► related: 403 {code: "related_wallets", trustCheck}; nothing relayed; check stored on the job
+  ─► otherwise (or lookup failed/timed out, 12 s): relay as before, check stored on the job
+```
+
+| File | What it holds |
+|---|---|
+| `src/trust/nansen.ts` | `NansenClient`: the x402 client (only `eip155:143` registered, mainnet USDC hard-coded, payTo pin, spend controls, per-endpoint price table in `onBeforePaymentCreation`, daily `SpendBudget` with reservations released on signing/verify/settle failure), local request validation, TTL cache, de-duplication, 2 concurrent requests, 429 cool-down, settlement tx capture, `apikey` precedence |
+| `src/trust/signal.ts` | `buildTrustSignal` (the scoring rules, `TRUST_RULES`), `publicTrustView` (strips smart-money data, related-wallet addresses and errors; adds attribution), `relatedParties` (the wash-rating verdict), `matchScore` |
+| `src/trust/service.ts` | `NansenTrust`: signals per wallet, background refresh (6 h; a degraded signal retries after 10 min), `checkRelated` with a timeout, `status()` for `/api/network` |
+| `src/trust/fixtures.ts` | `fixture` mode: deterministic, recorded-shape answers per address, plus an optional sybil cluster |
+| `src/scripts/nansen-probe.ts` | `pnpm nansen:probe <address> [<other>]`: one lookup (and the related check) printed for a human, with the Monad payment links in live mode |
+
+Rules that hold it together:
+
+- **Missing data never costs a provider anything.** Testnet-only wallets have no
+  Monad mainnet history; zero activity is not a penalty, a failed call leaves the
+  score where it was, and when every call fails the score is exactly 50 and the
+  matcher treats the provider as unknown.
+- **Nothing blocks on Nansen.** Registration never waits for a lookup; a rating
+  check that fails or times out is recorded as `degraded` and the rating is
+  relayed. Only a proven link refuses a rating.
+- **Only the buyer can trigger a paid lookup at rating time**: the check runs
+  after the payer's EIP-712 signature has verified.
+- **Validate before paying.** Nansen returns its 402 before it validates the body,
+  so every request is checked locally first and an invalid one is never sent.
+- **Internal stays internal.** Smart-money membership (a +5 matching nudge) and
+  related-wallet addresses never appear in a response; everything shown carries
+  "Powered by Nansen".
+
+`GET /api/network` → `nansen`: `mode`, `auth` (`x402` | `api-key` | `fixture` |
+`none`), `payer`, `callsToday`, `paidCallsToday`, `spentTodayUsdc`, `budgetUsdc`,
+`perCallCapUsdc`, `lastPaidTx` and `recentPaidTx` (monadscan.com links),
+`lastError`, `walletsScored`, `ratingGuard`, `ratingChecks`, `ratingsRefused`.
+Prometheus: `xorv_rating_refusals_total{reason="related_wallets"}`.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `XORV_NANSEN_MODE` | `off` | `off`, `fixture` (no network, no money) or `live` |
+| `XORV_NANSEN_PAYER_KEY` | — | Monad **mainnet** key with a few USDC; required for `live` unless `NANSEN_API_KEY` is set |
+| `NANSEN_API_KEY` | — | takes precedence over x402 (credits, no payments) |
+| `XORV_NANSEN_PER_CALL_CAP` / `XORV_NANSEN_DAILY_CAP` | `50000` / `1000000` | USDC units ($0.05 / $1.00) |
+| `XORV_NANSEN_PIN_PAYTO` | — | `observed` or an address: refuse any other payee |
+| `XORV_NANSEN_SMART_MONEY` | `on` | fetch the daily smart-money list for the internal nudge |
+| `XORV_NANSEN_RATING_GUARD` | `on` | refuse ratings between related wallets |
+| `XORV_NANSEN_REFRESH_MINUTES` | `360` | provider signal refresh |
+| `XORV_NANSEN_FIXTURE_CLUSTER` | — | fixture mode: addresses given one shared first funder (demo sybil ring) |
+
 ## Tests
 
 `test/ai.test.ts` (each role against a stubbed provider: happy path, malformed
@@ -104,5 +166,13 @@ JSON, timeouts — including a `fetch` that ignores its abort signal — HTTP er
 off-table router picks, out-of-range scores, key redaction, the feedback file and
 its hash, and a real viem broadcast of `giveFeedback` against a stub RPC checking
 the `estimateGas` + 15% limit and the calldata) and the "AI roles" block in
-`test/integration.test.ts` (the real quote and completion paths). No network, no
-keys: `pnpm --filter @xorv/broker test`.
+`test/integration.test.ts` (the real quote and completion paths).
+`test/trust.test.ts` replays the 402s Nansen actually served (`test/fixtures/nansen/`,
+all eight `accepts` rows) through a mock `fetch` with a throwaway signer: only the
+Monad USDC row is paid, price rises, other tokens, swapped payees and mismatched
+resources are refused before signing, the budget reserves and releases; plus
+validation, cache, concurrency, scoring, the public view, the related-party
+matrix, fixtures, the matching tie-breaker and the probe. The "Nansen trust"
+block in `test/integration.test.ts` runs the real HTTP paths, including a
+related-wallet rating refused with 403. No network, no keys:
+`pnpm --filter @xorv/broker test`.
