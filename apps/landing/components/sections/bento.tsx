@@ -137,7 +137,7 @@ export function Bento() {
             className="h-full"
             visual={<RoutingVisual />}
             title="Routed to the cheapest live node"
-            body="Providers prove liveness by heartbeat, not by a status page. The matcher sorts on price, then track record, then load."
+            body="Providers prove liveness by heartbeat, not by a status page. Qwen 3.8 Max picks the model when you don't; the matcher sorts on price, then track record, then load."
           />
         </Reveal>
 
@@ -146,7 +146,7 @@ export function Bento() {
             className="h-full"
             visual={<EarningsVisual />}
             title="Earnings you can watch accrue"
-            body="Every completed job pays out immediately, in full, to the provider's own account. No payout schedule, no platform float."
+            body="Every job pays out before it runs, in full, in USDC, to the provider's own address. No payout schedule, no platform float, no key needed on the node."
           />
         </Reveal>
 
@@ -155,7 +155,7 @@ export function Bento() {
             className="h-full"
             visual={<AdaptersVisual />}
             title="Whatever you already have installed"
-            body="Claude Code, Codex, Grok, OpenCode, or any OpenAI-compatible endpoint — including a local model on your own GPU."
+            body="Claude Code, Codex, Qwen Code, Qwen 3.8 Max, Kimi K3, Hunyuan hy4, Grok, OpenCode, or any OpenAI-compatible endpoint — including a local model on your own GPU."
           />
         </Reveal>
 
@@ -164,7 +164,7 @@ export function Bento() {
             className="h-full"
             visual={<SettleVisual />}
             title="Settled, then receipted"
-            body="A signed transfer, co-signed by the facilitator so the buyer never needs gas, then a receipt written to Hedera Consensus Service."
+            body="An EIP-3009 authorization the facilitator submits, so the buyer never needs MON — then a receipt event on XorvLedger, a few blocks later."
           />
         </Reveal>
       </div>
@@ -256,13 +256,13 @@ function AdaptersVisual() {
   const chips = [
     "claude",
     "codex",
+    "qwen-code",
+    "kimi",
+    "qwen",
+    "hunyuan",
     "grok",
     "opencode",
     "ollama",
-    "vLLM",
-    "LM Studio",
-    "openrouter",
-    "echo",
   ];
   return (
     <div data-bento="adapters" className="absolute inset-0 flex items-center justify-center p-6">
@@ -292,8 +292,8 @@ function SettleVisual() {
     <div data-bento="settle" className="absolute inset-0 flex flex-col justify-center gap-2.5 p-6">
       {[
         ["402", "Payment Required"],
-        ["sign", "buyer signs a transfer"],
-        ["+gas", "facilitator co-signs"],
+        ["sign", "buyer signs an EIP-3009 authorization"],
+        ["+gas", "facilitator submits, pays the MON"],
       ].map(([tag, label]) => (
         <div key={tag} data-settle-row className="flex items-center gap-3">
           <span className="mono w-[42px] shrink-0 text-right text-[10.5px] text-fg-4">{tag}</span>
@@ -308,10 +308,11 @@ function SettleVisual() {
         />
       </div>
 
+      {/* A diagram, so no hash: a made-up one would read as proof. */}
       <div data-settle-tx className="flex items-center gap-2">
         <span className="h-1.5 w-1.5 rounded-full bg-live" />
         <span className="mono truncate text-[10.5px] text-fg-3">
-          0.0.9842030@1785477682.129
+          USDC buyer → provider · 1 block · ~300 ms
         </span>
       </div>
     </div>
