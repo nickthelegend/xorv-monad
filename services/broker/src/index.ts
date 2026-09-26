@@ -4,9 +4,9 @@
 
 import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
-import { formatUsd, networkLabel, usdcTokenId } from "@xorv/protocol";
+import { networkConfig } from "@xorv/protocol";
 import { createApp } from "./app.js";
-import { Chain } from "./chain.js";
+import { LedgerWriter } from "./chain.js";
 import { loadConfig } from "./config.js";
 import { Hub } from "./hub.js";
 import { JobStore } from "./jobs.js";
@@ -15,7 +15,15 @@ import { openPersistence } from "./store.js";
 import { LayeredPersistence } from "./store-mongo.js";
 
 const config = loadConfig();
-const chain = new Chain(config);
+const net = networkConfig(config.network);
+const chain = new LedgerWriter({
+  network: config.network,
+  ledgerAddress: config.ledgerAddress,
+  account: config.operator,
+  batchMs: config.receiptBatchMs,
+  batchMax: config.receiptBatchMax,
+  log: (line) => console.error(`[broker] ${line}`),
+});
 
 // SQLite is always present — it is the write that cannot fail. Mongo layers on
 // top as the restore source, so the broker's history survives losing the box.
@@ -45,7 +53,7 @@ const registry = new Registry(persistence);
 const jobs = new JobStore(persistence);
 
 let hub: Hub | null = null;
-const { app, hubHandlers, sweep } = createApp({
+const { app, hubHandlers, sweep, settlement } = createApp({
   config,
   chain,
   registry,
@@ -54,16 +62,32 @@ const { app, hubHandlers, sweep } = createApp({
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
-  const topics = chain.describeTopics();
   const line = (label: string, value: string) => console.log(`  ${label.padEnd(14)} ${value}`);
+  const ledgerMode = chain.mode();
   console.log("");
   console.log("  ▁▂▃  X O R V   B R O K E R");
   console.log("");
   line("listening", `http://localhost:${info.port}`);
-  line("network", `${config.network} (${networkLabel(config.network)})`);
-  line("operator", config.operatorId);
-  line("facilitator", config.facilitatorMode === "self" ? "self-hosted — we pay the gas" : config.facilitatorMode);
-  line("usdc", usdcTokenId(config.network));
+  line("public url", config.publicUrl);
+  line("network", `${config.network} (${net.name})`);
+  line("rpc", net.rpcUrl);
+  line("usdc", `${net.usdc.address} (EIP-712 "${net.usdc.name}" v${net.usdc.version})`);
+  line("operator", config.operator ? config.operator.address : "none — read-only (set XORV_OPERATOR_KEY)");
+  line(
+    "facilitator",
+    settlement.facilitator
+      ? settlement.mode === "self"
+        ? `self-hosted — ${settlement.address} pays settlement gas`
+        : settlement.description
+      : `UNAVAILABLE — ${settlement.unavailableReason}`,
+  );
+  line(
+    "ledger",
+    ledgerMode === "off"
+      ? "not configured (set XORV_LEDGER_ADDRESS) — no on-chain receipts"
+      : `${config.ledgerAddress} (${ledgerMode === "write" ? `writing, receipts batched every ${config.receiptBatchMs}ms` : "read-only"})`,
+  );
+  line("indexer", config.indexerUrl ?? "not configured — feeds read from RPC");
   line("fee", config.feeBps === 0 ? "0% — providers keep everything" : `${config.feeBps / 100}%`);
   line(
     "storage",
@@ -72,9 +96,8 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
       : local.location,
   );
   line("mongodb", mongoStatus);
-  for (const [kind, topic] of Object.entries(topics)) {
-    line(`hcs:${kind}`, topic ? topic.id : "not configured");
-  }
+  const ai = Object.entries(config.ai).filter(([, value]) => value !== "off");
+  line("ai roles", ai.length ? `${ai.map(([role, by]) => `${role}=${by}`).join(", ")} (requested)` : "off");
   console.log("");
 });
 
@@ -93,16 +116,21 @@ const mongoRetry = layered
   : null;
 mongoRetry?.unref?.();
 
+let shuttingDown = false;
 function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
   console.log(`\n[broker] ${signal} — shutting down`);
   clearInterval(sweeper);
   if (mongoRetry) clearInterval(mongoRetry);
   hub?.close();
-  chain.close();
-  persistence.close();
-  server.close(() => process.exit(0));
-  // Don't let a stuck socket hold the process open forever.
-  setTimeout(() => process.exit(0), 3_000).unref();
+  // Queued receipts get one bounded chance to go out before the process ends.
+  void chain.close().finally(() => {
+    persistence.close();
+    server.close(() => process.exit(0));
+  });
+  // Don't let a stuck socket or RPC hold the process open forever.
+  setTimeout(() => process.exit(0), 8_000).unref();
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));
@@ -111,5 +139,3 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("unhandledRejection", (err) => {
   console.error("[broker] unhandled rejection:", err);
 });
-
-export { formatUsd };

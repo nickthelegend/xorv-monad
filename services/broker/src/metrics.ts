@@ -77,11 +77,14 @@ export class Metrics {
         .reduce((sum, j) => sum + (j.priceUsdMicros ?? 0), 0)}`,
     );
 
-    const hcs = deps.chain.counts();
-    help("xorv_hcs_messages_total", "Messages published to Hedera Consensus Service.", "counter");
-    for (const [topic, count] of Object.entries(hcs)) {
-      lines.push(`xorv_hcs_messages_total{topic="${topic}"} ${count}`);
+    const writes = deps.chain.counts();
+    help("xorv_ledger_writes_total", "Events written to XorvLedger on Monad, by feed.", "counter");
+    for (const [kind, count] of Object.entries(writes)) {
+      lines.push(`xorv_ledger_writes_total{kind="${kind}"} ${count}`);
     }
+
+    help("xorv_ledger_pending_receipts", "Job receipts waiting for their recordJobs batch.", "gauge");
+    lines.push(`xorv_ledger_pending_receipts ${deps.chain.pendingReceipts()}`);
 
     for (const [key, value] of this.counters) {
       const { name } = parseKey(key);

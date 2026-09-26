@@ -2,69 +2,112 @@
  * The broker's HTTP surface.
  *
  * The interesting part is `POST /api/jobs/:quoteId`. It is an ordinary x402
- * protected route, but its `payTo` resolves to the **provider's own Hedera
- * account** rather than to us. The broker introduces the two parties, witnesses
- * the result and publishes the receipt; it never holds anyone's money. That is
+ * protected route, but its `payTo` resolves to the **provider's own payout
+ * address** rather than to us. The buyer signs an EIP-3009 USDC authorization,
+ * the facilitator submits it, and the USDC moves buyer → provider in one
+ * transfer. The broker introduces the two parties, witnesses the result and
+ * records the receipt on XorvLedger; it never holds anyone's money. That is
  * also why a quote is a first-class object — see jobs.ts.
  *
  * ## Why payment settles before the job runs
  *
- * A Hedera transaction carries a valid-start and a validity window capped at
- * 180 seconds. The payer signs a real `TransferTransaction`, so if the broker
- * waited for a five-minute coding job to finish before submitting it, the
- * signed payment would have expired and the provider would be unpaid for work
- * already done. So Xorv verifies and settles up front, and covers the other
- * risk — a provider that takes the money and fails — by reassigning the job to
- * another provider at no extra charge (see `reassign`). The poster's downside
- * is bounded by the network, not by the individual node they happened to draw.
+ * The route uses x402's `upfront` payment flow: the facilitator *settles* the
+ * authorization before the handler runs, and the handler only ever sees a
+ * payment that has already landed on Monad. The default flow settles after
+ * the handler returns — which, for a job that is dispatched from the handler,
+ * meant a provider could start working on a payment that then failed to settle
+ * (the buyer spent the USDC in between, or signed two quotes against one
+ * balance), and would never be paid for it. Settling first also means the
+ * EIP-3009 authorization's validity window (five minutes) can never lapse
+ * under a ten-minute job.
+ *
+ * The other risk — a provider that takes the money and fails — is covered by
+ * reassigning the job to another provider at no extra charge (see
+ * `reassign`). The poster's downside is bounded by the network, not by the
+ * individual node they happened to draw.
  */
 
-import { Hono } from "hono";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { paymentMiddleware } from "@x402/hono";
 import { x402ResourceServer } from "@x402/core/server";
-import type { RoutesConfig } from "@x402/core/server";
-import type { HTTPRequestContext } from "@x402/core/http";
-import type { FacilitatorClient } from "@x402/core/server";
-import type { Network } from "@x402/core/types";
-import { ExactHederaScheme } from "@x402/hedera/exact/server";
+import type {
+  FacilitatorClient,
+  HTTPRequestContext,
+  HTTPTransportContext,
+  RoutesConfig,
+} from "@x402/core/server";
+import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
+import { ExactEvmScheme } from "@x402/evm/exact/server";
+import { isHex, verifyTypedData, type Hex } from "viem";
 import {
-  HBAR_ASSET_ID,
   HEARTBEAT_INTERVAL_MS,
-  HbarRateCache,
   JOB_TIMEOUT_MS,
-  assetKind,
-  buildFacilitator,
+  QUOTE_TTL_SECONDS,
+  XORV_SCHEME,
+  buildAgentRegistration,
+  explorerAddress,
+  explorerToken,
+  explorerTx,
   formatUsd,
-  hashscanAccount,
-  hashscanTx,
-  paymentOptionsFor,
-  readTopic,
+  getAgentWallet,
+  isEvmAddress,
+  jobIdHash,
+  logPaymentRejections,
+  networkConfig,
+  normalizeAddress,
+  sameAddress,
+  serializeFeedbackFile,
   sha256,
-  usdMicrosToTinybars,
+  textHash,
+  toJsonSafe,
   usdMicrosToUsdcUnits,
+  usdcPaymentOption,
   usdcUnitsToUsdMicros,
-  usdcTokenId,
   type AdapterKind,
   type Capability,
   type DispatchedJob,
   type HeartbeatRequest,
-  type Job,
   type JobEvent,
   type JobRequest,
+  type LedgerEventKind,
+  type NetworkInfo,
   type PaymentRecord,
+  type QuoteResponse,
   type RegisterRequest,
 } from "@xorv/protocol";
 import type { BrokerConfig } from "./config.js";
-import type { ChainLike } from "./chain.js";
+import { describeLedger, type ChainLike, type PublishResult } from "./chain.js";
 import type { Hub } from "./hub.js";
-import { JobStore, type Quote } from "./jobs.js";
-import { Registry } from "./registry.js";
+import { JobStore, isTerminal, type Quote, type StoredJob } from "./jobs.js";
+import { Registry, type ProviderRecord, type VerifiedRegistration } from "./registry.js";
 import { bodyLimit, rateLimit, requestLog } from "./guards.js";
 import { Metrics } from "./metrics.js";
+import { resolveFacilitator } from "./facilitator.js";
+import { createLedgerReader, type LedgerReader } from "./ledger-reader.js";
+import { withHookTimeout, type AiHooks } from "./ai-hooks.js";
+import { RATING_TTL_SECONDS, feedbackFor, ratingMessage, ratingParts, type RatingEnv } from "./ratings.js";
+import {
+  leaderboardFromIndexer,
+  leaderboardFromMemory,
+  legacyReceipt,
+  publicJob,
+  publicProvider,
+  stripSecrets,
+} from "./public.js";
 
-/** Publish one heartbeat in this many to HCS — see Chain.publishHeartbeat. */
-const HEARTBEAT_PUBLISH_EVERY = 20;
+/** How long registration waits for its ledger write before answering without it. */
+const REGISTRATION_WAIT_MS = 2_500;
+/** How long registration waits on the Identity Registry to verify a claimed agent id. */
+const AGENT_CHECK_TIMEOUT_MS = 4_000;
+/** A paid job is handed to at most this many providers in total. */
+const MAX_PROVIDERS_PER_JOB = 3;
+/** Receipt writes are retried by the sweep up to this many times. */
+const MAX_RECEIPT_ATTEMPTS = 3;
+/** How long a rating relay waits for the job's receipt to land first. */
+const RECEIPT_WAIT_MS = 15_000;
+const LEDGER_KINDS: readonly LedgerEventKind[] = ["registrations", "heartbeats", "receipts", "ratings"];
 
 export interface AppDeps {
   config: BrokerConfig;
@@ -76,42 +119,133 @@ export interface AppDeps {
   /**
    * Override the facilitator.
    *
-   * Production builds one from config; tests pass a stub so the whole HTTP
-   * path can be exercised without Hedera credentials or a real transfer.
+   * Production resolves one from config; tests pass a stub so the whole HTTP
+   * path — 402, payment header, settlement, dispatch — runs without a key, an
+   * RPC or a real transfer.
    */
   facilitator?: FacilitatorClient;
   metrics?: Metrics;
+  /** Override where feeds and the leaderboard are read from (tests stub it). */
+  ledgerReader?: LedgerReader;
+  /** ERC-8004 agent-wallet lookup; defaults to the Identity Registry over RPC. */
+  agentWallet?: (agentId: string) => Promise<string | null>;
+  /** The AI roles, when installed — see ai-hooks.ts. */
+  ai?: AiHooks;
 }
 
 export function createApp(deps: AppDeps) {
   const { config, chain, registry, jobs } = deps;
   const app = new Hono();
-  const rates = new HbarRateCache(config.network);
-  const heartbeatCounters = new Map<string, number>();
-  /** Jobs whose HCS receipt is already on the topic — see publishReceiptWhenReady. */
-  const publishedReceipts = new Set<string>();
   const metrics = deps.metrics ?? new Metrics();
+  const net = networkConfig(config.network);
+  const bootedAt = Date.now();
+  const heartbeatCounters = new Map<string, number>();
+  /** The last registration fingerprint published per provider — re-registering unchanged is free. */
+  const publishedRegistrations = new Map<string, string>();
+  /** Settlements that landed before their job existed (the upfront flow), keyed by quote id. */
+  const settlements = new Map<string, { record: PaymentRecord; at: number }>();
+  /** Receipt write state per job: in flight, and how many attempts it has had. */
+  const receipts = new Map<string, { attempts: number; pending: Promise<PublishResult | null> | null }>();
+  /** Rating relays in flight, so a double-submit can't burn a second transaction. */
+  const ratingsInFlight = new Set<string>();
+  /** On-chain job id → broker job id, so ledger feeds can link back to the job page. */
+  const jobIdByHash = new Map<string, string>();
+  for (const job of jobs.list({ limit: 10_000 })) jobIdByHash.set(jobIdHash(job.id), job.id);
 
-  const built = deps.facilitator
-    ? { facilitator: deps.facilitator, description: "injected (test)", feePayer: config.operatorId }
-    : buildFacilitator({
-        mode: config.facilitatorMode,
-        network: config.network,
-        // Deliberately not chain.client — see Chain.settlementClient.
-        client: chain.settlementClient,
-        feePayerId: config.operatorId,
-        feePayerKey: config.operatorKey,
-      });
-  const { facilitator, description: facilitatorDescription, feePayer } = built;
+  const reader =
+    deps.ledgerReader ??
+    createLedgerReader({
+      network: config.network,
+      ledgerAddress: chain.ledgerAddress,
+      fromBlock: config.ledgerFromBlock,
+      indexerUrl: config.indexerUrl,
+    });
 
-  const x402Server = new x402ResourceServer(facilitator).register(
-    "hedera:*" as Network,
-    new ExactHederaScheme({
-      defaultAssets: {
-        [config.network]: { asset: usdcTokenId(config.network), decimals: 6 },
-      },
-    }),
-  );
+  const lookupAgentWallet =
+    deps.agentWallet ?? ((agentId: string) => getAgentWallet(config.network, agentId));
+
+  /** The service a buyer starts at; the "xorv-jobs" endpoint and every rating's ERC-8004 `endpoint`. */
+  const jobsEndpoint = `${config.publicUrl}/api/quotes`;
+  const ratingEnv = (): RatingEnv | null =>
+    chain.ledgerAddress
+      ? { network: config.network, ledger: chain.ledgerAddress, publicUrl: config.publicUrl, jobsEndpoint }
+      : null;
+
+  // -------------------------------------------------------------------------
+  // x402
+  // -------------------------------------------------------------------------
+
+  const settlement = resolveFacilitator(config, { injected: deps.facilitator });
+  if (settlement.notice) console.warn(`[broker] ${settlement.notice}`);
+  if (settlement.unavailableReason) console.warn(`[broker] ${settlement.unavailableReason}`);
+
+  const x402Server = settlement.facilitator
+    ? new x402ResourceServer(settlement.facilitator).register(config.network as Network, new ExactEvmScheme())
+    : null;
+
+  if (x402Server) {
+    // A rejected payment is the most confusing failure in this system — the
+    // buyer signed something real and got a 402 back — so the reason goes to
+    // the log at the point of decision. The in-process facilitator already
+    // logs its own verdicts; for a hosted (or injected) one, this is the only
+    // place the reason is visible. Note `isValid: false` arrives at
+    // onAfterVerify, not onVerifyFailure — that only fires on a throw.
+    if (settlement.mode !== "self" || deps.facilitator) {
+      logPaymentRejections(x402Server, (line) => console.error(`[broker] ${line}`));
+    }
+
+    /**
+     * Attach a settlement to the job it paid for — by quote id.
+     *
+     * The quote id is in the paid URL, so it is exact: two buyers paying the
+     * same provider at the same moment can never swap payment records, which
+     * "the most recent unpaid job for this payTo" (the old heuristic) could.
+     * Under the upfront flow the job does not exist yet, so the record waits
+     * in `settlements` for the handler; under a settle-after-handler flow the
+     * job exists and the record is attached directly.
+     */
+    x402Server.onAfterSettle(async (ctx) => {
+      const quoteId = quoteIdFromTransport(ctx.transportContext);
+      if (!quoteId || !ctx.result.success || !ctx.result.transaction) return;
+      const record = paymentRecord(
+        ctx.requirements as PaymentRequirements,
+        ctx.result as SettleResponse,
+        ctx.paymentPayload as PaymentPayload,
+      );
+      const quote = jobs.getQuote(quoteId);
+      if (quote?.jobId) {
+        jobs.patch(quote.jobId, { payment: record });
+      } else {
+        settlements.set(quoteId, { record, at: Date.now() });
+      }
+    });
+  }
+
+  function paymentRecord(
+    requirements: PaymentRequirements,
+    result: SettleResponse,
+    payload: PaymentPayload,
+  ): PaymentRecord {
+    // The facilitator reports the payer; the signed authorization names it too
+    // (`authorization.from`), which covers a facilitator that leaves it out.
+    const from = (payload.payload as { authorization?: { from?: string } } | undefined)?.authorization?.from;
+    const payer = [result.payer, from].find((a): a is string => typeof a === "string" && isEvmAddress(a));
+    return {
+      asset: "usdc",
+      assetAddress: safeAddress(requirements.asset),
+      amount: result.amount ?? requirements.amount,
+      network: requirements.network,
+      txHash: result.transaction,
+      payer: payer ? normalizeAddress(payer) : "unknown",
+      payTo: safeAddress(requirements.payTo),
+      settledAt: Date.now(),
+      explorerUrl: explorerTx(config.network, result.transaction),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Middleware
+  // -------------------------------------------------------------------------
 
   app.use(
     "*",
@@ -127,12 +261,12 @@ export function createApp(deps: AppDeps) {
       //   X-PAYMENT depending on the negotiated version.
       //
       //   Access-Control-Expose-Headers — the client sets this as a REQUEST
-      //   header on the payment retry (dist/esm/index.mjs). That is a response
-      //   header name and arguably an upstream bug, but a browser dutifully
-      //   lists it in the preflight, and a server that does not allow it fails
-      //   every retry with "not allowed by Access-Control-Allow-Headers".
-      //   Server-side clients never send a preflight, so this only ever breaks
-      //   browsers.
+      //   header on the payment retry. That is a response header name and
+      //   arguably an upstream bug, but a browser dutifully lists it in the
+      //   preflight, and a server that does not allow it fails every retry
+      //   with "not allowed by Access-Control-Allow-Headers". Server-side
+      //   clients never send a preflight, so this only ever breaks browsers —
+      //   exactly the Privy embedded-wallet flow.
       allowHeaders: [
         "Content-Type",
         "Authorization",
@@ -141,37 +275,33 @@ export function createApp(deps: AppDeps) {
         "PAYMENT-SIGNATURE",
         "Payment-Signature",
         "Access-Control-Expose-Headers",
+        "X-Cancel-Token",
       ],
       // Browsers can't read a response header unless it's exposed, and x402
-      // carries its whole contract in two of them.
+      // carries its whole contract in these. `payment-required` holds the 402's
+      // `accepts` (amount, asset, payTo, EIP-712 domain); without it a browser
+      // wallet fails with "Failed to parse payment requirements", which reads
+      // like a protocol bug and is really a CORS omission. `payment-response`
+      // carries the settlement tx hash back.
       //
-      // `payment-required` is the one that matters and the one that was
-      // missing: the 402 puts the `accepts` array — amounts, assets, payTo,
-      // feePayer — in that header, not in the body. Server-side clients never
-      // noticed, because Node's fetch has no CORS. A browser paying with its
-      // own wallet got `null` for it and failed with "Failed to parse payment
-      // requirements", which reads like a protocol bug and is really a
-      // one-line CORS omission.
-      //
-      // Both casings of each, because header names are case-insensitive on the
-      // wire but this list is matched literally by some proxies.
+      // Both casings, because header names are case-insensitive on the wire but
+      // this list is matched literally by some proxies.
       exposeHeaders: [
         "X-PAYMENT-RESPONSE",
         "X-Payment-Response",
-        // The client asks for this spelling by name; without it the settled
-        // transaction id is unreadable even though the payment succeeded.
         "PAYMENT-RESPONSE",
         "Payment-Response",
         "PAYMENT-REQUIRED",
         "Payment-Required",
         "payment-required",
+        "X-Request-Id",
       ],
     }),
   );
 
   app.onError((err, c) => {
     console.error("[broker]", err);
-    metrics.inc("xorv_errors_total", { path: c.req.path });
+    metrics.inc("xorv_errors_total", { path: c.req.routePath || c.req.path });
     return c.json({ error: err instanceof Error ? err.message : "internal error" }, 500);
   });
 
@@ -183,30 +313,25 @@ export function createApp(deps: AppDeps) {
   // thing to abuse. The paid route needs no limit of its own: it costs money.
   app.use("/api/quotes", rateLimit({ limit: 30, windowMs: 60_000 }));
   app.use("/api/providers/register", rateLimit({ limit: 10, windowMs: 60_000 }));
+  // Each rating relay costs the operator ~0.03 MON of gas.
+  app.use("/api/jobs/:id/rate", rateLimit({ limit: 10, windowMs: 60_000 }));
 
   app.get("/metrics", (c) =>
     c.text(
-      metrics.render({
-        registry,
-        jobs,
-        chain,
-        connected: deps.getHub()?.connectedCount() ?? 0,
-      }),
+      metrics.render({ registry, jobs, chain, connected: deps.getHub()?.connectedCount() ?? 0 }),
       200,
       { "Content-Type": "text/plain; version=0.0.4; charset=utf-8" },
     ),
   );
 
-  // Access log for the paid route only. The 402 dance is two requests that look
+  // Access log for the paid route. The 402 dance is two requests that look
   // identical except for one header, and "did the client actually retry with a
   // payment?" is the first question worth answering when it goes wrong.
   app.use("/api/jobs/*", async (c, next) => {
-    const paid = Boolean(c.req.header("X-PAYMENT") ?? c.req.header("x-payment"));
+    const paid = hasPaymentHeader(c);
     await next();
-    if (c.req.method === "POST") {
-      console.log(
-        `[broker] ${c.req.method} ${c.req.path} payment=${paid ? "yes" : "no"} → ${c.res.status}`,
-      );
+    if (c.req.method === "POST" && c.req.path.split("/").length === 4) {
+      console.log(`[broker] ${c.req.method} ${c.req.path} payment=${paid ? "yes" : "no"} → ${c.res.status}`);
     }
   });
 
@@ -216,20 +341,57 @@ export function createApp(deps: AppDeps) {
 
   app.get("/health", (c) => c.json({ ok: true, at: Date.now() }));
 
-  app.get("/api/network", async (c) => {
+  app.get("/api/network", (c) => {
     const live = registry.live();
-    const rate = await rates.get().catch(() => null);
     const allJobs = jobs.list({ limit: 1000 });
     const settled = allJobs.filter((j) => j.payment);
-    return c.json({
+    const ledger = describeLedger(chain);
+    const body: NetworkInfo & Record<string, unknown> = {
       network: config.network,
-      facilitator: { mode: config.facilitatorMode, description: facilitatorDescription, feePayer },
-      operator: { accountId: config.operatorId, url: hashscanAccount(config.network, config.operatorId) },
-      usdc: usdcTokenId(config.network),
-      topics: chain.describeTopics(),
-      hcsPublished: chain.counts(),
-      hcsLastError: chain.lastPublishError(),
-      hbarRate: rate ? { centsPerHbar: rate.centsPerHbar } : null,
+      chainId: net.chainId,
+      label: net.label,
+      explorerUrl: net.explorerUrl,
+      usdc: {
+        address: net.usdc.address,
+        symbol: net.usdc.symbol,
+        decimals: net.usdc.decimals,
+        name: net.usdc.name,
+        version: net.usdc.version,
+        url: explorerToken(config.network, net.usdc.address),
+      } as NetworkInfo["usdc"],
+      facilitator: {
+        mode: settlement.mode,
+        description: settlement.description,
+        address: settlement.address,
+        url: settlement.url,
+        available: settlement.facilitator !== null,
+        error: settlement.unavailableReason,
+      } as NetworkInfo["facilitator"],
+      operator: config.operator
+        ? { address: config.operator.address, url: explorerAddress(config.network, config.operator.address) }
+        : null,
+      ledger: ledger
+        ? ({
+            ...ledger,
+            fromBlock: config.ledgerFromBlock === null ? null : config.ledgerFromBlock.toString(),
+          } as NetworkInfo["ledger"])
+        : null,
+      erc8004: {
+        identity: net.erc8004.identity,
+        reputation: net.erc8004.reputation,
+        validation: net.erc8004.validation,
+      } as NetworkInfo["erc8004"],
+      indexer: config.indexerUrl ? { url: config.indexerUrl } : null,
+      published: chain.counts(),
+      pendingReceipts: chain.pendingReceipts(),
+      lastPublishError: chain.lastPublishError(),
+      ai: {
+        router: deps.ai?.router?.info ?? null,
+        screener: deps.ai?.screener?.info ?? null,
+        verifier: deps.ai?.verifier?.info ?? null,
+      },
+      feeBps: config.feeBps,
+      epoch: deps.getHub()?.epoch ?? bootedAt,
       stats: {
         providersLive: live.length,
         providersConnected: deps.getHub()?.connectedCount() ?? 0,
@@ -239,30 +401,51 @@ export function createApp(deps: AppDeps) {
         paidUsdMicros: settled.reduce((sum, j) => sum + (j.priceUsdMicros ?? 0), 0),
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
-    });
+    };
+    return c.json(body);
   });
 
   app.get("/api/providers", (c) => {
     const hub = deps.getHub();
     return c.json({
-      providers: registry.list().map((p) => ({
-        id: p.id,
-        label: p.label,
-        accountId: p.accountId,
-        accountUrl: hashscanAccount(config.network, p.accountId),
-        endpoint: p.endpoint,
-        status: p.status,
-        connected: hub?.isConnected(p.id) ?? false,
-        activeJobs: p.activeJobs,
-        capabilities: p.capabilities,
-        lastHeartbeatAt: p.lastHeartbeatAt,
-        registeredAt: p.registeredAt,
-        uptimeSeconds: p.uptimeSeconds,
-        version: p.version,
-        region: p.region,
-        stats: p.stats,
-      })),
+      providers: registry.list().map((p) => publicProvider(config.network, p, hub?.isConnected(p.id) ?? false)),
     });
+  });
+
+  /**
+   * A provider's ERC-8004 registration file — what its agent URI resolves to.
+   *
+   * Served by the broker so a node can register its identity with a single
+   * `IdentityRegistry.register(agentURI)` transaction and a URL that never
+   * changes: the provider id is derived from the node id, so it survives both
+   * node and broker restarts.
+   */
+  app.get("/agents/:file", (c) => {
+    const file = c.req.param("file");
+    if (!file.endsWith(".json")) return c.json({ error: "not found" }, 404);
+    const provider = registry.find(file.slice(0, -".json".length));
+    if (!provider) return c.json({ error: "unknown provider" }, 404);
+    const adapters = [...new Set(provider.capabilities.map((cap) => cap.displayName || cap.adapter))];
+    return c.json(
+      buildAgentRegistration({
+        network: config.network,
+        agentId: provider.agentId,
+        name: `${provider.label} · Xorv provider`,
+        description:
+          `Xorv provider node selling ${adapters.join(", ") || "AI agent"} capacity. ` +
+          `Pay per job in USDC over x402 on Monad; every paid job is receipted on XorvLedger.`,
+        services: [
+          {
+            name: "web",
+            endpoint: config.appUrl
+              ? `${config.appUrl}/providers/${provider.id}`
+              : `${config.publicUrl}/api/providers`,
+          },
+          { name: "xorv-jobs", endpoint: jobsEndpoint, version: "1" },
+        ],
+        active: provider.status !== "offline",
+      }),
+    );
   });
 
   // -------------------------------------------------------------------------
@@ -270,24 +453,41 @@ export function createApp(deps: AppDeps) {
   // -------------------------------------------------------------------------
 
   app.post("/api/providers/register", async (c) => {
-    const body = (await c.req.json()) as RegisterRequest;
-    const invalid = validateRegistration(body);
-    if (invalid) return c.json({ error: invalid }, 400);
+    const body = (await readJson(c)) as RegisterRequest | null;
+    const parsed = validateRegistration(body);
+    if ("error" in parsed) return c.json({ error: parsed.error }, 400);
 
-    const provider = registry.register(body);
+    const warnings: string[] = [];
+    let agentId: string | null = null;
+    if (parsed.agentId) {
+      const check = await verifyAgent(parsed.agentId, parsed.registration.address);
+      if (check.ok) agentId = parsed.agentId;
+      else {
+        warnings.push(check.warning);
+        console.warn(`[broker] registration "${parsed.registration.label}": ${check.warning}`);
+      }
+    }
 
-    // Registration is announced on HCS, but a slow consensus round-trip must
-    // not hold up a node that is ready to work.
-    const registryResult = await chain.publishRegistration(provider).catch(() => null);
-    if (registryResult) provider.registryConsensusAt = registryResult.transactionId;
+    const provider = registry.register({ ...parsed.registration, agentId });
+    const registryResult = await publishRegistration(provider);
 
     return c.json({
       provider: stripSecrets(provider),
       token: provider.token,
       wsUrl: `${config.publicUrl.replace(/^http/, "ws")}/ws/provider?token=${provider.token}`,
-      registry: registryResult,
+      registry: registryResult
+        ? {
+            contract: registryResult.contract,
+            txHash: registryResult.txHash,
+            explorerUrl: registryResult.explorerUrl,
+            agentId: provider.agentId,
+          }
+        : null,
+      agent: { requested: parsed.agentId, verified: agentId !== null },
+      agentURI: `${config.publicUrl}/agents/${provider.id}.json`,
+      warnings,
       network: config.network,
-      usdc: usdcTokenId(config.network),
+      usdc: net.usdc.address,
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     });
   });
@@ -297,7 +497,7 @@ export function createApp(deps: AppDeps) {
     if (!provider || provider.id !== c.req.param("id")) {
       return c.json({ error: "unauthorized" }, 401);
     }
-    const body = (await c.req.json()) as HeartbeatRequest;
+    const body = ((await readJson(c)) ?? {}) as Partial<HeartbeatRequest>;
     const updated = registry.heartbeat(provider.id, {
       activeJobs: body.activeJobs ?? 0,
       uptimeSeconds: body.uptimeSeconds ?? 0,
@@ -305,14 +505,15 @@ export function createApp(deps: AppDeps) {
     });
     if (!updated) return c.json({ error: "unknown provider" }, 404);
 
-    // Sampled, not every beat — see Chain.publishHeartbeat for why.
+    // Sampled, not every beat — see LedgerWriter.heartbeat for why.
+    const every = config.heartbeatPublishEvery;
     const n = (heartbeatCounters.get(provider.id) ?? 0) + 1;
     heartbeatCounters.set(provider.id, n);
-    if (n % HEARTBEAT_PUBLISH_EVERY === 1) {
-      void chain.publishHeartbeat({
+    if (every > 0 && (n - 1) % every === 0) {
+      void chain.heartbeat({
         providerId: provider.id,
         activeJobs: updated.activeJobs,
-        capacity: updated.capabilities.length,
+        capacity: updated.capabilities.reduce((sum, cap) => sum + Math.max(1, cap.maxConcurrency), 0),
         uptimeSeconds: updated.uptimeSeconds,
       });
     }
@@ -321,7 +522,7 @@ export function createApp(deps: AppDeps) {
       ok: true,
       status: updated.status,
       pending: [],
-      brokerEpoch: deps.getHub()?.epoch ?? 0,
+      brokerEpoch: deps.getHub()?.epoch ?? bootedAt,
     });
   });
 
@@ -331,7 +532,8 @@ export function createApp(deps: AppDeps) {
     if (!provider) return c.json({ error: "unauthorized" }, 401);
     const job = jobs.get(c.req.param("id"));
     if (!job || job.providerId !== provider.id) return c.json({ error: "not found" }, 404);
-    const event = (await c.req.json()) as JobEvent;
+    const event = (await readJson(c)) as JobEvent | null;
+    if (!event?.kind) return c.json({ error: "invalid event" }, 400);
     jobs.addEvent(job.id, { ...event, at: event.at || Date.now() });
     return c.json({ ok: true });
   });
@@ -341,11 +543,11 @@ export function createApp(deps: AppDeps) {
     if (!provider) return c.json({ error: "unauthorized" }, 401);
     const job = jobs.get(c.req.param("id"));
     if (!job || job.providerId !== provider.id) return c.json({ error: "not found" }, 404);
-    const body = (await c.req.json()) as { result?: string; error?: string; durationMs?: number };
+    const body = ((await readJson(c)) ?? {}) as { result?: string; error?: string; durationMs?: number };
     if (body.error) {
-      void finishJobFailed(job.id, provider.id, body.error, body.durationMs ?? 0);
+      finishJobFailed(job.id, provider.id, body.error, body.durationMs ?? 0);
     } else {
-      void finishJobOk(job.id, provider.id, body.result ?? "", body.durationMs ?? 0);
+      finishJobOk(job.id, provider.id, body.result ?? "", body.durationMs ?? 0);
     }
     return c.json({ ok: true });
   });
@@ -355,7 +557,7 @@ export function createApp(deps: AppDeps) {
   // -------------------------------------------------------------------------
 
   app.post("/api/quotes", async (c) => {
-    const body = (await c.req.json()) as JobRequest;
+    const body = (await readJson(c)) as JobRequest | null;
     if (!body?.prompt?.trim()) return c.json({ error: "prompt is required" }, 400);
     if (body.prompt.length > 20_000) return c.json({ error: "prompt is too long (max 20k chars)" }, 400);
 
@@ -363,8 +565,32 @@ export function createApp(deps: AppDeps) {
     if (!Number.isFinite(maxPrice) || maxPrice <= 0) {
       return c.json({ error: "maxPriceUsdMicros must be a positive number" }, 400);
     }
+    const request: JobRequest = { ...body, prompt: body.prompt, maxPriceUsdMicros: maxPrice };
 
-    const match = registry.match({ adapter: body.adapter ?? null, maxPriceUsdMicros: maxPrice });
+    // AI screen, before any provider could see the prompt. Fails open.
+    const screener = deps.ai?.screener;
+    const screening = screener
+      ? await withHookTimeout("prompt screen", () => screener.screen(request))
+      : null;
+    if (screening?.verdict === "block") {
+      return c.json({ error: `the safety screen refused this prompt: ${screening.reason}`, screening }, 422);
+    }
+
+    // AI routing, only when the buyer left the adapter open. Fails open to price.
+    const router = deps.ai?.router;
+    const available = [...new Set(registry.live().flatMap((p) => p.capabilities.map((cap) => cap.adapter)))];
+    const routing =
+      router && !request.adapter && available.length > 1
+        ? await withHookTimeout("job router", () => router.route(request, available))
+        : null;
+
+    let match = registry.match({
+      adapter: request.adapter ?? routing?.adapter ?? null,
+      maxPriceUsdMicros: maxPrice,
+    });
+    if (!match && !request.adapter && routing?.adapter) {
+      match = registry.match({ adapter: null, maxPriceUsdMicros: maxPrice });
+    }
     if (!match) {
       const live = registry.live().length;
       return c.json(
@@ -379,43 +605,58 @@ export function createApp(deps: AppDeps) {
       );
     }
 
-    // Fetch the rate before the quote exists, so the HBAR figure the quote
-    // commits to is the same one the client is shown.
-    const rate = await rates.get().catch(() => null);
-    metrics.inc('xorv_quotes_total');
+    metrics.inc("xorv_quotes_total");
     const quote = jobs.createQuote({
-      request: { ...body, prompt: body.prompt, maxPriceUsdMicros: maxPrice },
+      request,
       providerId: match.provider.id,
       providerLabel: match.provider.label,
-      providerAccountId: match.provider.accountId,
+      providerAddress: normalizeAddress(match.provider.address),
+      providerAgentId: match.provider.agentId,
       capabilityId: match.capability.id,
       capabilityName: match.capability.displayName,
+      capabilityAdapter: match.capability.adapter,
       priceUsdMicros: match.capability.priceUsdMicros,
       usdcAmount: usdMicrosToUsdcUnits(match.capability.priceUsdMicros),
-      hbarAmount: rate ? usdMicrosToTinybars(match.capability.priceUsdMicros, rate) : null,
+      routing,
+      screening,
     });
 
-    return c.json({
+    const response: QuoteResponse = {
       quoteId: quote.id,
       payUrl: `${config.publicUrl}/api/jobs/${quote.id}`,
+      network: config.network,
       priceUsdMicros: quote.priceUsdMicros,
       priceLabel: formatUsd(quote.priceUsdMicros),
+      usdcAmount: quote.usdcAmount,
       expiresAt: quote.expiresAt,
       provider: {
         id: match.provider.id,
         label: match.provider.label,
-        accountId: match.provider.accountId,
-        accountUrl: hashscanAccount(config.network, match.provider.accountId),
+        address: quote.providerAddress,
+        addressUrl: explorerAddress(config.network, quote.providerAddress),
+        agentId: quote.providerAgentId,
         capability: match.capability.displayName,
         adapter: match.capability.adapter,
         model: match.capability.model ?? null,
         stats: match.provider.stats,
       },
+      // Exactly what the 402 will ask for, so a buyer can check it before
+      // signing (protocol `quoteMatchPolicy`).
       accepts: [
-        { asset: usdcTokenId(config.network), amount: quote.usdcAmount },
-        ...(quote.hbarAmount ? [{ asset: HBAR_ASSET_ID, amount: quote.hbarAmount }] : []),
+        {
+          scheme: XORV_SCHEME,
+          network: config.network,
+          asset: net.usdc.address,
+          amount: quote.usdcAmount,
+          payTo: quote.providerAddress,
+          maxTimeoutSeconds: QUOTE_TTL_SECONDS,
+          extra: { name: net.usdc.name, version: net.usdc.version },
+        },
       ],
-    });
+      routing,
+      screening,
+    };
+    return c.json(response);
   });
 
   // -------------------------------------------------------------------------
@@ -424,7 +665,7 @@ export function createApp(deps: AppDeps) {
 
   /** Pull the quote id out of the request path for the dynamic resolvers. */
   const quoteFromContext = (ctx: HTTPRequestContext): Quote | undefined => {
-    const id = ctx.path.split("/").filter(Boolean).pop();
+    const id = lastSegment(ctx.path);
     return id ? jobs.getQuote(id) : undefined;
   };
 
@@ -433,31 +674,20 @@ export function createApp(deps: AppDeps) {
       description: "Run one AI job on a live Xorv provider",
       serviceName: "Xorv",
       mimeType: "application/json",
-      // Both resolvers read the amounts frozen on the quote — see Quote.usdcAmount
-      // for why recomputing here silently breaks correctly-signed payments.
-      accepts: [
-        {
-          scheme: "exact",
-          network: config.network as Network,
-          // Straight to the provider — the broker is never the payee.
-          payTo: (ctx) => quoteFromContext(ctx)?.providerAccountId ?? "",
-          price: (ctx) => ({
-            asset: usdcTokenId(config.network),
-            amount: quoteFromContext(ctx)?.usdcAmount ?? "0",
-          }),
-          maxTimeoutSeconds: 300,
-        },
-        {
-          scheme: "exact",
-          network: config.network as Network,
-          payTo: (ctx) => quoteFromContext(ctx)?.providerAccountId ?? "",
-          price: (ctx) => ({
-            asset: HBAR_ASSET_ID,
-            amount: quoteFromContext(ctx)?.hbarAmount ?? "0",
-          }),
-          maxTimeoutSeconds: 300,
-        },
-      ],
+      accepts: {
+        // Both resolvers read the amounts frozen on the quote — see
+        // Quote.usdcAmount for why recomputing here silently breaks
+        // correctly-signed payments. Straight to the provider: the broker is
+        // never the payee.
+        ...usdcPaymentOption({
+          network: config.network,
+          payTo: (ctx) => quoteFromContext(ctx)?.providerAddress ?? "",
+          amount: (ctx) => quoteFromContext(ctx)?.usdcAmount ?? "0",
+          maxTimeoutSeconds: QUOTE_TTL_SECONDS,
+        }),
+        // Settle before the handler runs — see the note at the top of the file.
+        extra: { paymentFlow: "upfront" },
+      },
       unpaidResponseBody: (ctx) => {
         const quote = quoteFromContext(ctx);
         return {
@@ -465,10 +695,13 @@ export function createApp(deps: AppDeps) {
           body: quote
             ? {
                 quoteId: quote.id,
-                provider: { id: quote.providerId, label: quote.providerLabel },
+                provider: { id: quote.providerId, label: quote.providerLabel, address: quote.providerAddress },
                 capability: quote.capabilityName,
                 priceLabel: formatUsd(quote.priceUsdMicros),
-                hint: "Sign the payment with a Hedera account holding USDC (or HBAR) and retry with the X-PAYMENT header.",
+                usdcAmount: quote.usdcAmount,
+                hint:
+                  `Sign an EIP-3009 USDC authorization on ${net.name} (x402 "exact") for the PAYMENT-REQUIRED ` +
+                  "terms and retry with the PAYMENT-SIGNATURE header. You need USDC only — the facilitator pays the gas.",
               }
             : { error: "quote not found or expired — request a new one from POST /api/quotes" },
         };
@@ -491,79 +724,63 @@ export function createApp(deps: AppDeps) {
     if (!provider || provider.status === "offline") {
       return c.json({ error: "the quoted provider went offline — request a new quote" }, 409);
     }
-    return next();
+    if (!x402Server) {
+      return c.json({ error: settlement.unavailableReason ?? "payments are unavailable" }, 503);
+    }
+    if (!hasPaymentHeader(c)) return next();
+
+    // One settlement per quote at a time — see Quote.paying.
+    if (quote.paying) {
+      return c.json({ error: "a payment for this quote is already being settled" }, 409);
+    }
+    quote.paying = true;
+    try {
+      await next();
+    } finally {
+      // Settlement failed (or never happened): the quote is still for sale.
+      if (!quote.jobId) {
+        quote.paying = false;
+        settlements.delete(quote.id);
+      }
+    }
   });
 
-  app.use("/api/jobs/:quoteId", paymentMiddleware(routes, x402Server));
+  if (x402Server) app.use("/api/jobs/:quoteId", paymentMiddleware(routes, x402Server));
 
   app.post("/api/jobs/:quoteId", async (c) => {
+    // Upfront settlement already landed by the time this runs. `paying` keeps
+    // the quote resolvable even if its TTL ran out mid-settlement.
     const quote = jobs.getQuote(c.req.param("quoteId") ?? "");
     if (!quote) return c.json({ error: "quote expired during payment" }, 409);
 
-    metrics.inc('xorv_payments_total');
-    const job = jobs.createJob(quote);
-    // The payment record is filled in from the settle response by the hook
-    // below; dispatch does not wait on it.
+    const settled = settlements.get(quote.id);
+    settlements.delete(quote.id);
+    if (!settled) {
+      // Only reachable if the payment flow were ever switched back to
+      // settle-after-handler; then onAfterSettle attaches it to the job.
+      console.warn(`[broker] quote ${quote.id}: handler ran before settlement was recorded`);
+    }
+
+    // Handed only to the buyer, in this response: the capability to cancel.
+    const cancelToken = randomBytes(24).toString("base64url");
+    const job = jobs.createJob(quote, { payment: settled?.record ?? null, cancelTokenHash: sha256(cancelToken) });
+    jobIdByHash.set(jobIdHash(job.id), job.id);
+    metrics.inc("xorv_payments_total");
     dispatch(job);
 
     return c.json({
       jobId: job.id,
-      status: job.status,
-      provider: { id: quote.providerId, label: quote.providerLabel },
+      status: jobs.get(job.id)?.status ?? job.status,
+      provider: { id: quote.providerId, label: quote.providerLabel, address: quote.providerAddress },
       capability: quote.capabilityName,
       priceUsdMicros: quote.priceUsdMicros,
       priceLabel: formatUsd(quote.priceUsdMicros),
+      payment: job.payment ?? null,
+      cancelToken,
+      cancelUrl: `${config.publicUrl}/api/jobs/${job.id}/cancel`,
       streamUrl: `${config.publicUrl}/api/jobs/${job.id}/stream`,
       jobUrl: `${config.publicUrl}/api/jobs/${job.id}`,
     });
-  });
-
-  // A rejected payment is the single most confusing failure in this system —
-  // the buyer signed something real and got a 402 back — so the reason code goes
-  // to the log rather than only into an HTTP status.
-  x402Server.onVerifyFailure(async (ctx) => {
-    const result = (ctx as { result?: { invalidReason?: string; invalidMessage?: string } }).result;
-    const error = (ctx as { error?: Error }).error;
-    console.error(
-      `[broker] payment verification failed: ${result?.invalidReason ?? error?.message ?? "unknown"}` +
-        `${result?.invalidMessage ? ` — ${result.invalidMessage}` : ""}`,
-    );
-  });
-
-  /**
-   * Capture settlement onto the job.
-   *
-   * The resource server settles after the handler returns, so this hook is the
-   * only place with both the on-chain transaction id and the job it paid for.
-   */
-  x402Server.onAfterSettle(async (ctx) => {
-    const result = ctx.result;
-    if (!result?.success || !result.transaction) return;
-    const payTo = ctx.requirements.payTo;
-    const asset = ctx.requirements.asset;
-    const amount = ctx.requirements.amount;
-
-    // Find the job this settlement belongs to: the most recent unpaid job for
-    // that provider account. Quote ids are single-use and jobs are created
-    // synchronously in the handler just above, so this is unambiguous.
-    const candidate = jobs
-      .list({ limit: 50 })
-      .find((j) => !j.payment && j.providerAccountId === payTo);
-    if (!candidate) return;
-
-    const kind = assetKind(asset);
-    const record: PaymentRecord = {
-      asset: kind,
-      assetId: asset,
-      amount,
-      network: config.network,
-      transactionId: result.transaction,
-      payer: result.payer ?? "unknown",
-      payTo,
-      settledAt: Date.now(),
-      hashscanUrl: hashscanTx(config.network, result.transaction),
-    };
-    jobs.patch(candidate.id, { payment: record });
   });
 
   // -------------------------------------------------------------------------
@@ -571,7 +788,7 @@ export function createApp(deps: AppDeps) {
   // -------------------------------------------------------------------------
 
   app.get("/api/jobs", (c) => {
-    const limit = Number(c.req.query("limit") ?? 50);
+    const limit = clampInt(c.req.query("limit"), 1, 500, 50);
     const providerId = c.req.query("providerId") ?? undefined;
     return c.json({ jobs: jobs.list({ limit, providerId }).map((job) => publicJob(job)) });
   });
@@ -585,25 +802,39 @@ export function createApp(deps: AppDeps) {
   /**
    * Stop a running job.
    *
-   * Knowing the job id is the authorisation — ids are 72 bits of randomness and
-   * are only ever handed to the buyer who paid. That is a capability URL, and
-   * it is the same trust model as the stream endpoint next to it.
+   * Only the buyer who paid can: the payment response carried a one-time
+   * cancel token, and this route checks it (as `Authorization: Bearer <token>`,
+   * an `X-Cancel-Token` header or `{ "cancelToken" }` in the body). Knowing the
+   * job id is not enough — every job id is listed publicly on `/api/jobs`.
    *
    * This does **not** refund. Settlement already happened (see the note at the
    * top of this file), and the provider may have already burned real quota. It
    * stops the work and frees their slot.
    */
-  app.post("/api/jobs/:id/cancel", (c) => {
+  app.post("/api/jobs/:id/cancel", async (c) => {
     const job = jobs.get(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
-    if (job.status === "completed" || job.status === "failed") {
+    const body = ((await readJson(c)) ?? {}) as { cancelToken?: string };
+    const token =
+      c.req.header("authorization")?.replace(/^Bearer\s+/i, "").trim() ||
+      c.req.header("x-cancel-token")?.trim() ||
+      body.cancelToken?.trim() ||
+      "";
+    if (!job.cancelTokenHash || !token || !sameHash(sha256(token), job.cancelTokenHash)) {
+      return c.json(
+        { error: "only the buyer who paid can cancel this job — send the cancelToken from the payment response" },
+        403,
+      );
+    }
+    if (isTerminal(job.status)) {
       return c.json({ error: `job is already ${job.status}`, status: job.status }, 409);
     }
 
     const reason = "cancelled by the buyer";
     if (job.providerId) {
       deps.getHub()?.send(job.providerId, { type: "job.cancel", jobId: job.id, reason });
-      registry.jobFinished(job.providerId, { ok: false, durationMs: jobs.runtimeMs(job) });
+      // The buyer changed their mind; that says nothing about the provider.
+      registry.jobReleased(job.providerId);
     }
     jobs.addEvent(job.id, { at: Date.now(), kind: "status", text: reason });
     jobs.fail(job.id, reason);
@@ -631,10 +862,10 @@ export function createApp(deps: AppDeps) {
         write("snapshot", publicJob(job, { events: true }));
 
         // A fast job is routinely already finished by the time the client gets
-        // here — settlement takes seconds, an echo job takes milliseconds. If
-        // we only ever emitted `done` from a subsequent update, that client
-        // would wait forever for an event that already happened.
-        if (job.status === "completed" || job.status === "failed") {
+        // here — an echo job takes milliseconds. If we only ever emitted `done`
+        // from a subsequent update, that client would wait forever for an
+        // event that already happened.
+        if (isTerminal(job.status)) {
           write("done", publicJob(job, { events: true }));
           try {
             controller.close();
@@ -647,7 +878,7 @@ export function createApp(deps: AppDeps) {
         const unsubscribe = jobs.subscribeToJob(job.id, (updated, event) => {
           if (event) write("event", event);
           write("job", publicJob(updated));
-          if (updated.status === "completed" || updated.status === "failed") {
+          if (isTerminal(updated.status)) {
             write("done", publicJob(updated, { events: true }));
             cleanup();
           }
@@ -685,38 +916,330 @@ export function createApp(deps: AppDeps) {
     });
   });
 
-  /** The public audit trail, read straight from a Hedera mirror node. */
-  app.get("/api/receipts", async (c) => {
-    const topic = chain.describeTopics().receipts;
-    if (!topic) return c.json({ receipts: [], topic: null });
+  // -------------------------------------------------------------------------
+  // Ratings — gasless for the buyer, relayed through XorvLedger into ERC-8004
+  // -------------------------------------------------------------------------
+
+  /** Why a job can't be rated (with the status to answer), or what it's rated against. */
+  function ratingTarget(
+    job: StoredJob,
+  ): { error: string; status: 409 | 503 } | { env: RatingEnv; agentId: string; payer: string } {
+    const env = ratingEnv();
+    if (!env) return { error: "no XorvLedger is configured, so ratings cannot be recorded", status: 503 };
+    if (!job.payment || !isEvmAddress(job.payment.payer)) {
+      return { error: "this job has no recorded payer, so there is nobody to sign its rating", status: 409 };
+    }
+    if (!isTerminal(job.status)) return { error: "rate the job once it has finished", status: 409 };
+    if (job.rating) return { error: "this job has already been rated", status: 409 };
+    const agentId = receiptAgentId(job);
+    if (!agentId) {
+      return {
+        error:
+          "ratings go to the provider's ERC-8004 agent identity, and the provider paid for this job has none " +
+          "(or the job was reassigned to a different provider), so there is nothing to rate",
+        status: 409,
+      };
+    }
+    return { env, agentId, payer: job.payment.payer };
+  }
+
+  app.get("/api/jobs/:id/rating", (c) => {
+    const job = jobs.get(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const value = Number(c.req.query("value"));
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      return c.json({ error: "value must be an integer from 0 to 100" }, 400);
+    }
+    const target = ratingTarget(job);
+    if ("error" in target) return c.json({ error: target.error }, target.status);
+
+    const deadline = Math.floor(Date.now() / 1000) + RATING_TTL_SECONDS;
+    const parts = ratingParts(target.env, job, target.agentId, value, deadline);
+    return c.json({
+      jobId: job.id,
+      value,
+      deadline,
+      signer: target.payer,
+      agentId: target.agentId,
+      feedbackURI: parts.feedbackURI,
+      feedbackHash: parts.feedbackHash,
+      typedData: toJsonSafe(parts.typedData),
+      submit: { method: "POST", url: `${config.publicUrl}/api/jobs/${job.id}/rate`, body: ["value", "deadline", "signature"] },
+    });
+  });
+
+  app.post("/api/jobs/:id/rate", async (c) => {
+    const job = jobs.get(c.req.param("id"));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const body = ((await readJson(c)) ?? {}) as { value?: unknown; deadline?: unknown; signature?: unknown };
+    const value = Number(body.value);
+    const deadline = Number(body.deadline);
+    const signature = typeof body.signature === "string" ? body.signature : "";
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      return c.json({ error: "value must be an integer from 0 to 100" }, 400);
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isInteger(deadline) || deadline <= now || deadline > now + RATING_TTL_SECONDS + 300) {
+      return c.json({ error: "deadline must be a unix time within the next hour (use the one from GET …/rating)" }, 400);
+    }
+    if (!isHex(signature) || signature.length < 132) {
+      return c.json({ error: "signature must be the 0x-hex EIP-712 signature of the rating" }, 400);
+    }
+    const target = ratingTarget(job);
+    if ("error" in target) return c.json({ error: target.error }, target.status);
+    if (chain.mode() !== "write") {
+      return c.json({ error: "the broker is read-only (no XORV_OPERATOR_KEY), so it cannot relay ratings" }, 503);
+    }
+
+    // Check the signature here, before spending gas on a relay the contract
+    // would refuse. Plain ECDSA first (every EOA, Privy embedded wallets);
+    // then ERC-1271 / ERC-6492 over RPC for smart accounts.
+    const parts = ratingParts(target.env, job, target.agentId, value, deadline);
+    const typedData = parts.typedData;
+    let valid = await verifyTypedData({ ...typedData, address: target.payer as Hex, signature: signature as Hex }).catch(
+      () => false,
+    );
+    if (!valid) {
+      valid = await chain.verifyTypedDataOnChain({
+        address: target.payer,
+        typedData: typedData as unknown as Record<string, unknown>,
+        signature: signature as Hex,
+      });
+    }
+    if (!valid) {
+      return c.json({ error: "the signature is not from this job's payer — only the buyer who paid can rate it" }, 401);
+    }
+
+    if (ratingsInFlight.has(job.id)) return c.json({ error: "a rating for this job is already being relayed" }, 409);
+    ratingsInFlight.add(job.id);
     try {
-      const messages = await readTopic(config.network, topic.id, { limit: 50 });
+      // XorvLedger only accepts a rating for a job it has a receipt for.
+      if (!job.receiptTxHash) await ensureReceipt(job);
+      if (!jobs.get(job.id)?.receiptTxHash) {
+        return c.json({ error: "the job's receipt is not on-chain yet — retry in a few seconds" }, 409);
+      }
+      const result = await chain.rateJob(ratingMessage(parts.rating), signature as Hex);
+      jobs.patch(job.id, {
+        rating: {
+          value,
+          txHash: result.txHash,
+          feedbackURI: parts.feedbackURI,
+          deadline,
+          feedbackHash: parts.feedbackHash,
+        },
+      });
+      metrics.inc("xorv_ratings_total");
       return c.json({
-        topic,
-        receipts: messages.map((m) => ({
-          consensusAt: m.consensusAt,
-          sequence: m.sequence,
-          payload: m.payload,
-        })),
+        ok: true,
+        jobId: job.id,
+        value,
+        txHash: result.txHash,
+        explorerUrl: result.explorerUrl,
+        feedbackURI: parts.feedbackURI,
+        feedbackHash: parts.feedbackHash,
       });
     } catch (err) {
-      return c.json({ receipts: [], topic, error: (err as Error).message }, 502);
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+    } finally {
+      ratingsInFlight.delete(job.id);
     }
   });
 
-  app.get("/api/topics/:kind", async (c) => {
-    const kind = c.req.param("kind") as "registry" | "heartbeat" | "receipts";
-    const topic = chain.describeTopics()[kind];
-    if (!topic) return c.json({ error: `no ${kind} topic configured` }, 404);
-    const messages = await readTopic(config.network, topic.id, { limit: 50 });
-    return c.json({ topic, messages });
+  /**
+   * The ERC-8004 feedback file a rating points at.
+   *
+   * Served as canonical JSON, byte-for-byte what was hashed, so anyone can
+   * check `keccak256(body) == feedbackHash` against the on-chain event. Before
+   * the job is rated, `?value=&deadline=` previews the file a rating would
+   * commit to — what a careful buyer checks before signing.
+   */
+  app.get("/feedback/:file", (c) => {
+    const file = c.req.param("file");
+    if (!file.endsWith(".json")) return c.json({ error: "not found" }, 404);
+    const job = jobs.get(file.slice(0, -".json".length));
+    const env = ratingEnv();
+    if (!job || !env) return c.json({ error: "not found" }, 404);
+    const agentId = receiptAgentId(job);
+    if (!agentId || !job.payment || !isTerminal(job.status)) {
+      return c.json({ error: "no feedback file for this job" }, 404);
+    }
+    let value: number;
+    let deadline: number;
+    if (job.rating) {
+      value = job.rating.value;
+      deadline = job.rating.deadline;
+    } else {
+      value = Number(c.req.query("value"));
+      deadline = Number(c.req.query("deadline"));
+      if (!Number.isInteger(value) || value < 0 || value > 100 || !Number.isInteger(deadline) || deadline <= 0) {
+        return c.json({ error: "not rated yet — pass ?value=&deadline= to preview the file a rating would commit to" }, 404);
+      }
+    }
+    const feedback = feedbackFor(env, job, agentId, value, deadline);
+    const bytes = serializeFeedbackFile(feedback);
+    return c.body(bytes, 200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Feedback-Hash": textHash(bytes),
+      "Cache-Control": job.rating ? "public, max-age=31536000, immutable" : "no-store",
+    });
   });
+
+  // -------------------------------------------------------------------------
+  // The public record — XorvLedger feeds, indexer-first
+  // -------------------------------------------------------------------------
+
+  app.get("/api/ledger", async (c) => {
+    const kind = (c.req.query("kind") ?? "receipts") as LedgerEventKind;
+    if (!LEDGER_KINDS.includes(kind)) {
+      return c.json({ error: `kind must be one of ${LEDGER_KINDS.join(", ")}` }, 400);
+    }
+    const limit = clampInt(c.req.query("limit"), 1, 100, 20);
+    const ledger = describeLedger(chain);
+    if (!ledger && !config.indexerUrl) return c.json({ kind, ledger: null, source: "none", events: [] });
+    try {
+      const feed = await reader.events(kind, limit);
+      return c.json({
+        kind,
+        ledger,
+        source: feed.source,
+        ...(feed.indexerError ? { indexerError: feed.indexerError } : {}),
+        events: feed.events.map((event) => ({
+          ...event,
+          explorerUrl: explorerTx(config.network, event.txHash),
+          brokerJobId:
+            "jobId" in event.data ? (jobIdByHash.get(String(event.data.jobId).toLowerCase()) ?? null) : undefined,
+        })),
+      });
+    } catch (err) {
+      return c.json({ kind, ledger, events: [], error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+  });
+
+  /**
+   * The receipts feed in its long-standing shape, for the landing page — see
+   * `legacyReceipt` in public.ts for which keys are kept and why.
+   */
+  app.get("/api/receipts", async (c) => {
+    const ledger = describeLedger(chain);
+    if (!ledger && !config.indexerUrl) return c.json({ ledger: null, topic: null, source: "none", receipts: [] });
+    try {
+      const feed = await reader.events("receipts", 50);
+      return c.json({
+        ledger,
+        topic: ledger,
+        source: feed.source,
+        receipts: feed.events.map((event) =>
+          legacyReceipt(
+            config.network,
+            event as Parameters<typeof legacyReceipt>[1],
+            jobIdByHash.get(String((event.data as { jobId: string }).jobId).toLowerCase()) ?? null,
+          ),
+        ),
+      });
+    } catch (err) {
+      return c.json({ ledger, topic: ledger, receipts: [], error: err instanceof Error ? err.message : String(err) }, 502);
+    }
+  });
+
+  app.get("/api/leaderboard", async (c) => {
+    const limit = clampInt(c.req.query("limit"), 1, 100, 25);
+    let indexerError: string | undefined;
+    try {
+      const rows = await reader.leaderboard(limit);
+      if (rows) {
+        return c.json({ source: "indexer", providers: leaderboardFromIndexer(config.network, rows, registry.list()) });
+      }
+    } catch (err) {
+      indexerError = err instanceof Error ? err.message : String(err);
+    }
+    return c.json({
+      source: "memory",
+      ...(indexerError ? { indexerError } : {}),
+      providers: leaderboardFromMemory(config.network, registry.list(), jobs.list({ limit: 5_000 }), limit),
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Registration helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Check a claimed ERC-8004 agent id against the Identity Registry.
+   *
+   * The claim is only worth recording if the agent's wallet *is* the payout
+   * address — XorvLedger enforces exactly that on every receipt, and a
+   * reputation score attached to someone else's agent would be a lie. A
+   * lookup that fails or times out doesn't block the node from working: it
+   * registers without an identity and is told why.
+   */
+  async function verifyAgent(agentId: string, address: string): Promise<{ ok: true } | { ok: false; warning: string }> {
+    let wallet: string | null;
+    try {
+      wallet = await withTimeout(lookupAgentWallet(agentId), AGENT_CHECK_TIMEOUT_MS, "agent lookup timed out");
+    } catch (err) {
+      return {
+        ok: false,
+        warning:
+          `could not verify ERC-8004 agent #${agentId} (${err instanceof Error ? err.message : String(err)}); ` +
+          "registered without an agent identity — re-register to retry",
+      };
+    }
+    if (!wallet) {
+      return {
+        ok: false,
+        warning: `ERC-8004 agent #${agentId} has no agent wallet set; registered without an agent identity`,
+      };
+    }
+    if (!sameAddress(wallet, address)) {
+      return {
+        ok: false,
+        warning:
+          `ERC-8004 agent #${agentId} is paid at ${wallet}, not at this node's payout address ${address}; ` +
+          "registered without an agent identity",
+      };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Announce a registration on XorvLedger without holding the node up.
+   *
+   * The write starts immediately and finishes in the background; the response
+   * waits for it only briefly (a Monad round-trip is about a second), so a
+   * slow or dead RPC costs a node a couple of seconds at most, never its
+   * registration. An unchanged re-registration (a reconnect) writes nothing.
+   */
+  async function publishRegistration(provider: ProviderRecord): Promise<PublishResult | null> {
+    if (chain.mode() !== "write") return null;
+    const fingerprint = JSON.stringify([
+      provider.address,
+      provider.agentId,
+      provider.label,
+      provider.capabilities.map((cap) => [cap.adapter, cap.priceUsdMicros]),
+    ]);
+    if (provider.registryTxHash && publishedRegistrations.get(provider.id) === fingerprint) {
+      return {
+        contract: chain.ledgerAddress ?? "",
+        txHash: provider.registryTxHash,
+        explorerUrl: explorerTx(config.network, provider.registryTxHash),
+        blockNumber: null,
+      };
+    }
+    const pending = chain.registerProvider(provider).then((result) => {
+      if (result) {
+        registry.setRegistryTx(provider.id, result.txHash);
+        publishedRegistrations.set(provider.id, fingerprint);
+      }
+      return result;
+    });
+    return Promise.race([pending, sleep(REGISTRATION_WAIT_MS).then(() => null)]);
+  }
 
   // -------------------------------------------------------------------------
   // Dispatch + completion
   // -------------------------------------------------------------------------
 
-  function dispatch(job: Job): void {
+  function dispatch(job: StoredJob): void {
     const hub = deps.getHub();
     const provider = job.providerId ? registry.get(job.providerId) : undefined;
     if (!provider || !hub) {
@@ -734,8 +1257,8 @@ export function createApp(deps: AppDeps) {
     };
 
     if (!hub.send(provider.id, { type: "job.dispatch", job: payload })) {
-      // The node's socket dropped between quote and payment. Try to find
-      // someone else rather than failing a job that has already been paid for.
+      // The node's socket dropped between quote and payment. Try someone else
+      // rather than failing a job that has already been paid for.
       if (!reassign(job)) jobs.fail(job.id, "provider disconnected before the job could start");
       return;
     }
@@ -750,16 +1273,20 @@ export function createApp(deps: AppDeps) {
    * The poster is not charged again — the money is already with the first
    * provider, and chasing it back is not worth the complexity. The original
    * provider takes the reputation hit instead, which is the incentive that
-   * actually matters to them.
+   * actually matters to them. A job never returns to a provider that already
+   * had it, and is handed out at most MAX_PROVIDERS_PER_JOB times in total.
    */
-  function reassign(job: Job): boolean {
-    const match = registry.match({
-      adapter: job.request.adapter ?? null,
-      maxPriceUsdMicros: job.request.maxPriceUsdMicros,
-    });
-    if (!match || match.provider.id === job.providerId) return false;
+  function reassign(job: StoredJob): boolean {
+    const tried = job.attemptedProviders ?? (job.providerId ? [job.providerId] : []);
+    if (tried.length >= MAX_PROVIDERS_PER_JOB) return false;
     const hub = deps.getHub();
     if (!hub) return false;
+    const match = registry.match({
+      adapter: job.request.adapter ?? job.routing?.adapter ?? null,
+      maxPriceUsdMicros: job.request.maxPriceUsdMicros,
+      exclude: tried,
+    });
+    if (!match) return false;
 
     const sent = hub.send(match.provider.id, {
       type: "job.dispatch",
@@ -773,115 +1300,129 @@ export function createApp(deps: AppDeps) {
     });
     if (!sent) return false;
 
-    jobs.patch(job.id, {
-      providerId: match.provider.id,
-      providerLabel: match.provider.label,
-      capabilityId: match.capability.id,
-      status: "assigned",
-    });
     jobs.addEvent(job.id, {
       at: Date.now(),
       kind: "status",
       text: `reassigned to ${match.provider.label} at no extra charge`,
     });
+    jobs.reassign(job.id, {
+      providerId: match.provider.id,
+      providerLabel: match.provider.label,
+      capabilityId: match.capability.id,
+      capabilityAdapter: match.capability.adapter,
+    });
     registry.jobStarted(match.provider.id);
     return true;
   }
 
-  async function finishJobOk(
-    jobId: string,
-    providerId: string,
-    result: string,
-    durationMs: number,
-  ): Promise<void> {
-    const hash = sha256(result);
-    const job = jobs.complete(jobId, result, hash);
-    if (!job) return;
+  function finishJobOk(jobId: string, providerId: string, result: string, durationMs: number): void {
+    const job = jobs.get(jobId);
+    // A result for a job that is already over (cancelled, timed out), or from a
+    // provider the job was taken away from, changes nothing.
+    if (!job || isTerminal(job.status) || job.providerId !== providerId) return;
+    const done = jobs.complete(jobId, result, textHash(result));
+    if (!done) return;
 
-    const earned = earnings(job);
-    registry.jobFinished(providerId, { ok: true, durationMs, ...earned });
-    metrics.inc('xorv_jobs_completed_total');
-    metrics.observe('xorv_job_duration', durationMs);
-    void publishReceiptWhenReady(job.id, durationMs, true);
+    // Earnings follow the money: the USDC went to the quoted provider at
+    // settlement, even if a reassignment means someone else finished the job.
+    const micros = done.payment ? usdcUnitsToUsdMicros(done.payment.amount) : 0;
+    const payee = done.quotedProviderId ?? providerId;
+    registry.jobFinished(providerId, { ok: true, durationMs, usdcMicros: payee === providerId ? micros : 0 });
+    if (payee !== providerId) registry.creditEarnings(payee, micros);
+    metrics.inc("xorv_jobs_completed_total");
+    metrics.observe("xorv_job_duration", durationMs);
+
+    const verifier = deps.ai?.verifier;
+    if (verifier) {
+      void withHookTimeout("result verifier", () => verifier.verify(done), 60_000).then((verification) => {
+        if (verification) jobs.patch(jobId, { verification });
+      });
+    }
+  }
+
+  function finishJobFailed(jobId: string, providerId: string, error: string, durationMs: number): void {
+    const job = jobs.get(jobId);
+    // Same rule as finishJobOk. Without it a cancelled job whose adapter then
+    // errored would be reassigned — resurrected — and counted twice.
+    if (!job || isTerminal(job.status) || job.providerId !== providerId) return;
+    registry.jobFinished(providerId, { ok: false, durationMs });
+    metrics.inc("xorv_jobs_failed_total");
+
+    // A free retry elsewhere before the poster is told it failed.
+    if (reassign(job)) return;
+    jobs.fail(jobId, error);
+  }
+
+  // -------------------------------------------------------------------------
+  // Receipts
+  // -------------------------------------------------------------------------
+
+  /**
+   * The agent a receipt (and so a rating) is attributed to.
+   *
+   * XorvLedger requires the agent's wallet to be the address that was paid, so
+   * a receipt can only name the *quoted* provider's agent. When a job was
+   * reassigned, the provider paid is not the one that did the work, and
+   * crediting either identity with the outcome would misattribute it — so
+   * such receipts are recorded without an agent (and can't be rated).
+   */
+  function receiptAgentId(job: StoredJob): string | null {
+    if (!job.providerAgentId) return null;
+    const quoted = job.quotedProviderId ?? job.providerId;
+    return job.providerId === quoted ? job.providerAgentId : null;
   }
 
   /**
-   * Publish a job's HCS receipt once there is actually something to attest to.
+   * Queue a job's XorvLedger receipt, once there is something to attest to:
+   * the job is terminal *and* its payment is recorded. A receipt without a
+   * settlement tx proves nothing, so an unpaid job gets none.
    *
-   * A job routinely finishes *before* its payment is recorded: the resource
-   * server settles after the request handler returns, while echo-class work can
-   * be done in under a second. Publishing on completion alone produced receipts
-   * with an empty transaction id — a receipt that proves nothing. So both
-   * triggers call in here, and the first one to find the job terminal *and*
-   * paid does the write; the `published` set makes the second a no-op.
-   *
-   * The grace loop bounds the wait: if settlement never lands (a failed
-   * payment, a facilitator error), the receipt still goes out marked unpaid
-   * rather than being silently dropped.
+   * Called from a job-store subscription, so every path that finishes a job
+   * (result, failure, timeout, cancel) and every path that records a payment
+   * lands here without having to remember to.
    */
-  async function publishReceiptWhenReady(
-    jobId: string,
-    durationMs: number,
-    ok: boolean,
-  ): Promise<void> {
-    if (publishedReceipts.has(jobId)) return;
+  function enqueueReceipt(job: StoredJob): Promise<PublishResult | null> | null {
+    if (chain.mode() !== "write" || job.receiptTxHash || !job.payment || !isTerminal(job.status)) return null;
+    const state = receipts.get(job.id) ?? { attempts: 0, pending: null };
+    if (state.pending) return state.pending;
+    if (state.attempts >= MAX_RECEIPT_ATTEMPTS) return null;
+    state.attempts += 1;
 
-    const deadline = Date.now() + 20_000;
-    let job = jobs.get(jobId);
-    while (job && !job.payment && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      job = jobs.get(jobId);
-    }
-    if (!job) return;
-    if (publishedReceipts.has(jobId)) return;
-    publishedReceipts.add(jobId);
-
-    const receipt = await chain.publishReceipt({
-      jobId: job.id,
-      providerId: job.providerId ?? "",
-      providerAccountId: job.providerAccountId ?? "",
-      payer: job.payment?.payer ?? "unpaid",
-      asset: job.payment?.assetId ?? "",
-      amount: job.payment?.amount ?? "0",
-      transactionId: job.payment?.transactionId ?? "",
-      resultHash: job.resultHash ?? "",
-      durationMs,
-      ok,
-    });
-    if (receipt) {
-      jobs.patch(job.id, { receiptConsensusAt: receipt.transactionId });
-    } else {
-      // Publishing failed; let a later attempt retry rather than marking this
-      // job as receipted forever.
-      publishedReceipts.delete(jobId);
-    }
+    const started = job.startedAt ?? job.assignedAt ?? job.createdAt;
+    const pending = chain
+      .recordJob({
+        jobId: job.id,
+        agentId: receiptAgentId(job),
+        buyer: job.payment.payer,
+        payTo: job.payment.payTo,
+        amount: job.payment.amount,
+        paymentTx: job.payment.txHash,
+        prompt: job.request.prompt,
+        result: job.result ?? "",
+        durationMs: Math.max(0, (job.completedAt ?? Date.now()) - started),
+        ok: job.status === "completed",
+      })
+      .then((result) => {
+        state.pending = null;
+        if (result) jobs.patch(job.id, { receiptTxHash: result.txHash });
+        return result;
+      });
+    state.pending = pending;
+    receipts.set(job.id, state);
+    return pending;
   }
 
-  async function finishJobFailed(
-    jobId: string,
-    providerId: string,
-    error: string,
-    durationMs: number,
-  ): Promise<void> {
-    const job = jobs.get(jobId);
-    if (!job) return;
-    registry.jobFinished(providerId, { ok: false, durationMs });
-    metrics.inc('xorv_jobs_failed_total');
-
-    // One free retry elsewhere before the poster is told it failed.
-    if (job.status !== "completed" && reassign(job)) return;
-
-    jobs.fail(jobId, error);
-    await publishReceiptWhenReady(jobId, durationMs, false);
+  /** Make sure a job's receipt is on its way, push it out now, and wait (bounded). */
+  async function ensureReceipt(job: StoredJob): Promise<void> {
+    const pending = enqueueReceipt(job) ?? receipts.get(job.id)?.pending ?? null;
+    if (!pending) return;
+    void chain.flush();
+    await Promise.race([pending, sleep(RECEIPT_WAIT_MS)]);
   }
 
-  function earnings(job: Job): { usdcMicros?: number; tinybars?: number } {
-    if (!job.payment) return {};
-    if (job.payment.asset === "usdc") {
-      return { usdcMicros: usdcUnitsToUsdMicros(job.payment.amount) };
-    }
-    return { tinybars: Number(job.payment.amount) };
-  }
+  jobs.subscribe((job) => {
+    if (isTerminal(job.status) && job.payment && !job.receiptTxHash) enqueueReceipt(job);
+  });
 
   // -------------------------------------------------------------------------
   // helpers
@@ -894,17 +1435,23 @@ export function createApp(deps: AppDeps) {
 
   return {
     app,
+    /** How payments settle — for the boot banner. */
+    settlement,
     hubHandlers: {
-      onEvent: (_providerId: string, jobId: string, event: JobEvent) => {
+      onEvent: (providerId: string, jobId: string, event: JobEvent) => {
+        const job = jobs.get(jobId);
+        if (!job || job.providerId !== providerId || isTerminal(job.status)) return;
         jobs.addEvent(jobId, { ...event, at: event.at || Date.now() });
       },
       onResult: (providerId: string, jobId: string, result: string, durationMs: number) => {
-        void finishJobOk(jobId, providerId, result, durationMs);
+        finishJobOk(jobId, providerId, result, durationMs);
       },
       onError: (providerId: string, jobId: string, error: string, durationMs: number) => {
-        void finishJobFailed(jobId, providerId, error, durationMs);
+        finishJobFailed(jobId, providerId, error, durationMs);
       },
-      onAccepted: (_providerId: string, jobId: string) => {
+      onAccepted: (providerId: string, jobId: string) => {
+        const job = jobs.get(jobId);
+        if (!job || job.providerId !== providerId || isTerminal(job.status)) return;
         jobs.setStatus(jobId, "running");
       },
       onConnect: (providerId: string) => {
@@ -916,66 +1463,139 @@ export function createApp(deps: AppDeps) {
         console.log(`[broker] node disconnected: ${provider?.label ?? providerId}`);
       },
     },
-    /** Fail jobs that have run past the ceiling; called on a timer. */
+    /** Timers' work: fail overdue jobs, reap silent providers, retry receipts. */
     sweep(): void {
       for (const job of jobs.overdue()) {
-        void finishJobFailed(job.id, job.providerId ?? "", "job timed out", jobs.runtimeMs(job));
+        const providerId = job.providerId ?? "";
+        // Tell the node to stop: its result would be ignored now anyway.
+        if (providerId) deps.getHub()?.send(providerId, { type: "job.cancel", jobId: job.id, reason: "job timed out" });
+        finishJobFailed(job.id, providerId, "job timed out", jobs.runtimeMs(job));
       }
       for (const id of registry.reap()) {
         console.log(`[broker] reaped idle provider ${id}`);
       }
+      // Receipts whose write failed (or that were restored from disk before
+      // their batch landed) get another go, a bounded number of times.
+      if (chain.mode() === "write") {
+        for (const job of jobs.list({ limit: 1_000 })) {
+          if (isTerminal(job.status) && job.payment && !job.receiptTxHash) enqueueReceipt(job);
+        }
+      }
+      // A settlement whose request never reached the handler is not coming back for.
+      const staleBefore = Date.now() - QUOTE_TTL_SECONDS * 2_000;
+      for (const [quoteId, entry] of settlements) if (entry.at < staleBefore) settlements.delete(quoteId);
     },
   };
 }
 
-function validateRegistration(body: RegisterRequest): string | null {
-  if (!body?.label?.trim()) return "label is required";
-  if (!body.accountId || !/^\d+\.\d+\.\d+$/.test(body.accountId)) {
-    return "accountId must be a Hedera account id like 0.0.12345";
+// ---------------------------------------------------------------------------
+// Module helpers
+// ---------------------------------------------------------------------------
+
+type ParsedRegistration =
+  | { error: string }
+  | { registration: Omit<VerifiedRegistration, "agentId">; agentId: string | null };
+
+/**
+ * Validate a registration and normalize its address.
+ *
+ * The payout address is stored checksummed, so every later comparison (the
+ * settle hook, receipts, the agent-wallet check) works on one spelling. An
+ * agent id is a decimal string (a uint256 can outgrow a JSON number).
+ */
+export function validateRegistration(body: RegisterRequest | null): ParsedRegistration {
+  if (!body || typeof body !== "object") return { error: "expected a JSON registration body" };
+  if (typeof body.label !== "string" || !body.label.trim()) return { error: "label is required" };
+  const rawAddress = typeof body.address === "string" ? body.address : "";
+  if (!rawAddress) {
+    return { error: "address is required — the 0x address this node is paid at (Monad, USDC)" };
   }
-  if (!body.nodeId?.trim()) return "nodeId is required";
+  let address: string;
+  try {
+    address = normalizeAddress(rawAddress);
+  } catch (err) {
+    return { error: `address: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (/^0x0{40}$/i.test(address)) return { error: "address cannot be the zero address" };
+  let agentId: string | null = null;
+  if (body.agentId !== undefined && body.agentId !== null && String(body.agentId).trim() !== "") {
+    const raw = String(body.agentId).trim();
+    if (!/^\d{1,78}$/.test(raw)) return { error: "agentId must be a decimal ERC-8004 agent id" };
+    agentId = BigInt(raw).toString();
+  }
+  if (typeof body.nodeId !== "string" || !body.nodeId.trim()) return { error: "nodeId is required" };
   if (!Array.isArray(body.capabilities) || body.capabilities.length === 0) {
-    return "at least one capability is required";
+    return { error: "at least one capability is required" };
   }
   for (const cap of body.capabilities as Capability[]) {
-    if (!cap.id || !cap.adapter) return "each capability needs an id and an adapter";
+    if (!cap?.id || !cap.adapter) return { error: "each capability needs an id and an adapter" };
     if (!Number.isFinite(cap.priceUsdMicros) || cap.priceUsdMicros <= 0) {
-      return `capability "${cap.id}" needs a positive priceUsdMicros`;
+      return { error: `capability "${cap.id}" needs a positive priceUsdMicros` };
     }
   }
-  return null;
-}
-
-/** Strip the bearer token before a provider record goes anywhere public. */
-function stripSecrets<T extends { token?: string }>(record: T): Omit<T, "token"> {
-  const { token: _token, ...rest } = record;
-  return rest;
-}
-
-function publicJob(job: Job, opts: { events?: boolean } = {}) {
   return {
-    id: job.id,
-    title: job.request.title ?? null,
-    prompt: job.request.prompt,
-    adapter: job.request.adapter ?? null,
-    status: job.status,
-    createdAt: job.createdAt,
-    assignedAt: job.assignedAt ?? null,
-    startedAt: job.startedAt ?? null,
-    completedAt: job.completedAt ?? null,
-    providerId: job.providerId ?? null,
-    providerLabel: job.providerLabel ?? null,
-    providerAccountId: job.providerAccountId ?? null,
-    priceUsdMicros: job.priceUsdMicros ?? null,
-    priceLabel: job.priceUsdMicros ? formatUsd(job.priceUsdMicros) : null,
-    payment: job.payment ?? null,
-    result: job.result ?? null,
-    resultHash: job.resultHash ?? null,
-    error: job.error ?? null,
-    receiptConsensusAt: job.receiptConsensusAt ?? null,
-    eventCount: job.events.length,
-    events: opts.events ? job.events : undefined,
+    registration: {
+      label: body.label.trim(),
+      address,
+      endpoint: typeof body.endpoint === "string" ? body.endpoint : "",
+      capabilities: body.capabilities,
+      version: typeof body.version === "string" ? body.version : "unknown",
+      region: body.region ?? null,
+      nodeId: body.nodeId,
+    },
+    agentId,
   };
+}
+
+function hasPaymentHeader(c: Context): boolean {
+  return Boolean(c.req.header("payment-signature") ?? c.req.header("x-payment"));
+}
+
+async function readJson(c: Context): Promise<unknown> {
+  try {
+    return await c.req.json();
+  } catch {
+    return null;
+  }
+}
+
+function lastSegment(path: string): string | undefined {
+  return path.split("/").filter(Boolean).pop();
+}
+
+function quoteIdFromTransport(transport: unknown): string | undefined {
+  const path = (transport as HTTPTransportContext | undefined)?.request?.path;
+  return path ? lastSegment(path) : undefined;
+}
+
+function safeAddress(value: string): string {
+  return isEvmAddress(value) ? normalizeAddress(value) : value;
+}
+
+function sameHash(a: string, b: string): boolean {
+  const x = Buffer.from(a, "utf8");
+  const y = Buffer.from(b, "utf8");
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+function clampInt(raw: string | undefined, min: number, max: number, fallback: number): number {
+  const value = Number(raw);
+  if (raw === undefined || !Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 export type { AdapterKind, JobRequest };
