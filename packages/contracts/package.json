@@ -24,6 +24,7 @@
     "typecheck": "hardhat build --quiet && tsc -p tsconfig.json --noEmit",
     "test": "hardhat test nodejs",
     "gas": "hardhat test nodejs test/gas.test.ts",
+    "gas:monad": "hardhat run scripts/monad-gas.ts --network monadTestnet",
     "abi": "hardhat run scripts/export-abi.ts",
     "deploy:testnet": "hardhat run scripts/deploy.ts --network monadTestnet",
     "deploy:mainnet": "hardhat run scripts/deploy.ts --network monad",
