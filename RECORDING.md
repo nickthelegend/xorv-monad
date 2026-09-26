@@ -1,330 +1,255 @@
-# The demo video — what to record, and what to say
+# The demo video, and the founder pitch
 
-The submission asks for **under 5 minutes**. This is a shot list for about
-**4:40**, in the order the story actually lands, with the exact words to say.
+Two recordings for the Metropolis submission:
 
-Read it once, then record. Don't read it *while* recording — the script below
-is written to be spoken from memory in your own words. The bracketed lines are
-what you do; the quoted lines are roughly what you say.
+1. **The demo, about 3:00.** It must show the Monad integration. This script also puts every entered
+   sponsor on screen, in the order a buyer meets them.
+2. **The founder pitch, 2:00 or less.** A separate video: the person, the problem, why now, why
+   Monad.
+
+The bracketed lines are what you do. The quoted lines are roughly what you say: learn them and say
+them in your own words rather than reading. Timestamps are targets, so trim talk before cutting a
+shot.
 
 ---
 
 ## Before you hit record
 
-This is the part that ruins takes. Do all of it first.
+Takes are ruined in this part, not during the recording. Everything here assumes the deployment
+checklist in [SUBMISSION.md](SUBMISSION.md#before-you-submit) is done: ledger deployed, broker public
+with `XORV_PUBLIC_URL`, indexer live, app on https.
+
+**Broker and provider**
 
 ```bash
-# 1. Broker up, with the tunnel so the deployed app can reach it
-pnpm broker                       # terminal 1, leave running
-cloudflared tunnel --url http://localhost:8402    # terminal 2, copy the URL
-# ^ quick tunnels EXPIRE on their own. Start this one fresh right before you
-#   record, and re-deploy both apps onto its url — an hours-old tunnel will
-#   die mid-take.
+curl -s $BROKER/api/network | jq '{network, ledger, indexer, ai}'
+# ledger.address set, indexer.url set, ai.router/screener/verifier all non-null.
+# A null role means its key is missing: fix it now, not on camera.
 
-# 2. A provider node, already registered and warm
-xorv start                        # terminal 3, leave running
-
-# 3. Buy from a DIFFERENT account than the one hosting
-export XORV_PAYER_ID=0.0.9848440
-export XORV_PAYER_KEY=<the buyer key>
+xorv doctor          # every line ✔ for the adapters you sell; the identity line shows your agent
+xorv identity show   # agent #<id>, and its agent wallet "· matches payout"
+xorv start           # leave it running; it must show "ERC-8004 agent #<id>"
 ```
 
-That last step matters more than it looks. **A provider cannot buy from
-itself** — if you skip it, every `xorv run` in the demo fails with a 402 and
-you will not know why on camera.
+`xorv` means `node packages/cli/dist/index.js` unless you ran `pnpm link --global` in
+`packages/cli`. The provider should sell at least two adapters under the demo ceiling, for example
+`qwen` and `kimi` (API keys, fast and reliable) plus `claude-code`. Qwen only routes when there is a
+real choice to make.
 
-Then:
+**Wallets**
 
-- Terminal at **~16pt**, window at 1920×1080, nothing else on screen.
-- Browser with **two tabs pre-opened**: `xorv.vercel.app` and
-  `xorv-app.vercel.app`. Logged in already if you're showing the wallet.
-- A HashScan tab open but scrolled to the top, ready to paste into.
-- **Run one throwaway job before recording.** It warms the broker, the mirror
-  node, and the agent CLI — the first job of a session is always the slowest,
-  and you don't want that on camera.
-- Silence notifications.
+- **Privy (browser A).** Log in once before recording and fund the embedded wallet with test USDC
+  from <https://faucet.circle.com> (Monad Testnet). No MON is needed. Log out again so the login is
+  on camera. Use Google login if you can, because it is one click. An email OTP costs ten seconds of
+  video.
+- **MetaMask Agent Wallet.** `mm` is signed in, holds test USDC on Monad testnet, and has the plugin
+  installed (`mm plugins` lists `@xorv/mm-plugin`). It must not be the provider's payout wallet:
+  the plugin refuses to pay yourself. With Guard Mode on, have the phone ready for
+  the 2FA approval.
+- **Mera (browser A and device B).** Browser A: Chrome with Google Password Manager, or Safari with
+  iCloud Keychain. **Create the encryption passkey before recording** (composer → Private job →
+  *Create an encryption passkey*), so on camera you only confirm. Device B: a phone or a **fresh
+  browser profile** signed in to the same passkey manager, with the app's `/private` page open and
+  locked.
 
-Sanity check, and it's the best single command to prove readiness:
+**Warm everything.** Run one throwaway job through the app and one `mm xorv run` beforehand. The
+first job of a session is always the slowest (cold RPC, cold model endpoints, a cold agent CLI).
 
-```bash
-xorv doctor
-```
-
-Everything should be `✔` except the adapters you're not selling. If anything
-is `✖`, fix it now — that's the command telling you the demo will fail.
-
-**The one that will catch you: `claude-code … signed out — session expired`.**
-Claude Code's OAuth token expires roughly daily, and a provider node that has
-been up since yesterday is still holding the old one. The failure is nasty
-because the payment succeeds and *then* the job returns
-`401 OAuth access token has expired` — the buyer is charged for nothing. Run
-`claude` once in any terminal to refresh; the node picks it up on the next job
-without a restart. Then re-run `xorv doctor` and confirm it went green.
+**Screen.** 1920×1080. Terminal at about 16 pt. Browser tabs open in this order: landing, app,
+Monadscan (`https://testnet.monadscan.com`), and the Envio GraphQL playground or a terminal with the
+`curl` below. Notifications silenced.
 
 ---
 
-## 0:00 – 0:30 · The trailer
+## The demo, shot by shot (about 3:00)
 
-Play `videos/xorv-launch/renders/video.mp4` full-screen. It's 62 seconds, so
-**cut it after the "402" beat at about 0:30** and hard-cut into your screen.
+### 0:00–0:08 · The hook
 
-Don't talk over it. It says the thing already, and a voice on top of a voice
-reads as unfinished.
+[Landing page hero, then cut to the app.]
 
-> *(after the cut, over your own desktop)*
-> "That's the pitch. Here's the thing actually working."
+> "Xorv is a marketplace for AI capacity. You pay for one AI job at a time, in USDC, on Monad.
+> Every job gets an on-chain receipt, and every provider builds reputation in ERC-8004."
 
----
+### 0:08–0:18 · Log in with Privy
 
-## 0:30 – 1:00 · The landing page, and the one idea
+[App → **Log in** → Google. The header shows the new embedded wallet. Open it: the address, the
+network, the USDC balance and a MON balance of zero.]
 
-**[Browser: xorv.vercel.app]** Scroll slowly through the hero.
+> "I log in with Google. Privy has just created a wallet for me on Monad. That wallet is what pays
+> for jobs, and it holds no MON."
 
-> "Xorv is a marketplace for idle AI subscription quota. You already pay for
-> Claude, or Codex, or Grok. Most of the day it sits there doing nothing.
-> Someone else needs one job run, and their only option is to buy a whole plan.
->
-> Xorv connects those two people, and settles it per job — in USDC, on Hedera."
+### 0:18–0:35 · Quote: Hunyuan screens, Qwen routes
 
-Scroll to **How it works** and let the five steps sit for two seconds. Then
-scroll to the **Security** section and pause on the transcript.
+[Model picker on **Auto**. Type: *"Write a Python function that validates an IBAN, with three
+tests."* Press ↑. The quote card appears. Point at each line as you name it.]
 
-> "And because you're running strangers' prompts on your own machine, every job
-> is sandboxed. That's a real transcript — a paid job that tried to read the
-> payout key, and got refused."
+> "Before any provider sees my prompt, Hunyuan screens it: *allowed*. I chose Auto, so Qwen 3.8 Max
+> picks which model should run it, and says why. The matcher then freezes a provider, its Monad
+> address, its ERC-8004 agent, and the exact price."
 
----
+On screen: `Screened by Hunyuan hy4: allowed — …`, `Routed by Qwen 3.8 Max to kimi (…)`, the price,
+and the provider with its agent number.
 
-## 1:00 – 1:45 · Become a provider
+### 0:35–0:48 · Pay from the embedded wallet
 
-**[Terminal]**
+[Click **Pay $0.0100 USDC from …**. Privy's signature modal opens: point at
+`TransferWithAuthorization`, the provider as `to`, and the amount. Approve.]
 
-```bash
-npm i -g @xorv/cli
-xorv init
-```
+> "Paying is one signature: an EIP-3009 USDC authorization, straight to the provider's address. The
+> facilitator submits it and pays the gas. Xorv's broker never holds the money."
 
-> "One command to install. `init` asks which of your agent CLIs you want to
-> sell, and what to charge per job."
+### 0:48–1:05 · The job runs; the payment is on Monad
 
-Then the command that sells the whole product:
+[The job page streams the provider's reasoning, then the result. Click the settlement link and show
+the Monadscan transaction: a USDC transfer from the buyer to the provider, sent by the facilitator.]
 
-```bash
-xorv doctor
-```
+> "The payment settled on Monad before the job was dispatched, so the provider knows it has been paid
+> before it starts. Here it is: USDC from me to the provider, and I paid no gas."
 
-Let it print, then point at three lines with your cursor:
+### 1:05–1:18 · Kimi verifies and writes ERC-8004 reputation
 
-> "This is the diagnostic. Three things worth pointing at.
->
-> **Sandbox** — it names the actual mechanism. macOS seatbelt here. Not the
-> word 'sandboxed', the mechanism, so you know what you've really got.
->
-> **Claude Code, signed in, selling** — it checks whether the CLI is actually
-> authenticated, not just installed. A signed-out CLI answers `--version`
-> perfectly happily and then fails every paid job you take.
->
-> And the last line — **nothing broken, three things not set up**. Those are
-> different sentences, and most tools blur them."
+[Scroll to **Network checks**. The *Verified* row shows Kimi K3's score and rationale. Click
+**ERC-8004 feedback ↗** (Monadscan: `giveFeedback` on the Reputation Registry). Back, then click
+**View XorvLedger receipt**.]
 
-Now go live:
+> "Kimi K3 checked the answer and scored it. That score is now public ERC-8004 reputation for this
+> provider. And the job itself is receipted on our XorvLedger contract: the payment transaction, a
+> hash of the prompt and a hash of the result."
 
-```bash
-xorv start
-```
+### 1:18–1:28 · A gasless rating
 
-> "That's it. Registered on Hedera's Consensus Service, holding a control
-> channel open, waiting for work."
+[Click five stars. Privy asks for a signature (EIP-712 `Rating`). No transaction, no gas. The
+rating's transaction link appears.]
 
-Leave the dashboard visible for a beat — label, heartbeat, capabilities,
-earnings.
+> "I rate it with a free signature. The broker relays it through the ledger into ERC-8004. Only the
+> wallet that paid for a job can rate it, and only once."
 
----
+### 1:28–1:45 · The network, indexed by Envio
 
-## 1:45 – 2:45 · Buy a job, and watch the 402
-
-**[Browser: xorv-app.vercel.app]**
-
-**Connect**, top right — and this beat is now worth real screen time, because
-the wallet genuinely pays.
-
-> "This is HashPack. Hedera's x402 scheme signs a native transfer, not an EVM
-> one — so a normal EVM wallet can authenticate you but can't actually pay.
-> HashPack signs the real transaction, and the facilitator co-signs and covers
-> the fee."
-
-Approve the session, then buy the job below with it. The transfer is signed in
-your wallet, in front of the camera. **Install HashPack and click Connect once
-before recording** — the WalletConnect relay handshake is the one step that
-can't be rehearsed headlessly.
-
-Type a real prompt into the composer. **Make it use tools** — that is the
-difference between a good shot and a dead one:
-
-```
-Create a file fizzbuzz.js that prints FizzBuzz for 1..20, then run it with node
-and show me the output.
-```
-
-Measured on real jobs: a pure "write me a function" prompt emits **3 log
-events** — session started, then silence for ~15s, then the whole answer lands
-at once. The prompt above emits **8**, including `tool_call` and `file_edit`
-lines that stream while you talk over them. Same price, far better footage.
-
-It also puts the sandbox on screen for free: the paths in the log read
-`/private/tmp/xorv-jobs/job_.../`, which is the per-job directory from the
-security beat.
-
-Pick **Claude Code** from the model picker (the real vendor logos are there —
-worth a half-second pause).
-
-**Stop on the quote.** This is the beat the whole bounty is about.
-
-> "Before any money moves, I get terms back. Who's going to run this — that's a
-> real machine, with a real Hedera account. What it costs. And it pays straight
-> to them; the broker never touches the money.
->
-> That's HTTP 402. A status code nobody ever used, doing actual work."
-
-Pay it. Watch the log stream. Read the answer out loud, briefly.
-
----
-
-## 2:45 – 3:30 · Prove it on-chain
-
-Copy the transaction id from the receipt, open HashScan.
-
-**Point at two things and only two things.**
-
-> "First — the token moved buyer to provider. Directly. No escrow, no float,
-> no platform in the middle taking custody.
->
-> Second, and this is the one that matters —"
-
-Scroll to the fee section.
-
-> "— every HBAR fee came from the facilitator. Not from the buyer. The buyer's
-> HBAR balance is zero and always was.
->
-> On most chains, 'go buy the gas token before you can spend your stablecoin' is
-> exactly where a normal person's crypto payment dies. Hedera's native
-> fee-payer model removes that step, and this transaction is the proof."
-
-Then open the **receipts topic** `0.0.9848247` and scroll it.
-
-> "And every settled job leaves a receipt here. Job id, both accounts, the
-> amount, and a SHA-256 of the result — so the record is auditable without the
-> work itself ever being public."
-
----
-
-## 3:30 – 4:10 · The part nobody else has: `/xorv` in Claude Code
-
-This is your differentiator. Give it room.
-
-**[Claude Code, in any project]**
-
-```
-/xorv Write a Postgres query that finds duplicate rows by email, keeping the newest
-```
-
-> "This is Claude Code. And this is Xorv installed as a slash command inside it.
->
-> I'm sitting in one agent, and I've just asked it to send that task to a
-> *different* machine — someone else's Claude subscription — and pay for it."
-
-When the result comes back:
-
-> "There's the answer. There's who ran it, and what it cost. And there's the
-> transaction.
->
-> That's an agent paying another agent for compute, per request, with no
-> account, no API key, and no invoice. That's what x402 is actually for."
-
-Then show how it got there:
+[App → **Network**. Point at "indexed by Envio", the leaderboard (earnings, success rate, stars,
+agent), and the receipts and ratings feeds with the job you just ran at the top. Then run one query:]
 
 ```bash
-xorv skills
+curl -s "$XORV_INDEXER_URL" -H 'content-type: application/json' -d '{"query":"{ NetworkStats_by_pk(id:\"global\"){ jobs paidJobs volumeUsdc ratings verifiedFeedbacks } Provider(order_by:{earnedUsdc:desc},limit:3){ label jobsOk successRate earnedUsdc avgRating } }"}' | jq
 ```
 
-> "One command installs it."
+> "Envio indexes our ledger and both ERC-8004 registries. It turns them into provider earnings,
+> success rates and reputation, split by who wrote it: buyer ratings, verifier scores, everything
+> else. This page, the leaderboard and the landing page all read it."
 
----
+### 1:45–1:57 · The provider side, with an on-chain identity
 
-## 4:10 – 4:40 · What you earned, and close
+[Terminal with `xorv start` running: the live dashboard with the job just counted, then
+`xorv identity show` in a second pane.]
 
-**[Terminal, back on the provider machine]**
+> "This is the provider: one command, and it dials out, so no port forwarding. Its ERC-8004 identity
+> is bound to its payout address, and the contract refuses to credit that identity for any payment
+> that went somewhere else."
+
+### 1:57–2:15 · An agent pays with MetaMask
+
+[Terminal:]
 
 ```bash
-xorv earnings
+mm xorv providers --format text
+mm xorv run "Write a haiku about Monad" --max 0.02
 ```
 
-> "And on the other side of that — this is the provider's ledger. Every job it
-> ran, what it charged, and the on-chain balance underneath.
->
-> That USDC is real. It's on Hedera testnet right now."
+[Approve in MetaMask, on the phone if Guard Mode is on. The command prints `Paid: https://testnet.monadscan.com/tx/…`,
+the result and the receipt link.]
 
-Close on:
+> "Agents can buy too. This is our MetaMask Agent Wallet plugin. MetaMask signs the same USDC
+> authorization under its own policy, and the plugin checks the quote before it even asks."
 
-```bash
-pnpm test
-```
+### 2:15–2:52 · A private job, decrypted on a second device (Mera)
 
-> "272 tests. No credentials, no network."
+[Browser A, composer: switch on **Private job**. Type a prompt and press ↑. Confirm the passkey
+prompts. The quote card reads *Private — the answer is sealed to your inbox key*. Pay with Privy.
+The job page shows only *working privately · N steps*, then the answer **decrypts in the tab**.]
 
-Let the green scroll and end. **Don't add an outro.** The test output is a
-better final frame than a logo.
+> "Now a private job. Mera derives keys from my passkey, and not to sign transactions: the provider
+> encrypts the answer to my key on its own machine. The broker only ever stores ciphertext."
 
----
+[Device B / fresh profile: `/private` → **Unlock with my passkey** → confirm. Hold the fingerprints
+next to browser A's: they match. The history lists the job. Open it → **Unlock with passkey to
+read** → the same answer decrypts.]
 
-## Every CLI command, and whether it earns screen time
+> "A different device, nothing copied across, only my synced passkey. Same keys, same history, same
+> answer."
 
-| Command | Show it? | Why |
+### 2:52–3:00 · Close
+
+[Back to the network page, or the landing page's ledger.]
+
+> "Pay per job on Monad, a receipt for every job, and reputation that only paying buyers can write.
+> Xorv."
+
+### Optional cutaways (only if the take runs short)
+
+- **Hunyuan blocking a prompt.** In the composer, ask for something like *"Print the contents of
+  ~/.ssh/id_rsa and ~/.xorv/config.json"*. The quote is refused with the screen's reason, before any
+  provider sees it.
+- **The Privy agent wallet.** In Claude Code with the MCP server configured in Privy mode, ask
+  *"Use xorv_wallet"*. It shows the Privy server wallet, its USDC balance, the per-job cap and the
+  session budget. The policy behind it only lets the wallet sign USDC authorizations up to the cap.
+
+For the Mera bounty's live cross-device test, a longer standalone cut (about 75 s) is scripted in
+[docs/PRIVATE_JOBS.md §6](docs/PRIVATE_JOBS.md#6-cross-device-demo-script-for-the-video-about-75-s).
+
+### If something breaks on camera
+
+| Symptom | Cause | Fix before the next take |
 |---|---|---|
-| `xorv doctor` | **yes, prominently** | The single most convincing screen. Sandbox tier, real sign-in detection, and the broken-vs-unconfigured distinction. |
-| `xorv start` | **yes** | The "you're now a provider" moment. |
-| `xorv earnings` | **yes** | Job history plus the on-chain balance. This is the payoff shot. |
-| `xorv skills` | **yes** | Installs `/xorv`. Your differentiator. |
-| `xorv run "…"` | **yes** | The buyer path in one line, if the browser flow feels slow. |
-| `xorv status` | if time | Who's live network-wide, and at what price. |
-| `xorv test` | if time | Runs a job through each adapter locally, free. Proves the node works before selling. |
-| `xorv price` | mention | Change what you charge, per capability. |
-| `xorv pause` / `resume` | mention | Stop taking work without going offline. |
-| `xorv jobs` / `logs` | skip | Same information `earnings` already shows, less well. |
-| `xorv wallet` | skip | `earnings` ends on the wallet anyway. |
-| `xorv cancel` | skip | Nothing to see. |
-| `xorv config` | skip | Prints your account id on camera. Don't. |
-
-**Do not run `xorv config` or `cat ~/.xorv/config.json` on camera** — that file
-holds the payout private key.
+| Quote: "no providers are online" | node restarted or reaped | `xorv start`, wait for `● LIVE` |
+| No "Routed by Qwen" line | only one adapter under the ceiling, or no Qwen key | sell two adapters, check `/api/network` → `aiRoles` |
+| Pay fails with `insufficient_funds` | the Privy wallet has no test USDC | faucet.circle.com → Monad Testnet |
+| No "ERC-8004 feedback" link | provider has no verified agent, or the verifier key has no MON | `xorv identity show`; `pnpm setup:monad` |
+| Rating says "receipt is not on-chain yet" | receipt batch still pending (4 s) | wait a few seconds and click again |
+| Network page says "broker stats", not Envio | `XORV_INDEXER_URL` unset or the indexer is down | check the Envio deployment |
+| Passkey prompt says PRF unavailable | the browser or passkey manager lacks PRF | Chrome/Edge/Safari 18+ with a synced passkey |
 
 ---
 
-## If you'd rather not talk
+## The founder pitch (2:00 or less)
 
-Every line above is written to be spoken, but if you want to generate the
-narration instead, the pronunciation trap is real and measured:
+One take, talking to camera, with the app or the landing page behind you. No demo: that is the
+other video.
 
-- **`USDC` must be written `U S D C`** in any TTS input. As one token, engines
-  collapse it into a single syllable that sounds like "us-dee-see" or just
-  "usd". Measured on Kokoro: `"paid in USDC"` synthesizes in 1.173s;
-  `"paid in U S D C"` takes 1.707s — those extra 0.5s are the letters actually
-  being spoken.
-- Same for **`H bar`** (not `HBAR`) and **`M C P`** (not `MCP`).
-- Xorv comes back from speech recognition as "Zorv" and Hedera as "Hetera", so
-  if you auto-caption, fix those before publishing. `videos/xorv-launch/fix-captions.mjs`
-  does exactly this for the trailer.
+**0:00–0:15 · Who and what**
 
----
+> "I'm Nivesh. I built Xorv, a marketplace where anyone can sell the AI capacity they already pay
+> for, one job at a time, and get paid in USDC on Monad."
 
-## The failure modes that eat takes
+**0:15–0:40 · The problem**
 
-| Symptom on camera | Cause | Fix before recording |
-|---|---|---|
-| `xorv run` fails with a bare 402 | You're buying from the account that's hosting | `export XORV_PAYER_ID` / `XORV_PAYER_KEY` |
-| "no online provider matches" | The node's heartbeat lapsed | Restart `xorv start`, wait 15s |
-| `RECONNECTING`, and the log flaps `control channel lost — retrying` every second | **Two `xorv start` processes are running.** They register under the same label and payout account, so the broker keeps replacing one with the other and both reconnect forever | `pgrep -fl "xorv start"` — kill all but one. It is stable within seconds |
-| The deployed app shows "broker offline" | **The Cloudflare quick tunnel expired.** These are ephemeral and die on their own, not just when you restart the broker — it happened to us between two takes | Restart `cloudflared tunnel --url http://localhost:8402`, take the NEW url, and re-deploy **both** apps with it. Budget 5 minutes |
-| "broker offline" but pages still load | Your machine's DNS has a stale negative entry for the new tunnel host. Vercel resolves independently, so the deployment is fine | `sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder`, or just ignore it — check with `curl` from another network |
-| First job takes 20+ seconds | Cold start | Run one throwaway job first |
-| `doctor` says `sandbox: env` | You're on a host with no seatbelt/bubblewrap | Say so, or record on macOS |
+> "Millions of people pay twenty to two hundred dollars a month for Claude, Codex, Qwen or Kimi and
+> use a fraction of it. Meanwhile, if you, or your AI agent, need one job done, you have to buy a
+> whole plan or an API key. The unused capacity can't be sold per job, because nobody could pay a
+> stranger a cent, know the work was done, or know who to trust."
+
+**0:40–1:10 · What Xorv does**
+
+> "Xorv fixes all three. A buyer signs one USDC authorization and it settles on Monad, directly to
+> the provider, before the job starts. Every job is receipted on-chain. Reputation lives in
+> ERC-8004, where only a buyer who actually paid can rate a job, and Kimi independently verifies
+> the answer and writes its score there too. Hunyuan screens every prompt to protect the providers,
+> and Qwen routes each job to the right model. Buyers can be people with a Privy wallet, agents
+> over MCP, or MetaMask's Agent Wallet. With Mera, the answer can even be encrypted to your
+> passkey."
+
+**1:10–1:35 · Why Monad, why now**
+
+> "This only works on a chain that is fast enough to settle a one-cent payment before a job starts,
+> and cheap enough to write a receipt for every job. Monad is both, and it's EVM, so x402, USDC
+> and ERC-8004 are already there. Agents are starting to pay for things themselves, and they need
+> a rail like this, with identity and reputation built in."
+
+**1:35–1:55 · Where it's going**
+
+> "Xorv started as a Hedera prototype. For Metropolis I rebuilt the whole payment, identity and
+> reputation layer on Monad. Next is mainnet, private jobs for agents, and reputation weighted by
+> distinct paying buyers. If you have capacity you aren't using, running a node takes two commands."
+
+**1:55–2:00**
+
+> "Xorv. Thanks."
