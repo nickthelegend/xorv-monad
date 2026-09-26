@@ -217,6 +217,7 @@ GET  /api/jobs/:id/rating?value=87 → EIP-712 typed data + the feedback file's 
 buyer signs it (Privy embedded wallet, MetaMask, a CLI or MCP key); no gas
 POST /api/jobs/:id/rate {value, deadline, signature}
      → broker verifies the signer is the job's payer (ECDSA, then ERC-1271/6492 over RPC)
+     → Nansen: are buyer and provider one party? yes → 403 related_wallets, nothing relayed
      → waits up to 15 s for the job's receipt to land (the ledger rates only recorded jobs)
      → XorvLedger.rateJob(rating, sig) → ReputationRegistry.giveFeedback(agentId, value, 0, "starred", …)
 ```
@@ -236,6 +237,9 @@ POST /api/jobs/:id/rate {value, deadline, signature}
   Its `createdAt` is derived from the deadline for the same reason.
 - **Every rating reaches ERC-8004 with `clientAddress == XorvLedger`.** Filtering a summary by that
   client gives a provider score made only of paid jobs, each rated by the wallet that paid.
+- **The payer must not be the provider's own second wallet.** A provider can pay for its own job
+  from another wallet and rate itself. Before relaying, the broker asks Nansen whether the two
+  wallets are linked and refuses the rating if they are (next section but one).
 
 The ledger must never own or operate a provider's agent NFT, and neither may the verifier EOA:
 ERC-8004 rejects feedback from an agent's owner and operators. A contract test demonstrates the
@@ -273,6 +277,34 @@ Why they are shaped this way:
   ciphertext.
 - **A missing key turns a role off, never the broker.** `GET /api/network` reports each role's
   state (`ai`, `aiRoles`) and why a role is off.
+
+## Nansen wallet trust, and how it fails
+
+The broker buys wallet intelligence from Nansen per call, over x402 on Monad **mainnet**
+(`services/broker/src/trust/`, [docs/NANSEN.md](docs/NANSEN.md)). It is the one place the broker is
+itself a paying x402 client, and it is built like the buyers are: a client registered for exactly
+one network (`eip155:143`, mainnet USDC hard-coded rather than read from `networkConfig`, which an
+`XORV_STABLECOIN` override would change), spend controls, a price table checked before signing, and a
+daily budget whose reservations are released when a payment fails.
+
+| Use | When | When it fails |
+|---|---|---|
+| **Provider trust signal** (0–100) | on registration, in the background; refreshed by the sweep every 6 h (10 min when degraded) | registration never waits for it; a failed call leaves the score where it was; all calls failed = exactly 50, "no opinion" to the matcher |
+| **Wash-rating guard** | `POST /api/jobs/:id/rate`, after the payer's signature verifies, bounded to 12 s | a failed or slow lookup is recorded as `degraded` and the rating is relayed: only a proven link refuses |
+| **Matching tie-breaker** | every quote | an unknown wallet ranks as neutral; the nudge is at most ±0.1 on the 0–1 reliability scale, after price |
+
+Why it is shaped this way:
+
+- **Missing data is not evidence.** Most provider wallets exist only on Monad testnet, where Nansen
+  has nothing, and a wallet funded straight from an exchange has no first funder. Zero activity is
+  not penalised, and the badge says "No wallet history" rather than a low number.
+- **A shared funder is only a link when the funder is not a service.** Exchange hot wallets, bridge
+  relayers and faucets fund thousands of strangers, so two wallets sharing one are not related.
+- **Nansen charges before it validates**, so every request is validated locally and an invalid one
+  is never sent.
+- **What Nansen does not allow to be redistributed stays in the broker.** Smart-money membership only
+  nudges matching; related-wallet addresses are used for the check and never published. The public
+  view is built in one function (`publicTrustView`).
 
 ## Private jobs
 

@@ -79,6 +79,24 @@ exist.
 - Each role has a shared client, hard per-role deadlines, strict JSON validation, key redaction,
   metrics, and state reported on `/api/network`. A missing key turns a role off, never the broker.
 
+### Wallet trust with Nansen (new `services/broker/src/trust`)
+
+- The broker **pays Nansen per call** in USDC over x402 on Monad mainnet (`eip155:143`, the only
+  Monad row Nansen offers): only that network registered, mainnet USDC hard-coded, local request
+  validation before any paid call, a per-endpoint price table, a per-call cap, an optional pinned
+  payee and a daily budget with reservations released on failure. The settlement tx is kept with
+  each cached answer. `NANSEN_API_KEY` takes precedence when set.
+- A **0–100 trust score** per provider payout wallet (first funder, related wallets, Monad activity)
+  with written rules that never penalise missing data, on `/api/providers`, the new
+  `/api/providers/:id` and `/api/leaderboard`, and a tie-breaker in matching.
+- A **wash-rating guard**: a rating between related wallets (same wallet, one funded the other, a
+  shared non-exchange first funder, related wallets) is refused with 403 `related_wallets` before it
+  reaches ERC-8004, and the check is stored on the job.
+- `/api/network` reports Nansen's mode, calls, spend, budget and the last paid tx;
+  `pnpm nansen:probe` prints one lookup; `XORV_NANSEN_MODE=fixture` runs it all without network or
+  money. The app shows the trust badge, a provider page with the full panel and its Monad payment
+  links, the network page's *Wallet intelligence* panel, and the rating refusal.
+
 ### Provider CLI
 
 - viem and `@x402/evm` replace the Hiero SDK. The payout **address** is stored and the key is
