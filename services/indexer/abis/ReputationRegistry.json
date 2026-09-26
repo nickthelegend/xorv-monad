@@ -1,0 +1,43 @@
+[
+  {
+    "type": "event",
+    "name": "NewFeedback",
+    "anonymous": false,
+    "inputs": [
+      { "name": "agentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+      { "name": "clientAddress", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "feedbackIndex", "type": "uint64", "indexed": false, "internalType": "uint64" },
+      { "name": "value", "type": "int128", "indexed": false, "internalType": "int128" },
+      { "name": "valueDecimals", "type": "uint8", "indexed": false, "internalType": "uint8" },
+      { "name": "indexedTag1", "type": "string", "indexed": true, "internalType": "string" },
+      { "name": "tag1", "type": "string", "indexed": false, "internalType": "string" },
+      { "name": "tag2", "type": "string", "indexed": false, "internalType": "string" },
+      { "name": "endpoint", "type": "string", "indexed": false, "internalType": "string" },
+      { "name": "feedbackURI", "type": "string", "indexed": false, "internalType": "string" },
+      { "name": "feedbackHash", "type": "bytes32", "indexed": false, "internalType": "bytes32" }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "FeedbackRevoked",
+    "anonymous": false,
+    "inputs": [
+      { "name": "agentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+      { "name": "clientAddress", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "feedbackIndex", "type": "uint64", "indexed": true, "internalType": "uint64" }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "ResponseAppended",
+    "anonymous": false,
+    "inputs": [
+      { "name": "agentId", "type": "uint256", "indexed": true, "internalType": "uint256" },
+      { "name": "clientAddress", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "feedbackIndex", "type": "uint64", "indexed": false, "internalType": "uint64" },
+      { "name": "responder", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "responseURI", "type": "string", "indexed": false, "internalType": "string" },
+      { "name": "responseHash", "type": "bytes32", "indexed": false, "internalType": "bytes32" }
+    ]
+  }
+]

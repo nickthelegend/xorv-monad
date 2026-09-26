@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+#
+# Xorv indexer, Monad TESTNET (chain 10143). This is the default config: `envio dev`,
+# `envio codegen` and Envio Cloud all read config.yaml unless told otherwise.
+# config.mainnet.yaml is the same indexer pointed at Monad mainnet (chain 143).
+#
+# Three contracts feed one schema:
+#   XorvLedger          our receipts contract: provider registry, heartbeats, x402 job
+#                       receipts and buyer ratings (packages/contracts, SPEC §4)
+#   IdentityRegistry    ERC-8004 v2.0.0 singleton: every agent on Monad, its owner,
+#                       agentURI and agentWallet (the address XorvLedger checks payTo against)
+#   ReputationRegistry  ERC-8004 v2.0.0 singleton: every feedback entry, including the
+#                       buyer ratings XorvLedger relays and the Kimi verifier's scores
+#
+# The env placeholders below are interpolated at codegen/start time (even inside
+# comments, so never write the dollar-brace syntax in a comment here). Envio Cloud only
+# forwards variables prefixed with ENVIO_, which is why none of them reuse the broker's
+# XORV_* names.
+name: xorv-indexer
+description: Xorv x402 job receipts, provider registry and ERC-8004 identity/reputation on Monad
+
+# The app and broker look entities up by address. Checksummed ids would force every
+# caller to checksum before an `_eq` filter; lowercase makes "lowercase it" the one rule.
+address_format: lowercase
+
+contracts:
+  - name: XorvLedger
+    abi_file_path: ./abis/XorvLedger.json
+    events:
+      - event: ProviderRegistered
+      - event: ProviderHeartbeat
+      - event: JobRecorded
+      - event: JobRated
+      - event: BrokerSet
+      - event: OwnershipTransferred
+  - name: IdentityRegistry
+    abi_file_path: ./abis/IdentityRegistry.json
+    events:
+      - event: Registered
+      - event: URIUpdated
+      # Only the reserved "agentWallet" key matters to us (the handler ignores the rest):
+      # it is the payee XorvLedger.recordJobs enforces, and a transfer clears it.
+      - event: MetadataSet
+      - event: Transfer
+  - name: ReputationRegistry
+    abi_file_path: ./abis/ReputationRegistry.json
+    events:
+      - event: NewFeedback
+      - event: FeedbackRevoked
+      - event: ResponseAppended
+
+chains:
+  - id: 10143 # Monad testnet, HyperSync https://monad-testnet.hypersync.xyz (first-class)
+    start_block: 0
+    rpc:
+      # Fallback only; HyperSync is the primary source. Monad's public RPC caps
+      # eth_getLogs at 100 blocks, so point this at a better RPC if you rely on it.
+      - url: ${ENVIO_MONAD_RPC_URL:-https://testnet-rpc.monad.xyz}
+        for: fallback
+    contracts:
+      - name: XorvLedger
+        # Set both from packages/contracts/deployments/monadTestnet.json (address,
+        # blockNumber). Keep the start block at or before the deploy block: the
+        # constructor's BrokerSet is how the indexer learns which address is the
+        # trusted verifier (ENVIO_XORV_VERIFIER_ADDRESSES covers a later start).
+        address: "${ENVIO_XORV_LEDGER_ADDRESS:-0x0000000000000000000000000000000000000000}"
+        start_block: ${ENVIO_XORV_LEDGER_START_BLOCK:-null}
+      - name: IdentityRegistry
+        address: "0x8004A818BFB912233c491871b3d84c89A494BD9e"
+        start_block: ${ENVIO_ERC8004_START_BLOCK:-null}
+      - name: ReputationRegistry
+        address: "0x8004B663056A597Dffe9eCcC1965A193B7388713"
+        start_block: ${ENVIO_ERC8004_START_BLOCK:-null}
