@@ -56,7 +56,7 @@ const CLAIMS = [
 export function Earn() {
   return (
     <Section id="earn" className="border-t border-[var(--line)]">
-      <div className="grid gap-14 lg:grid-cols-[1fr_1fr] lg:items-start lg:gap-20">
+      <div className="grid grid-cols-1 gap-14 lg:grid-cols-2 lg:items-start lg:gap-20">
         <div>
           <Reveal>
             <h2 className="display-sm text-balance">From idle quota to income in five commands</h2>
