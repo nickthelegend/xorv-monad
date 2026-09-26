@@ -31,6 +31,23 @@ xorv identity show   # agent #<id>, and its agent wallet "· matches payout"
 xorv start           # leave it running; it must show "ERC-8004 agent #<id>"
 ```
 
+**Nansen**
+
+```bash
+curl -s $BROKER/api/network | jq .nansen
+# mode "live", auth "x402", a payer address, lastError null. After the demo provider registered,
+# callsToday ≥ 3 and lastPaidTx is a monadscan.com (mainnet) link: open it once, it must show USDC
+# from the payer to Nansen.
+curl -s $BROKER/api/providers | jq '.providers[0].trust | {score, band, firstFunder, paidUsdc}'
+```
+
+The payer is a separate Monad **mainnet** key with about $2 of USDC (`XORV_NANSEN_PAYER_KEY`). For
+the refused-rating shot, stage a buyer wallet that the provider funded **on Monad mainnet** (send it
+a little MON from the payout address) and pay one testnet job from it before recording; confirm
+the link with `pnpm nansen:probe --mode live <payout> <buyer>` ("related? YES"). If you have no
+mainnet funds, run that shot with `XORV_NANSEN_MODE=fixture` and
+`XORV_NANSEN_FIXTURE_CLUSTER=<buyer>,<payout>`, and say it is fixture data.
+
 `xorv` means `node packages/cli/dist/index.js` unless you ran `pnpm link --global` in
 `packages/cli`. The provider should sell at least two adapters under the demo ceiling, for example
 `qwen` and `kimi` (API keys, fast and reliable) plus `claude-code`. Qwen only routes when there is a
@@ -137,7 +154,20 @@ curl -s "$XORV_INDEXER_URL" -H 'content-type: application/json' -d '{"query":"{ 
 > success rates and reputation, split by who wrote it: buyer ratings, verifier scores, everything
 > else. This page, the leaderboard and the landing page all read it."
 
-### 1:45–1:57 · The provider side, with an on-chain identity
+### 1:45–2:00 · Nansen: trust a provider can't buy from itself
+
+[App → **Providers**. The provider's row shows the Nansen badge (`● Trust 84`), the wallet's age, its
+first funder, and "Xorv paid Nansen $0.03 over x402 on Monad". Click **details** → the provider page's
+*Wallet trust* panel. Click one payment link: monadscan.com (mainnet) shows the USDC transfer from the
+broker's payer to Nansen. Then the staged tab: a job paid by the wallet the provider funded. Click five
+stars and sign → **Rating refused** with Nansen's reason.]
+
+> "Every provider's payout wallet is scored with Nansen: how old it is, who funded it, what it does on
+> Monad. The broker buys that itself, a cent per call in USDC over x402, on Monad. The score breaks
+> ties in matching, and it stops wash ratings: this buyer wallet was funded by the provider, so the
+> broker refuses the rating before anything reaches ERC-8004."
+
+### 2:00–2:10 · The provider side, with an on-chain identity
 
 [Terminal with `xorv start` running: the live dashboard with the job just counted, then
 `xorv identity show` in a second pane.]
@@ -146,7 +176,7 @@ curl -s "$XORV_INDEXER_URL" -H 'content-type: application/json' -d '{"query":"{ 
 > is bound to its payout address, and the contract refuses to credit that identity for any payment
 > that went somewhere else."
 
-### 1:57–2:15 · An agent pays with MetaMask
+### 2:10–2:25 · An agent pays with MetaMask
 
 [Terminal:]
 
@@ -161,7 +191,7 @@ the result and the receipt link.]
 > "Agents can buy too. This is our MetaMask Agent Wallet plugin. MetaMask signs the same USDC
 > authorization under its own policy, and the plugin checks the quote before it even asks."
 
-### 2:15–2:52 · A private job, decrypted on a second device (Mera)
+### 2:25–2:55 · A private job, decrypted on a second device (Mera)
 
 [Browser A, composer: switch on **Private job**. Type a prompt and press ↑. Confirm the passkey
 prompts. The quote card reads *Private — the answer is sealed to your inbox key*. Pay with Privy.
@@ -177,12 +207,12 @@ read** → the same answer decrypts.]
 > "A different device, nothing copied across, only my synced passkey. Same keys, same history, same
 > answer."
 
-### 2:52–3:00 · Close
+### 2:55–3:00 · Close
 
 [Back to the network page, or the landing page's ledger.]
 
-> "Pay per job on Monad, a receipt for every job, and reputation that only paying buyers can write.
-> Xorv."
+> "Pay per job on Monad, a receipt for every job, and reputation that only independent, paying
+> buyers can write. Xorv."
 
 ### Optional cutaways (only if the take runs short)
 
@@ -207,6 +237,9 @@ For the Mera bounty's live cross-device test, a longer standalone cut (about 75 
 | Rating says "receipt is not on-chain yet" | receipt batch still pending (4 s) | wait a few seconds and click again |
 | Network page says "broker stats", not Envio | `XORV_INDEXER_URL` unset or the indexer is down | check the Envio deployment |
 | Passkey prompt says PRF unavailable | the browser or passkey manager lacks PRF | Chrome/Edge/Safari 18+ with a synced passkey |
+| No trust badge on the provider | `XORV_NANSEN_MODE` off, or the lookup failed | `/api/network` → `nansen.mode`, `nansen.lastError`; a failed lookup is retried within 10 minutes |
+| Badge says "No wallet history" | the payout wallet has no mainnet history (testnet-only) | expected and not a penalty; for the shot, use a payout wallet with some mainnet history |
+| The staged rating goes through | Nansen doesn't link the two wallets yet | `pnpm nansen:probe --mode live <payout> <buyer>`; fall back to the fixture cluster and say so |
 
 ---
 
@@ -232,8 +265,9 @@ other video.
 > "Xorv fixes all three. A buyer signs one USDC authorization and it settles on Monad, directly to
 > the provider, before the job starts. Every job is receipted on-chain. Reputation lives in
 > ERC-8004, where only a buyer who actually paid can rate a job, and Kimi independently verifies
-> the answer and writes its score there too. Hunyuan screens every prompt to protect the providers,
-> and Qwen routes each job to the right model. Buyers can be people with a Privy wallet, agents
+> the answer and writes its score there too, and Nansen's wallet data stops a provider rating
+> itself from a second wallet. Hunyuan screens every prompt to protect the providers, and Qwen
+> routes each job to the right model. Buyers can be people with a Privy wallet, agents
 > over MCP, or MetaMask's Agent Wallet. With Mera, the answer can even be encrypted to your
 > passkey."
 

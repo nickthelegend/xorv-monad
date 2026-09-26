@@ -92,7 +92,8 @@ The score, as rules (`signal.ts` `TRUST_RULES`):
 **Missing data never costs a provider anything.** Most provider wallets have no Monad mainnet
 history at all (Xorv runs on testnet), and a wallet credited straight from an exchange has no first
 funder on record. There is no penalty for zero activity. A call that fails leaves the score where it
-was and marks the signal `degraded`. When every call fails the score is exactly 50, the badge says
+was and marks the signal `degraded`; a degraded signal is retried after 10 minutes, re-buying only
+the call that failed. When every call fails the score is exactly 50, the badge says
 "No wallet history" rather than showing a number, and the matcher treats the provider as unknown.
 
 ## 4. The wash-rating guard
