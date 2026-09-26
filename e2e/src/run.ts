@@ -55,6 +55,7 @@ import { cleanEnv, sealedBrokerEnv } from "./env.js";
 import { BLOCK_MARKER, VERIFIER_SCORE, answerToken, startMockLlm, type MockLlm } from "./mock-llm.js";
 import {
   agentState,
+  expectedSummary,
   ledgerJobState,
   readFeedback,
   readLedgerEvents,
@@ -737,12 +738,22 @@ async function main(): Promise<void> {
     }
     report.equal("cli: rating feedbackHash is what the buyer signed", starred.find((x) => x.feedbackURI.endsWith(`/feedback/${jobs.cli.id}.json`))?.feedbackHash, cliRating.feedbackHash);
 
-    const rated = await reputationSummary(fork.client, REPUTATION, agentId, [ledger.address], "starred");
-    report.equal('getSummary([ledger], "starred").count', rated.count, 2n);
-    report.check('getSummary([ledger], "starred") averages the two ratings', rated.average !== null && Math.abs(rated.average - (CLI_RATING + MCP_RATING) / 2) < 0.01, `average ${rated.average}`);
-    const scored = await reputationSummary(fork.client, REPUTATION, agentId, [parties.operator.address], "xorv-verified");
-    report.equal('getSummary([verifier], "xorv-verified").count', scored.count, 2n);
-    report.check('getSummary([verifier], "xorv-verified") average', scored.average !== null && Math.abs(scored.average - VERIFIER_SCORE) < 0.01, `average ${scored.average}`);
+    // The registry's own summaries, against the same arithmetic over the events read above
+    // (whole-number ratings average with truncation: 87 and 64 give 75).
+    const summaries = [
+      ["ledger", ledger.address, "starred", starred.filter((f) => f.client === ledger.address)],
+      ["verifier", parties.operator.address, "xorv-verified", verified.filter((f) => f.client === parties.operator.address)],
+    ] as const;
+    for (const [who, client, tag1, entries] of summaries) {
+      const summary = await reputationSummary(fork.client, REPUTATION, agentId, [client], tag1);
+      const expected = expectedSummary([...entries]);
+      report.equal(`getSummary([${who}], "${tag1}").count`, summary.count, 2n);
+      report.equal(
+        `getSummary([${who}], "${tag1}") is the registry's mean of those NewFeedback values`,
+        `${summary.value} (${summary.decimals} decimals)`,
+        `${expected.value} (${expected.decimals} decimals)`,
+      );
+    }
     const clients = await fork.client.readContract({ address: REPUTATION, abi: REPUTATION_ABI, functionName: "getClients", args: [agentId] });
     report.check("getClients lists XorvLedger and the verifier", [ledger.address, parties.operator.address].every((a) => clients.map((c) => getAddress(c)).includes(a)), clients.join(", "));
   });

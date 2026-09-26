@@ -41,7 +41,8 @@ buyer never holds MON.
 - **ERC-8004:** the agent's owner and wallet are the payout address and its URI resolves to a registration
   file pointing back at it; Kimi's `NewFeedback` (tag1 `xorv-verified`, client = verifier EOA) and each
   buyer rating's `NewFeedback` (tag1 `starred`, client = XorvLedger) on the canonical Reputation Registry;
-  the served feedback files hash to the on-chain `feedbackHash`; `getSummary` averages match.
+  the served feedback files hash to the on-chain `feedbackHash`; `getSummary` returns the registry's own
+  (truncating, integer) mean of exactly those entries.
 - **Ratings:** a stranger's signature is refused (401) before any gas is spent; the buyer's EIP-712
   signature is relayed.
 - **Private jobs:** the broker only ever holds the sealed envelope — the buyer's inbox key opens it to the
@@ -54,7 +55,7 @@ The last green run's report is committed as [last-run.md](last-run.md).
 
 ## Prerequisites
 
-- Node ≥ 22.13 and pnpm, `pnpm install && pnpm build` done.
+- Node ≥ 22.18 and pnpm, `pnpm install && pnpm build` done.
 - **Network access to the Monad testnet RPC** (`https://testnet-rpc.monad.xyz`): the fork reads contract
   state from it lazily throughout the run. The public RPC rate-limits; a private one is faster.
 - About 1.5 GB of free memory (the fork node is the largest process).

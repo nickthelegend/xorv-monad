@@ -113,14 +113,40 @@ export async function reputationSummary(
   agentId: bigint,
   clients: Address[],
   tag1: string,
-): Promise<{ count: bigint; value: bigint; decimals: number; average: number | null }> {
+): Promise<{ count: bigint; value: bigint; decimals: number }> {
   const [count, value, decimals] = await client.readContract({
     address: reputation,
     abi: REPUTATION_ABI,
     functionName: "getSummary",
     args: [agentId, clients, tag1, ""],
   });
-  return { count, value, decimals, average: count === 0n ? null : Number(value) / 10 ** decimals };
+  return { count, value, decimals };
+}
+
+/**
+ * What `getSummary` must return for these feedback entries, computed the way
+ * the ERC-8004 v2 Reputation Registry does: every value normalized to 18
+ * decimals, the mean taken in integers (truncating), then scaled down to the
+ * most common `valueDecimals`. Ratings are whole numbers (decimals 0), so 87
+ * and 64 summarize to 75, not 75.5 — a float comparison would call the
+ * registry wrong.
+ */
+export function expectedSummary(entries: Feedback[]): { count: bigint; value: bigint; decimals: number } {
+  if (entries.length === 0) return { count: 0n, value: 0n, decimals: 0 };
+  const WAD_DECIMALS = 18;
+  const counts = new Array<number>(WAD_DECIMALS + 1).fill(0);
+  let sum = 0n;
+  for (const f of entries) {
+    const decimals = Math.min(f.valueDecimals, WAD_DECIMALS);
+    sum += f.value * 10n ** BigInt(WAD_DECIMALS - decimals);
+    counts[decimals]!++;
+  }
+  // The first most frequent precision wins, as in the registry's loop.
+  let mode = 0;
+  for (let d = 0; d <= WAD_DECIMALS; d++) if (counts[d]! > counts[mode]!) mode = d;
+  const count = BigInt(entries.length);
+  // BigInt division truncates toward zero, like Solidity's signed division.
+  return { count, value: sum / count / 10n ** BigInt(WAD_DECIMALS - mode), decimals: mode };
 }
 
 export async function agentState(client: PublicClient, identity: Address, agentId: bigint) {
