@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { PRIVY_APP_ID, WalletProvider } from "@/components/wallet-provider";
+import { PrivateKeysProvider } from "@/components/private-keys";
 import { APP_CHAIN } from "@/lib/network";
 
 /**
@@ -24,7 +25,10 @@ import { APP_CHAIN } from "@/lib/network";
  * account.
  */
 export function Providers({ children }: { children: ReactNode }) {
-  if (!PRIVY_APP_ID) return <WalletProvider>{children}</WalletProvider>;
+  // The private-job keyring sits inside the wallet but is independent of it:
+  // Privy pays, the passkey only derives encryption keys.
+  const inner = <PrivateKeysProvider>{children}</PrivateKeysProvider>;
+  if (!PRIVY_APP_ID) return <WalletProvider>{inner}</WalletProvider>;
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
@@ -43,7 +47,7 @@ export function Providers({ children }: { children: ReactNode }) {
         supportedChains: [APP_CHAIN],
       }}
     >
-      <WalletProvider>{children}</WalletProvider>
+      <WalletProvider>{inner}</WalletProvider>
     </PrivyProvider>
   );
 }

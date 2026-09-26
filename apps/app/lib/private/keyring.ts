@@ -73,7 +73,19 @@ export class PrivateKeyring {
   /** Ceremonies run one at a time; a second click joins the first. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly env: PasskeyEnv) {}
+  private resolvedEnv: PasskeyEnv | null = null;
+
+  /**
+   * `env` may be a thunk so a keyring can be created during server rendering
+   * (where there is no `window` to read the relying party from) and only
+   * resolve it at the first ceremony, in the browser.
+   */
+  constructor(private readonly envSource: PasskeyEnv | (() => PasskeyEnv)) {}
+
+  private get env(): PasskeyEnv {
+    this.resolvedEnv ??= typeof this.envSource === "function" ? this.envSource() : this.envSource;
+    return this.resolvedEnv;
+  }
 
   // -- observation (useSyncExternalStore-shaped) ------------------------------
 
