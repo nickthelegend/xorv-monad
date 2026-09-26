@@ -1,0 +1,28 @@
+# Build context for the broker image (Dockerfile). An allowlist: the image
+# needs the workspace manifests, the lockfile and two packages, nothing else.
+#
+# Without this file the whole checkout is sent to the daemon — every
+# node_modules (gigabytes, and on Windows full of junctions that don't survive
+# the trip), the apps, the videos, and a root .env holding real keys — and a
+# host-built services/broker/node_modules would be copied over the Linux one
+# the image just installed.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!tsconfig.base.json
+!packages/protocol/
+!services/broker/
+
+# Re-excluded inside the allowed packages: host installs and builds (the image
+# makes its own), tests, and anything that looks like a secret or local state.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/test
+**/coverage
+**/.env
+**/.env.*
+**/data
+**/*.db
