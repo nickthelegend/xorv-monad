@@ -27,9 +27,11 @@ import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import type { FacilitatorClient } from "@x402/core/server";
 import {
   buyerX402Client,
+  deriveInboxKeys,
   jobIdHash,
   providerIdHash,
   ratingMessage,
+  sealResult,
   textHash,
   type LedgerEvent,
   type LedgerEventKind,
@@ -1664,14 +1666,18 @@ describe("AI roles", () => {
     ai = await boot({ ai: s.ai });
     ai.agentWallets.set("7", PAYEE_A);
     const provider = await connectProvider(ai, { agentId: "7" });
-    const { body: q } = await quoteWith(ai, { prompt: "a secret", encryptTo: "q".repeat(43) });
+    // A real inbox key and a really sealed result: the broker validates the
+    // key at quote time and refuses plaintext results for private jobs.
+    const inbox = deriveInboxKeys(Uint8Array.from({ length: 32 }, (_, i) => (i * 7 + 3) & 0xff));
+    const { body: q } = await quoteWith(ai, { prompt: "a secret", encryptTo: inbox.encryptTo });
     const { body: paid } = await pay(ai, q.quoteId);
-    await provider.completeNextJob("ciphertext-not-plaintext");
+    const sealed = sealResult(inbox.encryptTo, "the private answer", paid.jobId);
+    await provider.completeNextJob(sealed);
     const done = await waitForStatus(ai, paid.jobId, "completed");
     // Give a (wrongly) scheduled verification every chance to show up.
     await new Promise((r) => setTimeout(r, 200));
     expect((await getJob(ai, paid.jobId)).verification).toBeNull();
-    expect(done.result).toBe("ciphertext-not-plaintext");
+    expect(done.result).toBe(sealed);
     expect(s.calls.verify).toHaveLength(0);
     expect(s.feedback.writes).toHaveLength(0);
     provider.close();

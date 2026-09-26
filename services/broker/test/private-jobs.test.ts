@@ -34,7 +34,6 @@ import {
   signVaultWrite,
   textHash,
   toBase64Url,
-  type JobVerification,
   type LedgerEventKind,
 } from "@xorv/protocol";
 
@@ -47,6 +46,7 @@ import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { openPersistence } from "../src/store.js";
 import { VaultStore } from "../src/vaults.js";
+import type { VerificationRecord } from "../src/ai/types.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -176,7 +176,16 @@ async function boot(opts: { vaults?: VaultStore } = {}): Promise<Harness> {
   const registry = new Registry();
   const jobs = new JobStore();
   const verify = vi.fn(
-    async (): Promise<JobVerification> => ({ by: "kimi", model: "kimi-k3", score: 90, pass: true, rationale: "fine" }),
+    async (): Promise<VerificationRecord> => ({
+      by: "kimi",
+      model: "kimi-k3",
+      score: 90,
+      pass: true,
+      rationale: "fine",
+      ms: 1,
+      flags: [],
+      at: Date.now(),
+    }),
   );
   let hub: Hub | null = null;
   const { app, hubHandlers } = createApp({
@@ -188,7 +197,13 @@ async function boot(opts: { vaults?: VaultStore } = {}): Promise<Harness> {
     facilitator: stubFacilitator(),
     ledgerReader: new StubReader(),
     agentWallet: async () => null,
-    ai: { verifier: { info: { by: "kimi", model: "kimi-k3" }, verify } },
+    ai: {
+      verifier: {
+        info: { by: "kimi", model: "kimi-k3", enabled: true, provider: "kimi", label: "Kimi K3", timeoutMs: 20_000 },
+        timeoutMs: 20_000,
+        verify,
+      },
+    },
     vaults: opts.vaults,
   });
   const server = serve({ fetch: app.fetch, port: 0 }) as unknown as Server;
