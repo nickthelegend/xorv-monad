@@ -201,6 +201,8 @@ function StatusLine({ network }: { network: Feed<NetworkSnapshot | null> }) {
             providers
             {network.failed ? <span className="text-fg-4"> · last read, reconnecting</span> : null}
           </>
+        ) : network.data ? (
+          "broker online"
         ) : (
           "reading the network…"
         )}
@@ -249,12 +251,10 @@ function ReceiptItem({ receipt }: { receipt: ReceiptRow }) {
     <li className="grid gap-x-4 gap-y-1 py-3.5 sm:grid-cols-[1fr_auto] sm:items-baseline">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1">
         <span className="inline-flex items-baseline gap-2">
-          <span
-            aria-label={receipt.ok === false ? "failed" : "completed"}
-            className={cn("text-[11px]", receipt.ok === false ? "text-fail" : "text-fg-3")}
-          >
+          <span aria-hidden className={cn("text-[11px]", receipt.ok === false ? "text-fail" : "text-fg-3")}>
             {receipt.ok === false ? "✕" : "✓"}
           </span>
+          <span className="sr-only">{receipt.ok === false ? "Failed job" : "Completed job"}</span>
           <span className="mono text-[12.5px] text-fg">{job}</span>
         </span>
         <span className="mono text-[12px] text-fg-4">
