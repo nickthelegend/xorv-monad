@@ -1,14 +1,14 @@
 {
   "name": "xorv",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Xorv \u2014 a decentralized AI capacity network. Rent out your idle Claude/Codex/Grok subscription, get paid per job in USDC over x402 on Hedera.",
+  "description": "Xorv — a decentralized AI capacity network on Monad. Rent out your idle Claude/Codex/Qwen/Kimi capacity, get paid per job in USDC over x402, with ERC-8004 identity and payment-backed reputation.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
-  "homepage": "https://github.com/nickthelegend/xorv#readme",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv.git"
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git"
   },
   "type": "module",
   "engines": {
@@ -23,19 +23,24 @@
     "broker": "pnpm --filter @xorv/broker dev",
     "app": "pnpm --filter xorv-app dev",
     "landing": "pnpm --filter xorv-landing dev",
-    "cli": "pnpm --filter xorv dev",
-    "setup:hedera": "pnpm --filter @xorv/broker setup",
-    "demo": "pnpm --filter @xorv/broker demo",
+    "cli": "pnpm --filter @xorv/cli dev",
     "mcp": "pnpm --filter @xorv/mcp dev",
+    "setup:monad": "pnpm --filter @xorv/broker setup",
+    "deploy:ledger": "pnpm --filter @xorv/contracts deploy:testnet",
+    "privy:setup": "pnpm --filter @xorv/mcp privy:setup",
     "usdc": "pnpm --filter @xorv/broker usdc"
   },
   "keywords": [
     "x402",
-    "hedera",
+    "monad",
     "usdc",
+    "erc-8004",
     "ai-agents",
     "micropayments",
     "claude-code",
+    "privy",
+    "envio",
+    "metamask",
     "marketplace",
     "agentic-payments"
   ]

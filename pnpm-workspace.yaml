@@ -1,12 +1,12 @@
 packages:
   - "packages/*"
   - "services/*"
+  # The Envio indexer ships Linux/macOS binaries only, so it keeps its own
+  # lockfile and installs from WSL, Docker or CI rather than from this workspace.
   - "!services/indexer"
   - "apps/*"
 
-# The Hiero SDK ships protobuf builders that run on install.
+# Native build steps allowed to run on install.
 onlyBuiltDependencies:
-  - protobufjs
-  - "@hiero-ledger/proto"
   - esbuild
   - sharp
