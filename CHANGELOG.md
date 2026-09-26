@@ -152,11 +152,22 @@ exist.
 - The sandbox's deny rules missed a relocated `XORV_HOME`.
 - Receipts are now queued from every path that finishes a job (an old comment claimed the settle hook
   did it).
+- The provider node credited itself the quoted price for every job, with no settlement transaction,
+  including a job reassigned to it after the paid provider failed it. Dispatches now carry the job's
+  settlement, and the node credits the settled amount (with its transaction) only when it was the
+  payee. Found by the e2e harness.
+- `xorv start` off a terminal (systemd, Docker, output to a file) printed its status footer once a
+  second and nothing about jobs. It now prints each node event once. Found by the e2e harness.
 
 ### Quality
 
 - The root test count and a per-package breakdown are in the README ("For judges"). None of the
   tests need keys or a network.
+- **`pnpm e2e`** (new `e2e/`) runs the whole system against real contract code: a local fork of
+  Monad testnet (Hardhat 3 EDR) with Circle's real USDC and the canonical ERC-8004 registries,
+  XorvLedger deployed by its own script, the built broker, a real provider node, `xorv run --json`,
+  the MCP server and a private job, with every claim read back off the fork. The last green report is
+  committed as `e2e/last-run.md`.
 - CI builds before typechecking and runs every suite on Node 22 and 24, plus the CLI's Node 20.11
   floor and the committed-secret scan.
 
