@@ -11,6 +11,7 @@ import { useDemoPayer, useNetworkInfo } from "@/lib/hooks";
 import { CHAIN_CONFIG, IS_TESTNET, NETWORK } from "@/lib/network";
 import { PaymentError, classifyPaymentError, payQuote, payableQuote, type PaymentFailureKind } from "@/lib/x402-pay";
 import { EASE, useEntrance } from "@/lib/motion";
+import { describeRouting, describeScreening, roleLabel } from "@/lib/ai";
 import { cn } from "@/lib/utils";
 
 /**
@@ -69,7 +70,7 @@ export function Composer() {
   // the cheapest live provider when it doesn't. The hint says which.
   const aiRouter = info?.ai.router ?? null;
   const models: ModelOption[] = [
-    { id: "", label: "Auto", hint: aiRouter ? `${aiRouter.model} routes` : "cheapest" },
+    { id: "", label: "Auto", hint: aiRouter ? `${roleLabel(aiRouter) ?? aiRouter.model} routes` : "cheapest" },
     ...ADAPTERS,
   ];
 
@@ -364,16 +365,13 @@ export function Composer() {
                 <div className="mt-3 space-y-1 border-t border-[var(--line)] pt-3 text-[11.5px] leading-relaxed text-fg-4">
                   {quote.screening ? (
                     <p>
-                      <span className="mono text-fg-3">{quote.screening.model}</span> screened the prompt:{" "}
-                      {quote.screening.verdict === "allow" ? "allowed" : "blocked"}
-                      {quote.screening.reason ? ` — ${quote.screening.reason}` : ""}
+                      {describeScreening(quote.screening)}{" "}
+                      <span className="mono text-fg-4">· {quote.screening.model}</span>
                     </p>
                   ) : null}
                   {quote.routing ? (
                     <p>
-                      <span className="mono text-fg-3">{quote.routing.model}</span> routed it
-                      {quote.routing.adapter ? ` to ${quote.routing.adapter}` : ""}
-                      {quote.routing.reason ? ` — ${quote.routing.reason}` : ""}
+                      {describeRouting(quote.routing)} <span className="mono text-fg-4">· {quote.routing.model}</span>
                     </p>
                   ) : null}
                 </div>

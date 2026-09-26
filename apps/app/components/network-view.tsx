@@ -13,6 +13,7 @@ import {
   type LedgerJobReceipt,
 } from "@xorv/protocol/web";
 import { api, formatUsd, type Leaderboard, type LedgerEvent, type NetworkInfo } from "@/lib/api";
+import { aiRoles, describeLatency, type AiRoleName } from "@/lib/ai";
 import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import { valueToStars } from "@/lib/rating";
@@ -127,7 +128,7 @@ export function NetworkView() {
         ) : null}
       </Panel>
 
-      {info ? <AiRoles ai={info.ai} /> : null}
+      {info ? <AiRoles info={info} /> : null}
 
       <section>
         <div className="mb-3 flex items-center justify-between">
@@ -220,25 +221,80 @@ export function NetworkView() {
   );
 }
 
-function AiRoles({ ai }: { ai: NetworkInfo["ai"] }) {
-  const roles: Array<{ label: string; what: string; role: NetworkInfo["ai"]["router"] }> = [
-    { label: "screener", what: "checks each prompt before a provider sees it", role: ai?.screener ?? null },
-    { label: "router", what: "picks the adapter when the buyer chooses Auto", role: ai?.router ?? null },
-    { label: "verifier", what: "scores results and writes ERC-8004 feedback", role: ai?.verifier ?? null },
+/**
+ * The three sponsor models in the job loop, and their state right now. Each
+ * row names the exact model, what it decides, how fast it has been, and —
+ * when a role is off — why, because "off" alone doesn't tell an operator
+ * which key to set.
+ */
+function AiRoles({ info }: { info: NetworkInfo }) {
+  const state = aiRoles(info);
+  const roles: Array<{ name: AiRoleName; label: string; what: string }> = [
+    { name: "screener", label: "Screener", what: "checks every prompt for abuse aimed at provider machines, before a quote exists" },
+    { name: "router", label: "Router", what: "reads the prompt and picks the adapter when the buyer chooses Auto" },
+    { name: "verifier", label: "Verifier", what: "scores every result and writes it to ERC-8004 as reputation" },
   ];
   return (
     <Panel className="p-5">
       <h2 className="text-[13px] font-medium text-fg">AI roles</h2>
+      <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
+        Three models take a turn on every job. A role that is slow or down never blocks one: the router falls back
+        to the price matcher and the verifier simply skips.
+      </p>
       <div className="mt-3 border-t border-[var(--line)]">
-        {roles.map(({ label, what, role }) => (
-          <div key={label} className="flex items-baseline justify-between gap-4 border-b border-[var(--line)] py-2.5 last:border-b-0">
-            <div className="min-w-0">
-              <p className="text-[12.5px] capitalize text-fg-2">{label}</p>
-              <p className="text-[11.5px] text-fg-4">{what}</p>
+        {roles.map(({ name, label, what }) => {
+          const role = state[name];
+          const latency = describeLatency(role.stats);
+          const feedback = name === "verifier" && role.enabled ? role.feedback : undefined;
+          return (
+            <div key={name} className="border-b border-[var(--line)] py-3 last:border-b-0">
+              <div className="flex items-baseline justify-between gap-4">
+                <p className="text-[12.5px] text-fg-2">{label}</p>
+                {role.enabled ? (
+                  <span className="shrink-0 text-right text-[12px] text-fg-2">
+                    {role.label} <span className="mono text-[11.5px] text-fg-4">{role.model}</span>
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-[12px] text-fg-4">off</span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-fg-4">{what}</p>
+              {role.enabled ? (
+                <p className="mt-1 text-[11.5px] leading-relaxed text-fg-4">
+                  {[
+                    latency,
+                    role.timeoutMs ? `${role.timeoutMs / 1_000} s limit` : null,
+                    name === "screener" && role.failMode
+                      ? role.failMode === "open"
+                        ? "fails open (marked unscreened)"
+                        : "fails closed"
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              ) : role.reason && role.reason !== "off" ? (
+                <p className="mt-1 break-words text-[11.5px] leading-relaxed text-fg-4">{role.reason}</p>
+              ) : null}
+              {feedback ? (
+                <p className="mt-1 break-words text-[11.5px] leading-relaxed text-fg-4">
+                  {feedback.onChain && feedback.address ? (
+                    <>
+                      writes <span className="mono">{feedback.tag1}</span> feedback as{" "}
+                      <Ext href={explorerAddress(NETWORK, feedback.address)}>{shortHex(feedback.address)} ↗</Ext>
+                      {feedback.published > 0 ? ` · ${feedback.published} written` : ""}
+                    </>
+                  ) : (
+                    `scores stay off-chain${feedback.reason ? `: ${feedback.reason}` : ""}`
+                  )}
+                </p>
+              ) : null}
+              {role.enabled && role.stats?.lastError ? (
+                <p className="mt-1 break-words text-[11.5px] leading-relaxed text-warn">last failure: {role.stats.lastError}</p>
+              ) : null}
             </div>
-            <span className="mono shrink-0 text-[12px] text-fg-2">{role ? `${role.by} · ${role.model}` : "off"}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Panel>
   );
