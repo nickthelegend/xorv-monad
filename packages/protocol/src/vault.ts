@@ -43,9 +43,10 @@ import { PRF_NAMESPACES, SealedError, fromBase64Url, toBase64Url } from "./seale
 /**
  * Largest vault ciphertext the broker keeps, in decoded bytes. A history entry
  * is a prompt plus a few ids, so this holds hundreds of jobs; the cap exists
- * so an unauthenticated-looking PUT can't turn the broker into free storage.
+ * so a vault can't turn the broker into free storage. 176 KiB is ~240 KB of
+ * base64url, which keeps a full write inside the broker's 256 KB body limit.
  */
-export const VAULT_MAX_CIPHERTEXT_BYTES = 192 * 1024;
+export const VAULT_MAX_CIPHERTEXT_BYTES = 176 * 1024;
 
 /** Entries kept in the history; the oldest fall off first. */
 export const VAULT_MAX_ENTRIES = 500;
@@ -175,7 +176,11 @@ export function signVaultWrite(seed: Uint8Array, vaultId: string, blob: VaultCip
   return { ...blob, signature: toBase64Url(signature), publicKey: toBase64Url(publicKey) };
 }
 
-export type VaultWriteCheck = { ok: true } | { ok: false; reason: string };
+/**
+ * `forbidden` separates "you may not write this vault" (wrong key, bad
+ * signature: 403) from "this is not a well-formed write" (400).
+ */
+export type VaultWriteCheck = { ok: true } | { ok: false; reason: string; forbidden: boolean };
 
 /**
  * Everything the broker checks before storing a write, except the version
@@ -183,28 +188,28 @@ export type VaultWriteCheck = { ok: true } | { ok: false; reason: string };
  * same one runs anywhere.
  */
 export function verifyVaultWrite(vaultId: string, write: Partial<VaultWrite> | null | undefined): VaultWriteCheck {
-  if (!isVaultId(vaultId)) return { ok: false, reason: "a vault id is 64 lowercase hex characters" };
-  if (!write || typeof write !== "object") return { ok: false, reason: "body must be a JSON object" };
+  if (!isVaultId(vaultId)) return { ok: false, reason: "a vault id is 64 lowercase hex characters", forbidden: false };
+  if (!write || typeof write !== "object") return { ok: false, reason: "body must be a JSON object", forbidden: false };
   const { ciphertext, iv, version, signature, publicKey } = write;
   if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 1) {
-    return { ok: false, reason: "version must be a positive integer" };
+    return { ok: false, reason: "version must be a positive integer", forbidden: false };
   }
   const ivBytes = typeof iv === "string" ? fromBase64Url(iv) : null;
-  if (!ivBytes || ivBytes.length !== 12) return { ok: false, reason: "iv must be 12 bytes of base64url" };
+  if (!ivBytes || ivBytes.length !== 12) return { ok: false, reason: "iv must be 12 bytes of base64url", forbidden: false };
   const ctBytes = typeof ciphertext === "string" ? fromBase64Url(ciphertext) : null;
-  if (!ctBytes || ctBytes.length < 16) return { ok: false, reason: "ciphertext must be base64url AES-GCM output" };
+  if (!ctBytes || ctBytes.length < 16) return { ok: false, reason: "ciphertext must be base64url AES-GCM output", forbidden: false };
   const pub = typeof publicKey === "string" ? fromBase64Url(publicKey) : null;
-  if (!pub || pub.length !== 32) return { ok: false, reason: "publicKey must be a 32-byte Ed25519 key in base64url" };
-  if (vaultIdFor(pub) !== vaultId) return { ok: false, reason: "publicKey does not hash to this vault id" };
+  if (!pub || pub.length !== 32) return { ok: false, reason: "publicKey must be a 32-byte Ed25519 key in base64url", forbidden: false };
+  if (vaultIdFor(pub) !== vaultId) return { ok: false, reason: "publicKey does not hash to this vault id", forbidden: true };
   const sig = typeof signature === "string" ? fromBase64Url(signature) : null;
-  if (!sig || sig.length !== 64) return { ok: false, reason: "signature must be 64 bytes of base64url" };
+  if (!sig || sig.length !== 64) return { ok: false, reason: "signature must be 64 bytes of base64url", forbidden: false };
   let valid = false;
   try {
     valid = ed25519.verify(sig, vaultWriteMessage({ vaultId, version, iv: iv!, ciphertext: ciphertext! }), pub);
   } catch {
     valid = false;
   }
-  return valid ? { ok: true } : { ok: false, reason: "signature does not verify for this vault, version and payload" };
+  return valid ? { ok: true } : { ok: false, reason: "signature does not verify for this vault, version and payload", forbidden: true };
 }
 
 // ---------------------------------------------------------------------------

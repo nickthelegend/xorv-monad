@@ -189,6 +189,7 @@ describe("signed writes", () => {
     const check = verifyVaultWrite(auth.vaultId, forged);
     expect(check.ok).toBe(false);
     expect(check.ok ? "" : check.reason).toMatch(/does not hash/);
+    expect(check.ok ? false : check.forbidden).toBe(true);
   });
 
   it("names what is malformed", () => {
@@ -204,6 +205,8 @@ describe("signed writes", () => {
     expect(reason({ ...write, ciphertext: "***" })).toMatch(/ciphertext/);
     expect(reason({ ...write, publicKey: "AAAA" })).toMatch(/publicKey/);
     expect(reason({ ...write, signature: "AAAA" })).toMatch(/signature/);
+    const malformed = verifyVaultWrite(auth.vaultId, { ...write, iv: "AAAA" });
+    expect(malformed.ok ? true : malformed.forbidden).toBe(false);
   });
 });
 
