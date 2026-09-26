@@ -84,7 +84,7 @@ export function TrustSummary({ trust, providerHref }: { trust: TrustSignal; prov
     <div className="mt-1.5 space-y-0.5 text-[11.5px] leading-relaxed text-fg-4">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <TrustBadge trust={trust} />
-        {age ? <span>wallet {age} old</span> : null}
+        {age ? <span>{age === "today" ? "wallet created today" : `wallet ${age} old`}</span> : null}
         {funder ? <span>· funded by {funder}</span> : null}
         {trust.txCount > 0 ? (
           <span className="tnum">

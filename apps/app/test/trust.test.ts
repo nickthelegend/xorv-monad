@@ -74,6 +74,8 @@ describe("readTrust", () => {
     expect(odd.paidUsdc).toBe("0.00");
     expect(paidLine(odd)).toBeNull();
     expect(odd.attribution).toBe("Powered by Nansen");
+    const sneaky = readTrust({ ...brokerTrust, firstFunder: { ...brokerTrust.firstFunder, url: "javascript:alert(1)" } })!;
+    expect(sneaky.firstFunder?.url).toBeNull();
   });
 
   it("claims no payment for fixture data, and says no history rather than a low score", () => {

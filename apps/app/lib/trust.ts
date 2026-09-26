@@ -91,6 +91,11 @@ const num = (v: unknown): number | null => (typeof v === "number" && Number.isFi
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 const USDC = /^\d+(\.\d+)?$/;
 const usdc = (v: unknown): string => (typeof v === "string" && USDC.test(v) ? v : "0.00");
+/** Only an https link is ever rendered as a link. */
+const httpsUrl = (v: unknown): string | null => {
+  const url = str(v);
+  return url && /^https:\/\//.test(url) ? url : null;
+};
 const MODES = new Set(["off", "fixture", "live"]);
 const BANDS = new Set(["high", "medium", "low", "unknown"]);
 
@@ -100,9 +105,8 @@ function paidTx(v: unknown): TrustPaidTx[] {
   for (const raw of v) {
     if (!isObject(raw)) continue;
     const txHash = str(raw.txHash);
-    const url = str(raw.url);
-    // Only an explorer link over https is rendered as a link.
-    if (!txHash || !url || !/^https:\/\//.test(url)) continue;
+    const url = httpsUrl(raw.url);
+    if (!txHash || !url) continue;
     out.push({ txHash, url, endpoint: str(raw.endpoint) ?? "", amountUsdc: usdc(raw.amountUsdc), at: num(raw.at) ?? 0 });
   }
   return out;
@@ -128,7 +132,7 @@ export function readTrust(raw: unknown): TrustSignal | null {
     txCountCapped: raw.txCountCapped === true,
     firstFunder:
       funder && funderAddress
-        ? { address: funderAddress, label: str(funder.label), chain: str(funder.chain), url: str(funder.url) }
+        ? { address: funderAddress, label: str(funder.label), chain: str(funder.chain), url: httpsUrl(funder.url) }
         : null,
     relatedWalletCount: num(raw.relatedWalletCount) ?? 0,
     labels: strings(raw.labels),
@@ -164,7 +168,9 @@ export function readNansenStatus(info: unknown): NansenStatus | null {
   if (!raw) return null;
   const mode = str(raw.mode);
   const auth = str(raw.auth);
-  const payer = isObject(raw.payer) && str(raw.payer.address) ? { address: str(raw.payer.address)!, url: str(raw.payer.url) ?? "" } : null;
+  const payerAddress = isObject(raw.payer) ? str(raw.payer.address) : null;
+  const payerUrl = isObject(raw.payer) ? httpsUrl(raw.payer.url) : null;
+  const payer = payerAddress && payerUrl ? { address: payerAddress, url: payerUrl } : null;
   const last = paidTx(raw.lastPaidTx ? [raw.lastPaidTx] : [])[0] ?? null;
   return {
     mode: mode && MODES.has(mode) ? (mode as NansenStatus["mode"]) : "off",
