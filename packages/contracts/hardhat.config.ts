@@ -8,7 +8,7 @@ import hardhatViem from "@nomicfoundation/hardhat-viem";
 import hardhatViemAssertions from "@nomicfoundation/hardhat-viem-assertions";
 import { configVariable, defineConfig } from "hardhat/config";
 
-import { MONAD_DEPLOYMENTS, rpcUrlFor } from "./scripts/lib/networks.js";
+import { DEFAULT_FORK_RPC_URL, MONAD_DEPLOYMENTS, rpcUrlFor } from "./scripts/lib/networks.js";
 
 // The broker's settings live in the repo-root .env, so the deployer can reuse XORV_OPERATOR_KEY and
 // XORV_BROKER_ADDRESS from there. A package-local .env is read first and wins; real environment
@@ -71,6 +71,18 @@ const buildProfile = {
   overrides: Object.fromEntries(VENDORED.map((file) => [file, VENDOR_COMPILER])),
 };
 
+// The e2e harness (e2e/) forks Monad testnet so the real Circle USDC and the canonical ERC-8004
+// registries are present. MONAD_FORK_BLOCK pins the fork for reproducible runs; unset forks the
+// latest block. Nothing here touches the network until `hardhat node --network monadFork` runs.
+const forkBlock = process.env.MONAD_FORK_BLOCK?.trim();
+
+// Monad executes Prague (its blocks carry requestsHash, and EIP-7702 is live), so the fork mines
+// Prague blocks, and EDR is told the same for blocks it only replays from the remote chain. Without
+// a hardfork history for chain 10143, EDR refuses every call against the fork block itself ("No known
+// hardfork for execution on historical block").
+const MONAD_HARDFORK = "prague";
+const MONAD_HARDFORK_HISTORY = { [MONAD_HARDFORK]: { blockNumber: 0 } };
+
 export default defineConfig({
   plugins: [
     hardhatViem,
@@ -101,6 +113,27 @@ export default defineConfig({
       url: rpcUrlFor(MONAD_DEPLOYMENTS.monad),
       accounts: [deployerKey],
     },
+    // A local fork of Monad testnet, served over JSON-RPC by `hardhat node --network monadFork`.
+    // Its dev accounts are Hardhat's well-known ones: never point anything real at it.
+    monadFork: {
+      type: "edr-simulated",
+      chainType: "l1",
+      chainId: MONAD_DEPLOYMENTS.monadTestnet.chainId,
+      hardfork: MONAD_HARDFORK,
+      forking: {
+        url: process.env.MONAD_FORK_URL?.trim() || rpcUrlFor(MONAD_DEPLOYMENTS.monadTestnet),
+        ...(forkBlock ? { blockNumber: Number(forkBlock) } : {}),
+      },
+    },
+    // That fork as another process sees it (`hardhat run scripts/deploy.ts --network monadForkRpc`),
+    // signing with the node's unlocked dev accounts.
+    monadForkRpc: {
+      type: "http",
+      chainType: "l1",
+      chainId: MONAD_DEPLOYMENTS.monadTestnet.chainId,
+      url: process.env.MONAD_FORK_RPC_URL?.trim() || DEFAULT_FORK_RPC_URL,
+      accounts: "remote",
+    },
   },
   verify: {
     etherscan: {
@@ -118,6 +151,7 @@ export default defineConfig({
   chainDescriptors: {
     10143: {
       name: "Monad Testnet",
+      hardforkHistory: MONAD_HARDFORK_HISTORY,
       blockExplorers: {
         etherscan: {
           name: "Monadscan",

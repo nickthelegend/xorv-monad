@@ -47,6 +47,18 @@ export function monadDeploymentFor(networkName: string): MonadDeployment | undef
   return (MONAD_DEPLOYMENTS as Record<string, MonadDeployment | undefined>)[networkName];
 }
 
+/**
+ * The Monad network a chain id belongs to. A local fork of Monad testnet (`hardhat node --network
+ * monadFork`, which the e2e harness runs) reports chain id 10143 under a network name that is not in
+ * the table, and still carries the canonical registries at their real addresses.
+ */
+export function monadDeploymentForChainId(chainId: number): MonadDeployment | undefined {
+  return Object.values(MONAD_DEPLOYMENTS).find((deployment) => deployment.chainId === chainId);
+}
+
+/** Where the e2e harness serves its Monad testnet fork unless MONAD_FORK_RPC_URL says otherwise. */
+export const DEFAULT_FORK_RPC_URL = "http://127.0.0.1:8545";
+
 /** The RPC URL for a Monad network, honouring its override variable (read per call). */
 export function rpcUrlFor(deployment: MonadDeployment): string {
   return process.env[deployment.rpcUrlEnv] || deployment.rpcUrl;

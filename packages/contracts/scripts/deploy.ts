@@ -17,6 +17,12 @@
  * On an in-process or localhost chain there are no ERC-8004 registries, so the script deploys the
  * vendored reference registries first. That makes the dry run a real end-to-end check of this
  * script, without keys or MON.
+ *
+ * A local *fork* of Monad (`hardhat node --network monadFork`, reached from here as
+ * `--network monadForkRpc`; see e2e/) is different: it reports Monad's chain id and the canonical
+ * registries are right there, forked with the rest of the state. It is wired to those, with the same
+ * on-chain checks as a real deployment, so the ledger the e2e harness tests is built exactly like the
+ * one on testnet.
  */
 import { access, mkdir, writeFile } from "node:fs/promises";
 
@@ -24,7 +30,13 @@ import { network } from "hardhat";
 import { type Address, encodeDeployData, formatEther, getAddress, isAddress, parseAbi } from "viem";
 
 import { deployErc8004 } from "./lib/erc8004-local.js";
-import { type DeploymentRecord, monadDeploymentFor, withGasMargin } from "./lib/networks.js";
+import {
+  type DeploymentRecord,
+  type MonadDeployment,
+  monadDeploymentFor,
+  monadDeploymentForChainId,
+  withGasMargin,
+} from "./lib/networks.js";
 
 const REGISTRY_ABI = parseAbi([
   "function getVersion() view returns (string)",
@@ -57,14 +69,27 @@ if (brokerEnv && !isAddress(brokerEnv, { strict: false })) {
 }
 const broker: Address = brokerEnv ? getAddress(brokerEnv) : deployerAddress;
 
+// Not a Monad network by name, but a Monad chain by id with the canonical Identity Registry deployed:
+// a fork. (A bare local chain that merely borrows the chain id has no code there and falls through
+// to the vendored registries below.)
+let forkOf: MonadDeployment | undefined;
+if (monad === undefined) {
+  const candidate = monadDeploymentForChainId(chainId);
+  if (candidate !== undefined && (await publicClient.getCode({ address: candidate.identity })) !== undefined) {
+    forkOf = candidate;
+    console.log(`"${networkName}" is a fork of ${candidate.network}: using its canonical ERC-8004 registries.`);
+  }
+}
+const canonical = monad ?? forkOf;
+
 let identity: Address;
 let reputation: Address;
-if (monad !== undefined) {
-  if (chainId !== monad.chainId) {
-    throw new Error(`RPC for "${networkName}" reports chainId ${chainId}, expected ${monad.chainId}.`);
+if (canonical !== undefined) {
+  if (chainId !== canonical.chainId) {
+    throw new Error(`RPC for "${networkName}" reports chainId ${chainId}, expected ${canonical.chainId}.`);
   }
-  identity = monad.identity;
-  reputation = monad.reputation;
+  identity = canonical.identity;
+  reputation = canonical.reputation;
 
   // The registries are immutable constructor arguments: check they are what we think before paying.
   const [identityVersion, reputationVersion, wiredIdentity] = await Promise.all([
@@ -79,12 +104,13 @@ if (monad !== undefined) {
     console.warn(`! ERC-8004 registries report versions ${identityVersion}/${reputationVersion}, not 2.0.0.`);
   }
 
+  // A fork is thrown away with its node, so there is nothing indexed under an old address to orphan.
   const outFile = new URL(`../deployments/${networkName}.json`, import.meta.url);
   const exists = await access(outFile).then(
     () => true,
     () => false,
   );
-  if (exists && process.env.XORV_REDEPLOY !== "1") {
+  if (monad !== undefined && exists && process.env.XORV_REDEPLOY !== "1") {
     throw new Error(
       `deployments/${networkName}.json already exists. Redeploying moves the ledger to a new address and ` +
         "orphans everything indexed under the old one. Set XORV_REDEPLOY=1 if that is really intended.",
@@ -154,6 +180,8 @@ console.log(`Deployed   ${address} in block ${record.blockNumber} (gas used ${re
 
 if (networkName === "default") {
   console.log("\nIn-process dry run: the chain is gone when this script exits, so nothing was written.");
+} else if (forkOf !== undefined) {
+  console.log(`\nFork of ${forkOf.network}: the chain is gone when its node stops, so nothing was written.`);
 } else {
   const outDir = new URL("../deployments/", import.meta.url);
   await mkdir(outDir, { recursive: true });
