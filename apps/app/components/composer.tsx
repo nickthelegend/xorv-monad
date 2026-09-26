@@ -1,11 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ModelPicker, type ModelOption } from "./model-picker";
-import { useWallet } from "@/components/wallet-provider";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { BROKER_URL, formatUsd } from "@/lib/api";
+import { explorerAddress, shortHex } from "@xorv/protocol/web";
+import { ModelPicker, type ModelOption } from "./model-picker";
+import { useWallet } from "@/components/wallet-provider";
+import { api, BROKER_URL, type Quote } from "@/lib/api";
+import { useDemoPayer, useNetworkInfo } from "@/lib/hooks";
+import { CHAIN_CONFIG, IS_TESTNET, NETWORK } from "@/lib/network";
+import { PaymentError, classifyPaymentError, payQuote, payableQuote, type PaymentFailureKind } from "@/lib/x402-pay";
 import { EASE, useEntrance } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -18,50 +22,56 @@ import { cn } from "@/lib/utils";
  *
  * The quote is disclosed *before* payment and never skipped: it is the moment
  * the buyer learns who is about to run their prompt and what it will cost. A
- * one-click "just do it" would be faster and worse.
+ * one-click "just do it" would be faster and worse. The payment that follows
+ * is pinned to that quote — the x402 client refuses to sign for any other
+ * payee or amount (lib/x402-pay.ts).
  */
 
-interface Quote {
-  quoteId: string;
-  priceUsdMicros: number;
-  priceLabel: string;
-  provider: {
-    label: string;
-    accountId: string;
-    capability: string;
-    adapter: string;
-    model: string | null;
-    stats: { jobsCompleted: number; jobsFailed: number };
-  };
-  accepts: Array<{ asset: string; amount: string }>;
-}
-
-const MODELS: ModelOption[] = [
-  { id: "", label: "Any model", hint: "cheapest" },
+const ADAPTERS: ModelOption[] = [
   { id: "claude-code", label: "Claude Code" },
   { id: "codex", label: "Codex" },
   { id: "grok", label: "Grok" },
   { id: "opencode", label: "OpenCode" },
+  { id: "qwen", label: "Qwen 3.8 Max", hint: "qwen3.8-max" },
+  { id: "kimi", label: "Kimi K3", hint: "kimi-k3" },
+  { id: "hunyuan", label: "Hunyuan", hint: "hy4-preview" },
+  { id: "qwen-code", label: "Qwen Code" },
   { id: "openai-compatible", label: "OpenAI-compatible", hint: "local" },
   { id: "echo", label: "Echo", hint: "test" },
 ];
 
-const HBAR = "0.0.0";
+type Busy = "quoting" | "signing" | "settling" | null;
+
+interface PayFailure {
+  message: string;
+  kind: PaymentFailureKind | "over_cap" | null;
+  /** The demo account failed, not the visitor's wallet — different advice. */
+  demo?: boolean;
+}
 
 export function Composer() {
   const router = useRouter();
   const animate = useEntrance();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const wallet = useWallet();
+  const demo = useDemoPayer();
+  const info = useNetworkInfo();
 
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("");
   const [maxUsd, setMaxUsd] = useState("0.50");
-  const [asset, setAsset] = useState<"usdc" | "hbar">("usdc");
-  const { session, accountId } = useWallet();
 
   const [quote, setQuote] = useState<Quote | null>(null);
-  const [busy, setBusy] = useState<"quoting" | "paying" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
+  const [error, setError] = useState<PayFailure | null>(null);
+
+  // "Auto" hands the choice to the broker: the Qwen router when it runs one,
+  // the cheapest live provider when it doesn't. The hint says which.
+  const aiRouter = info?.ai.router ?? null;
+  const models: ModelOption[] = [
+    { id: "", label: "Auto", hint: aiRouter ? `${aiRouter.model} routes` : "cheapest" },
+    ...ADAPTERS,
+  ];
 
   // Grow with the content rather than scrolling inside a fixed box — a prompt
   // you can't see all of is a prompt you can't check before paying for it.
@@ -87,51 +97,94 @@ export function Composer() {
       if (!Number.isFinite(maxPriceUsdMicros) || maxPriceUsdMicros <= 0) {
         throw new Error("Set a maximum price above zero.");
       }
-      const res = await fetch(`${BROKER_URL}/api/quotes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, adapter: model || null, maxPriceUsdMicros }),
-      });
-      const body = (await res.json()) as Quote & { error?: string };
-      if (!res.ok) throw new Error(body.error ?? `Broker returned ${res.status}.`);
-      setQuote(body);
+      setQuote(await api.quote({ prompt, adapter: model || null, maxPriceUsdMicros }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError({ message: err instanceof Error ? err.message : String(err), kind: null });
     } finally {
       setBusy(null);
     }
   }
 
-  async function pay(): Promise<void> {
+  function paid(jobId: string, txHash: string | null): void {
+    // The settlement tx rides along so the job page can link it on first
+    // paint, before the broker's payment record reaches the stream.
+    router.push(`/jobs/${encodeURIComponent(jobId)}${txHash ? `?tx=${txHash}` : ""}`);
+  }
+
+  /**
+   * Pay from the visitor's own wallet, in this tab. The only thing that leaves
+   * the wallet is one EIP-712 signature; the facilitator settles it on Monad
+   * and pays the gas.
+   */
+  async function payFromWallet(): Promise<void> {
     if (!quote) return;
     setError(null);
-    setBusy("paying");
+    setBusy("signing");
     try {
-      // With a wallet connected the x402 round trip happens in this tab and the
-      // user signs their own transfer. Without one we fall back to the server
-      // route, which pays from the deployment's demo account — same protocol,
-      // different money, and worth being honest about in the button label.
-      if (session) {
-        const { payQuoteWithWallet } = await import("@/lib/pay-with-wallet");
-        const { jobId } = await payQuoteWithWallet(session, BROKER_URL, quote.quoteId, asset);
-        router.push(`/jobs/${jobId}`);
-        return;
+      const terms = payableQuote(quote);
+      // Check the balance first: asking someone to sign a payment their wallet
+      // cannot cover, only for the facilitator to refuse it, is a worse way to
+      // learn the same thing.
+      const balances = await wallet.refreshBalances();
+      if (balances && BigInt(balances.usdcUnits) < BigInt(terms.usdcAmount)) {
+        throw new PaymentError(
+          "insufficient_funds",
+          `This wallet holds less USDC than the job costs (${quote.priceLabel}). Nothing was signed.`,
+        );
       }
-      const res = await fetch("/api/pay", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteId: quote.quoteId, asset }),
+      const signer = await wallet.getSigner();
+      const result = await payQuote({
+        quote: terms,
+        network: NETWORK,
+        brokerUrl: BROKER_URL,
+        signer: {
+          address: signer.address,
+          signTypedData: async (message) => {
+            const signature = await signer.signTypedData(message);
+            setBusy("settling");
+            return signature;
+          },
+        },
       });
-      const body = (await res.json()) as { jobId?: string; error?: string };
-      if (!res.ok || !body.jobId) throw new Error(body.error ?? `Payment failed (${res.status}).`);
-      router.push(`/jobs/${body.jobId}`);
+      void wallet.refreshBalances();
+      paid(result.jobId, result.txHash);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const failure = classifyPaymentError(err);
+      setError({ message: failure.message, kind: failure.kind });
       setBusy(null);
     }
   }
 
-  const hbarAmount = quote?.accepts.find((a) => a.asset === HBAR)?.amount;
+  /** Pay from the deployment's demo account — same protocol, not the visitor's money. */
+  async function payFromDemo(): Promise<void> {
+    if (!quote) return;
+    setError(null);
+    setBusy("settling");
+    try {
+      const terms = payableQuote(quote);
+      const res = await fetch("/api/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(terms),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        jobId?: string;
+        txHash?: string | null;
+        error?: string;
+        kind?: PaymentFailureKind | "over_cap";
+      };
+      if (!res.ok || !body.jobId) {
+        setError({ message: body.error ?? `Payment failed (${res.status}).`, kind: body.kind ?? null, demo: true });
+        setBusy(null);
+        return;
+      }
+      paid(body.jobId, body.txHash ?? null);
+    } catch (err) {
+      setError({ message: classifyPaymentError(err).message, kind: null, demo: true });
+      setBusy(null);
+    }
+  }
+
   const rise = (delay: number) =>
     animate
       ? {
@@ -140,6 +193,30 @@ export function Composer() {
           transition: { duration: 0.6, ease: EASE, delay },
         }
       : { initial: false as const, animate: { opacity: 1, y: 0 } };
+
+  const demoReady = Boolean(demo?.configured);
+  const walletAddress = wallet.address;
+
+  // The primary button says whose money moves. Never a generic "Pay": with a
+  // wallet it names the wallet, and the demo path is labelled as the demo's.
+  let primary: { label: string; onClick: () => void; disabled?: boolean };
+  if (walletAddress) {
+    const whose = wallet.kind === "embedded" ? "your Privy wallet" : shortHex(walletAddress);
+    primary = { label: `Pay ${quote?.priceLabel ?? ""} USDC from ${whose}`, onClick: () => void payFromWallet() };
+  } else if (wallet.available && !wallet.creatingWallet) {
+    primary = {
+      label: wallet.mode === "privy" ? `Log in to pay ${quote?.priceLabel ?? ""}` : `Connect a wallet to pay ${quote?.priceLabel ?? ""}`,
+      onClick: wallet.login,
+      disabled: wallet.connecting,
+    };
+  } else if (wallet.creatingWallet) {
+    primary = { label: "Creating your wallet…", onClick: () => {}, disabled: true };
+  } else if (demoReady) {
+    primary = { label: `Pay ${quote?.priceLabel ?? ""} from demo account`, onClick: () => void payFromDemo() };
+  } else {
+    primary = { label: "No wallet available", onClick: () => {}, disabled: true };
+  }
+  const offerDemo = demoReady && (walletAddress !== null || wallet.available);
 
   return (
     <div className="mx-auto max-w-2xl text-center">
@@ -167,8 +244,8 @@ export function Composer() {
       </motion.h1>
 
       <motion.p {...rise(0.18)} className="mx-auto mt-3.5 max-w-md text-[14px] leading-relaxed text-fg-3">
-        Paid per job in USDC, settled on Hedera in about three seconds, straight to the person whose
-        machine ran it.
+        Paid per job in USDC from your own wallet, settled on Monad in about a second, straight to the
+        person whose machine ran it.
       </motion.p>
 
       {/* --- the input ------------------------------------------------------ */}
@@ -201,7 +278,7 @@ export function Composer() {
         <div className="flex items-center gap-2 px-1.5 pb-1">
           <ModelPicker
             value={model}
-            options={MODELS}
+            options={models}
             onChange={(id) => {
               setModel(id);
               reset();
@@ -265,53 +342,75 @@ export function Composer() {
                     {quote.provider.capability}
                     {quote.provider.model ? ` · ${quote.provider.model}` : ""} ·{" "}
                     {quote.provider.stats.jobsCompleted} done
+                    {quote.provider.agentId ? ` · agent #${quote.provider.agentId}` : ""}
                   </p>
                   <p className="mono mt-1.5 truncate text-[11.5px] text-fg-4">
-                    pays → {quote.provider.accountId}
+                    pays →{" "}
+                    <a
+                      href={quote.provider.addressUrl || explorerAddress(NETWORK, quote.provider.address)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline-offset-4 hover:text-fg-2 hover:underline"
+                    >
+                      {shortHex(quote.provider.address)}
+                    </a>{" "}
+                    · the provider, never the broker
                   </p>
                 </div>
                 <p className="tnum shrink-0 text-[19px] font-semibold text-fg">{quote.priceLabel}</p>
               </div>
 
-              <div className="mt-4 flex gap-2" role="group" aria-label="Payment asset">
-                {(["usdc", "hbar"] as const).map((option) => {
-                  const disabled = option === "hbar" && !hbarAmount;
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      disabled={disabled}
-                      aria-pressed={asset === option}
-                      onClick={() => setAsset(option)}
-                      className={cn(
-                        "flex-1 rounded-lg border px-3 py-2 text-[12.5px] font-medium transition-colors",
-                        asset === option
-                          ? "border-[var(--line-3)] bg-white/[0.07] text-fg"
-                          : "border-[var(--line)] text-fg-3 hover:text-fg-2",
-                        disabled && "cursor-not-allowed opacity-40",
-                      )}
-                    >
-                      Pay in {option.toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>
+              {quote.screening || quote.routing ? (
+                <div className="mt-3 space-y-1 border-t border-[var(--line)] pt-3 text-[11.5px] leading-relaxed text-fg-4">
+                  {quote.screening ? (
+                    <p>
+                      <span className="mono text-fg-3">{quote.screening.model}</span> screened the prompt:{" "}
+                      {quote.screening.verdict === "allow" ? "allowed" : "blocked"}
+                      {quote.screening.reason ? ` — ${quote.screening.reason}` : ""}
+                    </p>
+                  ) : null}
+                  {quote.routing ? (
+                    <p>
+                      <span className="mono text-fg-3">{quote.routing.model}</span> routed it
+                      {quote.routing.adapter ? ` to ${quote.routing.adapter}` : ""}
+                      {quote.routing.reason ? ` — ${quote.routing.reason}` : ""}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               <button
                 type="button"
-                onClick={pay}
-                disabled={busy !== null}
-                className="mt-3 w-full rounded-lg bg-white px-4 py-2.5 text-[13.5px] font-medium text-black transition-all hover:bg-white/90 active:scale-[0.985] disabled:opacity-40"
+                onClick={primary.onClick}
+                disabled={busy !== null || primary.disabled}
+                className="mt-4 w-full rounded-lg bg-white px-4 py-2.5 text-[13.5px] font-medium text-black transition-all hover:bg-white/90 active:scale-[0.985] disabled:opacity-40"
               >
-                {busy === "paying"
-                  ? "Signing and settling on Hedera…"
-                  : `Pay ${quote.priceLabel} and run`}
+                {busy === "signing"
+                  ? "Approve the payment in your wallet…"
+                  : busy === "settling"
+                    ? "Settling on Monad…"
+                    : primary.label}
               </button>
+
+              {offerDemo ? (
+                <button
+                  type="button"
+                  onClick={() => void payFromDemo()}
+                  disabled={busy !== null}
+                  className="mt-2 w-full rounded-lg border border-[var(--line)] px-4 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-[var(--line-2)] hover:text-fg disabled:opacity-40"
+                >
+                  Pay from demo account instead
+                </button>
+              ) : null}
+
+              <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-fg-4">
+                You sign once, for exactly {quote.priceLabel} to this provider. The facilitator pays the gas.
+              </p>
 
               <button
                 type="button"
                 onClick={reset}
-                className="mt-2.5 w-full text-center text-[12px] text-fg-4 transition-colors hover:text-fg-2"
+                className="mt-1.5 w-full text-center text-[12px] text-fg-4 transition-colors hover:text-fg-2"
               >
                 Cancel — nothing has been paid
               </button>
@@ -322,17 +421,37 @@ export function Composer() {
 
       <AnimatePresence>
         {error ? (
-          <motion.p
-            key={error}
+          <motion.div
+            key={error.message}
             role="alert"
             initial={animate ? { opacity: 0, y: -4 } : false}
             animate={{ opacity: 1, y: 0 }}
             exit={animate ? { opacity: 0 } : undefined}
             transition={{ duration: 0.2, ease: EASE }}
-            className="mt-4 rounded-lg border border-fail/25 bg-fail/[0.06] px-3.5 py-2.5 text-left text-[12.5px] leading-relaxed text-fail"
+            className={cn(
+              "mt-4 rounded-lg border px-3.5 py-2.5 text-left text-[12.5px] leading-relaxed",
+              error.kind === "rejected"
+                ? "border-[var(--line)] bg-white/[0.02] text-fg-3"
+                : "border-fail/25 bg-fail/[0.06] text-fail",
+            )}
           >
-            {error}
-          </motion.p>
+            <p>{error.message}</p>
+            {error.kind === "insufficient_funds" && !error.demo && IS_TESTNET && CHAIN_CONFIG.faucets.usdc ? (
+              <p className="mt-1.5 text-fg-3">
+                Get test USDC from the{" "}
+                <a
+                  href={CHAIN_CONFIG.faucets.usdc}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-fg-2 underline underline-offset-2 hover:text-fg"
+                >
+                  Circle faucet ↗
+                </a>{" "}
+                (choose Monad Testnet){walletAddress ? <> for <span className="mono">{shortHex(walletAddress)}</span></> : null}
+                {demoReady ? ", or pay from the demo account." : "."}
+              </p>
+            ) : null}
+          </motion.div>
         ) : null}
       </AnimatePresence>
     </div>

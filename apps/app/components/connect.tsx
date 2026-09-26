@@ -2,84 +2,34 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { NETWORK } from "@/lib/api";
+import { explorerAddress, formatMon, formatUsdc, shortHex } from "@xorv/protocol/web";
+import { CHAIN_CONFIG, IS_TESTNET, NETWORK, NETWORK_LABEL } from "@/lib/network";
 import { EASE, useEntrance } from "@/lib/motion";
 import { useWallet } from "@/components/wallet-provider";
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 /**
- * Connect a Hedera wallet.
+ * The header wallet: log in, see what you can spend, get test funds, leave.
  *
- * This used to be Privy, and the swap is the point rather than a detail.
- * Privy signs EVM transactions; Hedera's x402 scheme settles a **native**
- * protobuf transfer. So the old button could authenticate you and then not pay
- * for anything — the payment quietly happened server-side with a key the app
- * held. HashPack (or Blade, or Kabila, over the same WalletConnect session)
- * signs the transaction the facilitator actually verifies, so the account
- * shown here is the account that pays.
+ * With Privy this is a login button — email, Google, passkey or an existing
+ * wallet — and the address it shows afterwards is the embedded wallet Privy
+ * created for you on Monad, which is the wallet every job you buy is paid from
+ * and every rating you leave is signed by. Without Privy it connects the
+ * browser's injected wallet instead.
  *
- * One consequence worth noticing: there is no "connected but no Hedera account
- * yet" state anymore. A wallet session *is* a Hedera account id — the ledger
- * already knows it. That whole class of confusion belonged to the EVM-address
- * path and left with it.
+ * The balances are the two numbers that decide whether a payment can work.
+ * USDC is what a job costs. MON is shown for honesty but you don't need any:
+ * the facilitator pays settlement gas and the broker pays for rating relays.
  */
-
-interface Balances {
-  usdc: number;
-  hbar: number;
-  canReceive: boolean;
-}
-
-const USDC_TOKEN = process.env.NEXT_PUBLIC_XORV_STABLECOIN ?? "0.0.429274";
-
-function mirrorNode(network: string): string {
-  return network === "hedera:mainnet"
-    ? "https://mainnet-public.mirrornode.hedera.com"
-    : "https://testnet.mirrornode.hedera.com";
-}
-
 export function Connect() {
-  const { accountId, connecting, ready, error, available, connect, disconnect } = useWallet();
+  const wallet = useWallet();
   const [open, setOpen] = useState(false);
-  const [balances, setBalances] = useState<Balances | null>(null);
+  const [copied, setCopied] = useState(false);
   const animate = useEntrance();
 
-  useEffect(() => {
-    if (!accountId) {
-      setBalances(null);
-      return;
-    }
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const res = await fetch(`${mirrorNode(NETWORK)}/api/v1/accounts/${accountId}`, {
-          signal: controller.signal,
-        });
-        if (!res.ok) return;
-        const body = (await res.json()) as {
-          balance?: { balance?: number; tokens?: Array<{ token_id: string; balance: number }> };
-          max_automatic_token_associations?: number;
-        };
-        const tokens = body.balance?.tokens ?? [];
-        const usdc = tokens.find((t) => t.token_id === USDC_TOKEN);
-        const auto = body.max_automatic_token_associations ?? 0;
-        setBalances({
-          usdc: (usdc?.balance ?? 0) / 1e6,
-          hbar: (body.balance?.balance ?? 0) / 1e8,
-          // The trap this surfaces: an account with neither an association nor
-          // a free auto-slot silently cannot be paid in USDC.
-          canReceive: Boolean(usdc) || auto === -1 || auto > tokens.length,
-        });
-      } catch {
-        /* a balance we couldn't read is not worth an error state */
-      }
-    })();
-    return () => controller.abort();
-  }, [accountId]);
-
-  // Close the menu on outside click — a popover that only closes via its own
-  // trigger is a popover people leave open.
+  // Close on outside click — a popover that only closes via its own trigger is
+  // a popover people leave open.
   useEffect(() => {
     if (!open) return;
     const close = (): void => setOpen(false);
@@ -87,35 +37,48 @@ export function Connect() {
     return () => window.removeEventListener("click", close);
   }, [open]);
 
-  if (!available) {
+  if (!wallet.ready) {
+    return <div className="h-[34px] w-[104px] animate-pulse rounded-lg bg-white/[0.04]" />;
+  }
+
+  if (!wallet.available) {
     return (
       <span
         className="text-[12px] text-fg-4"
-        title="NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set"
+        title="Set NEXT_PUBLIC_PRIVY_APP_ID for embedded wallets, or install a browser wallet"
       >
-        wallet unavailable
+        no wallet · demo account only
       </span>
     );
   }
 
-  if (!ready) {
-    return <div className="h-[34px] w-[104px] animate-pulse rounded-lg bg-white/[0.04]" />;
+  if (wallet.creatingWallet) {
+    return <span className="text-[12px] text-fg-3">Creating your wallet…</span>;
   }
 
-  if (!accountId) {
+  if (!wallet.address) {
     return (
       <div className="flex items-center gap-2">
-        {error ? (
-          <span className="max-w-[220px] truncate text-[12px] text-[#f87171]">{error}</span>
+        {wallet.error ? (
+          <span className="max-w-[220px] truncate text-[12px] text-fail">{wallet.error}</span>
         ) : null}
-        <Button onClick={() => void connect()} disabled={connecting} className="px-3.5 py-2 text-[13px]">
-          {connecting ? "Waiting for wallet…" : "Connect"}
+        <Button onClick={wallet.login} disabled={wallet.connecting} className="px-3.5 py-2 text-[13px]">
+          {wallet.connecting ? "Waiting for wallet…" : wallet.mode === "privy" ? "Log in" : "Connect wallet"}
         </Button>
       </div>
     );
   }
 
-  const explorer = NETWORK === "hedera:mainnet" ? "mainnet" : "testnet";
+  const address = wallet.address;
+  const walletLabel =
+    wallet.kind === "embedded" ? "Privy embedded wallet" : wallet.mode === "privy" ? "Your wallet, via Privy" : "Browser wallet";
+
+  const copy = (): void => {
+    void navigator.clipboard.writeText(address).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1400);
+    });
+  };
 
   return (
     <div className="relative" onClick={(e) => e.stopPropagation()}>
@@ -123,11 +86,14 @@ export function Connect() {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        aria-label={`Wallet ${accountId}`}
+        aria-label={`Wallet ${address}`}
         className="flex items-center gap-2 rounded-lg border border-[var(--line)] px-2.5 py-1.5 text-[12px] text-fg-2 transition-colors hover:border-[var(--line-2)]"
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-[var(--live)]" aria-hidden />
-        <span className="mono">{accountId}</span>
+        <span className="h-1.5 w-1.5 rounded-full bg-live" aria-hidden />
+        <span className="mono">{shortHex(address)}</span>
+        {wallet.balances ? (
+          <span className="tnum hidden text-fg-3 sm:inline">{formatUsdc(wallet.balances.usdcUnits)}</span>
+        ) : null}
       </button>
 
       <AnimatePresence>
@@ -138,60 +104,104 @@ export function Connect() {
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.16, ease: EASE }}
             className={cn(
-              "absolute right-0 z-50 mt-1.5 w-[280px] rounded-xl border border-[var(--line-2)] bg-black p-4",
+              "absolute right-0 z-50 mt-1.5 w-[300px] rounded-xl border border-[var(--line-2)] bg-black p-4",
               "shadow-[0_16px_40px_rgba(0,0,0,0.9)]",
             )}
           >
-            <div className="text-[11px] uppercase tracking-[0.14em] text-fg-4">Hedera account</div>
-            <div className="mono mt-1.5 text-[13px] text-fg">{accountId}</div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-[11px] uppercase tracking-[0.14em] text-fg-4">{walletLabel}</span>
+              <span className="text-[11px] text-fg-4">{NETWORK_LABEL}</span>
+            </div>
+            {wallet.identity ? <p className="mt-1 truncate text-[12px] text-fg-3">{wallet.identity}</p> : null}
 
-            {balances ? (
-              <dl className="mt-4 space-y-2 border-t border-[var(--line)] pt-3 text-[12.5px]">
-                <div className="flex justify-between">
-                  <dt className="text-fg-3">USDC</dt>
-                  <dd className="mono text-fg">${balances.usdc.toFixed(2)}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-fg-3">HBAR</dt>
-                  <dd className="mono text-fg-2">{balances.hbar.toFixed(4)} ℏ</dd>
-                </div>
-              </dl>
+            <div className="mt-2 flex items-start gap-2">
+              <span className="mono min-w-0 flex-1 break-all text-[12.5px] leading-relaxed text-fg">{address}</span>
+              <button
+                type="button"
+                onClick={copy}
+                className="shrink-0 rounded-md border border-[var(--line)] px-2 py-0.5 text-[11px] text-fg-3 transition-colors hover:border-[var(--line-2)] hover:text-fg"
+              >
+                {copied ? "copied" : "copy"}
+              </button>
+            </div>
+
+            <dl className="mt-4 space-y-2 border-t border-[var(--line)] pt-3 text-[12.5px]">
+              <div className="flex justify-between">
+                <dt className="text-fg-3">USDC</dt>
+                <dd className="mono text-fg">{wallet.balances ? formatUsdc(wallet.balances.usdcUnits) : "—"}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-fg-3">MON</dt>
+                <dd className="mono text-fg-2">{wallet.balances ? formatMon(wallet.balances.monWei) : "—"}</dd>
+              </div>
+            </dl>
+            {wallet.balancesError ? (
+              <p className="mt-2 text-[11.5px] text-warn">Couldn&rsquo;t read balances from the RPC just now.</p>
             ) : null}
 
-            {balances && !balances.canReceive ? (
-              <p className="mt-3 text-[12px] leading-relaxed text-[#fbbf24]">
-                This account isn&rsquo;t associated with USDC and has no automatic slots, so it
-                can&rsquo;t hold the token yet.
-              </p>
+            {IS_TESTNET && (CHAIN_CONFIG.faucets.usdc || CHAIN_CONFIG.faucets.mon) ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {CHAIN_CONFIG.faucets.usdc ? (
+                  <FaucetLink href={CHAIN_CONFIG.faucets.usdc} label="Test USDC" hint="Circle faucet · pick Monad Testnet" />
+                ) : null}
+                {CHAIN_CONFIG.faucets.mon ? (
+                  <FaucetLink href={CHAIN_CONFIG.faucets.mon} label="Test MON" hint="Monad faucet" />
+                ) : null}
+              </div>
             ) : null}
 
             <p className="mt-3 text-[12px] leading-relaxed text-fg-3">
-              You sign each payment in your wallet. Xorv never holds your key, and the network fee
-              is paid by the facilitator — not by you.
+              You sign each payment and rating in this wallet. Xorv never holds your key, and gas is paid by
+              the facilitator and the relay — you only need USDC.
             </p>
 
-            <a
-              href={`https://hashscan.io/${explorer}/account/${accountId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 block text-[12px] text-fg-2 underline underline-offset-2 transition-colors hover:text-fg"
-            >
-              View on HashScan
-            </a>
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
+              <a
+                href={explorerAddress(NETWORK, address)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-fg-2 underline underline-offset-2 transition-colors hover:text-fg"
+              >
+                View on explorer
+              </a>
+              {wallet.exportKey ? (
+                <button
+                  type="button"
+                  onClick={() => void wallet.exportKey?.()}
+                  className="text-fg-2 underline underline-offset-2 transition-colors hover:text-fg"
+                >
+                  Export key
+                </button>
+              ) : null}
+            </div>
 
             <button
               type="button"
               onClick={() => {
                 setOpen(false);
-                void disconnect();
+                void wallet.logout();
               }}
               className="mt-4 w-full rounded-lg border border-[var(--line)] px-3 py-2 text-[12px] text-fg-2 transition-colors hover:border-[var(--line-2)] hover:text-fg"
             >
-              Disconnect
+              {wallet.mode === "privy" ? "Log out" : "Disconnect"}
             </button>
           </motion.div>
         ) : null}
       </AnimatePresence>
     </div>
+  );
+}
+
+function FaucetLink({ href, label, hint }: { href: string; label: string; hint: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={hint}
+      className="rounded-md border border-[var(--line)] px-2.5 py-1 text-[11.5px] text-fg-2 transition-colors hover:border-[var(--line-2)] hover:text-fg"
+    >
+      {label} ↗
+    </a>
   );
 }

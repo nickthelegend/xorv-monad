@@ -1,6 +1,6 @@
 "use client";
 
-import { Claude, Codex, Grok, OpenAI, OpenCode } from "@lobehub/icons";
+import { Claude, Codex, Grok, Hunyuan, Kimi, OpenAI, OpenCode, Qwen } from "@lobehub/icons";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
@@ -11,14 +11,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
  * recognise on sight and read far faster than the words. So this is a listbox,
  * with the real marks.
  *
- * It is a menu of six items, opened by choice and closed immediately after, so
+ * It is a short menu, opened by choice and closed immediately after, so
  * it animates: 140ms, scaled from the trigger's own corner so the panel reads
  * as coming *from* the button rather than appearing over it. Fast enough not to
  * be in the way of someone who opens it twenty times a day.
  *
  * Keyboard and click-away behaviour are hand-rolled rather than pulled in as a
  * dependency, because the surface is small and the alternative is 40kb to
- * render six rows.
+ * render a dozen rows.
  */
 
 export interface ModelOption {
@@ -31,7 +31,7 @@ export interface ModelOption {
 /**
  * Brand marks, monochrome.
  *
- * `.Color` variants exist and are deliberately unused: six logos at full
+ * `.Color` variants exist and are deliberately unused: a dozen logos at full
  * saturation in a black interface reads as a sponsor wall. These inherit
  * `currentColor`, so the selected row brightens with its text.
  */
@@ -46,6 +46,13 @@ function mark(id: string): ReactNode {
       return <Grok size={size} />;
     case "opencode":
       return <OpenCode size={size} />;
+    case "qwen":
+    case "qwen-code":
+      return <Qwen size={size} />;
+    case "kimi":
+      return <Kimi size={size} />;
+    case "hunyuan":
+      return <Hunyuan size={size} />;
     case "openai-compatible":
       return <OpenAI size={size} />;
     case "echo":
@@ -55,7 +62,7 @@ function mark(id: string): ReactNode {
   }
 }
 
-/** "Any model" — a stack, because the network picks among several. */
+/** "Auto" — a stack, because the network picks among several. */
 function AnyMark({ size }: { size: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -182,7 +189,7 @@ export function ModelPicker({
           aria-label="Model"
           // Grows from the trigger's top-left, so the panel is visibly the
           // button's own surface rather than a layer that arrived over it.
-          className="absolute bottom-full left-0 z-50 mb-1.5 min-w-[190px] origin-bottom-left animate-[picker_140ms_cubic-bezier(0.23,1,0.32,1)] overflow-hidden rounded-xl border border-[var(--line-2)] bg-black p-1 shadow-[0_16px_40px_rgba(0,0,0,0.9)]"
+          className="absolute bottom-full left-0 z-50 mb-1.5 min-w-[190px] origin-bottom-left animate-[picker_140ms_cubic-bezier(0.23,1,0.32,1)] max-h-[min(440px,60vh)] overflow-y-auto rounded-xl border border-[var(--line-2)] bg-black p-1 shadow-[0_16px_40px_rgba(0,0,0,0.9)]"
         >
           {options.map((option, i) => {
             const isSelected = option.id === value;
