@@ -295,8 +295,10 @@ export function brokerChecks(url: string, info: BrokerNetworkInfo, nodeNetwork: 
     checks.push(ok("network", `Monad ${networkLabel(info.network)} (${info.network}) · both sides agree`));
   }
 
-  const payer = info.facilitator.address ? ` · gas paid by ${info.facilitator.address}` : "";
-  checks.push(ok("facilitator", `${info.facilitator.description}${payer}`));
+  // Optional chaining throughout: a broker not yet moved to Monad answers in
+  // the old shape, and that should read as a network mismatch, not a crash.
+  const payer = info.facilitator?.address ? ` · gas paid by ${info.facilitator.address}` : "";
+  checks.push(ok("facilitator", `${info.facilitator?.description ?? "unknown"}${payer}`));
   checks.push(
     info.ledger
       ? ok("ledger", `XorvLedger ${info.ledger.address}`)
@@ -314,7 +316,7 @@ export function brokerChecks(url: string, info: BrokerNetworkInfo, nodeNetwork: 
       .map(([name, role]) => `${name} ${role!.model}`);
     if (roles.length) checks.push(ok("ai roles", roles.join(" · ")));
   }
-  checks.push(ok("network size", `${info.stats.providersLive} provider(s) live`));
+  checks.push(ok("network size", `${info.stats?.providersLive ?? 0} provider(s) live`));
   return checks;
 }
 

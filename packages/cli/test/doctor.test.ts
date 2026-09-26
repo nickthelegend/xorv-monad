@@ -235,6 +235,18 @@ describe("brokerChecks", () => {
     expect(find(checks, "ai roles")?.detail).toBe("router qwen3.8-max · screener hy4-preview · verifier kimi-k3");
   });
 
+  it("reads a broker not yet moved to Monad as a mismatch, not a crash", () => {
+    // The Hedera broker's shape: no ledger, no ai, a feePayer instead of an address.
+    const hedera = {
+      network: "hedera:testnet",
+      facilitator: { description: "self-hosted", feePayer: "0.0.9842030" },
+      stats: { providersLive: 1 },
+    } as never;
+    const checks = brokerChecks("http://b", hedera, "eip155:10143");
+    expect(find(checks, "network")?.status).toBe("fail");
+    expect(find(checks, "facilitator")?.detail).toBe("self-hosted");
+  });
+
   it("warns when the broker keeps no on-chain receipts", () => {
     expect(find(brokerChecks("http://b", { ...info, ledger: null }, "eip155:10143"), "ledger")?.status).toBe("warn");
   });

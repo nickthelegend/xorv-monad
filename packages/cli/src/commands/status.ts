@@ -9,6 +9,7 @@
 import {
   explorerAddress,
   formatAgo,
+  isSupportedNetwork,
   formatUsd,
   networkLabel,
   shortHex,
@@ -18,6 +19,15 @@ import {
 } from "@xorv/protocol";
 import { loadConfig, resolveBrokerUrl, type NodeConfig } from "../config.js";
 import * as ui from "../ui.js";
+
+/** An explorer link, or "" when the broker's network has no explorer this CLI knows. */
+function link(build: () => string): string {
+  try {
+    return build();
+  } catch {
+    return "";
+  }
+}
 
 /** The feeds XorvLedger publishes, in the order an operator reads them. */
 const FEEDS: Array<[LedgerEventKind, string]> = [
@@ -73,17 +83,26 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
 
   console.log(ui.banner(`network status · ${networkLabel(network.network)}`));
 
+  if (!isSupportedNetwork(network.network)) {
+    // A broker that has not been moved to Monad yet (or a typo'd XORV_NETWORK
+    // on it). Its payments can't be made by this CLI, but who is online is
+    // still worth showing, so this warns instead of refusing.
+    ui.warn(`this broker reports network "${network.network}" — this CLI pays on Monad (eip155:10143 / eip155:143)`);
+    ui.blank();
+  }
+
   // -- the network ----------------------------------------------------------
 
+  const usdc = network.usdc?.address;
   const summary: Array<[string, string]> = [
     ["network", `Monad ${network.label ?? networkLabel(network.network)} ${ui.c.muted(`· ${network.network}`)}`],
-    ["usdc", `${network.usdc.address} ${ui.c.muted(explorerAddress(network.network, network.usdc.address))}`],
+    ["usdc", usdc ? `${usdc} ${ui.c.muted(link(() => explorerAddress(network.network, usdc)))}` : ui.c.muted("—")],
     [
       "facilitator",
-      `${network.facilitator.description}${network.facilitator.address ? ` ${ui.c.muted(`· gas paid by ${shortHex(network.facilitator.address)}`)}` : ""}`,
+      `${network.facilitator?.description ?? "—"}${network.facilitator?.address ? ` ${ui.c.muted(`· gas paid by ${shortHex(network.facilitator.address)}`)}` : ""}`,
     ],
-    ["identity", ui.c.muted(`ERC-8004 registry ${network.erc8004.identity}`)],
   ];
+  if (network.erc8004?.identity) summary.push(["identity", ui.c.muted(`ERC-8004 registry ${network.erc8004.identity}`)]);
   const ai = network.ai
     ? (
         [
