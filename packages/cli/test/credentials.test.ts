@@ -38,6 +38,21 @@ describe("agentCredentials", () => {
   it("injects nothing for an adapter that authenticates its own way", () => {
     expect(agentCredentials("echo")).toEqual({});
     expect(agentCredentials("codex")).toEqual({});
+    // The hosted models run in-process; nothing is ever spawned for them.
+    expect(agentCredentials("qwen")).toEqual({});
+  });
+
+  it("hands qwen-code nothing when no Qwen key is configured", () => {
+    const saved = { a: process.env.XORV_QWEN_API_KEY, b: process.env.DASHSCOPE_API_KEY };
+    delete process.env.XORV_QWEN_API_KEY;
+    delete process.env.DASHSCOPE_API_KEY;
+    try {
+      expect(agentCredentials("qwen-code")).toEqual({});
+      expect(canAuthenticate("qwen-code")).toBe(false);
+    } finally {
+      if (saved.a !== undefined) process.env.XORV_QWEN_API_KEY = saved.a;
+      if (saved.b !== undefined) process.env.DASHSCOPE_API_KEY = saved.b;
+    }
   });
 
   it("caches, because a shell-out per job is a real cost", () => {
@@ -63,7 +78,9 @@ describe("the keychain stays closed", () => {
     expect(secretPaths("/Users/x")).toContain(path.join("/Users/x", "Library", "Keychains"));
   });
 
-  it("is denied in the generated profile", () => {
+  // Seatbelt profiles are written in POSIX paths; path.join on Windows would
+  // produce backslashes this assertion (rightly) does not expect.
+  it.skipIf(process.platform === "win32")("is denied in the generated profile (POSIX paths)", () => {
     const jobDir = fs.mkdtempSync(path.join(os.tmpdir(), "xorv-cred-"));
     try {
       expect(seatbeltProfile(jobDir, "/Users/x")).toContain(

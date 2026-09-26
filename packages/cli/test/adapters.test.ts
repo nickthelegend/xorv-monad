@@ -22,7 +22,7 @@ import {
   runChild,
   safeMode,
 } from "../src/adapters/base.js";
-import type { JobEvent } from "@xorv/protocol";
+import { ADAPTER_KINDS, type JobEvent } from "@xorv/protocol";
 
 function collector() {
   const events: Array<Omit<JobEvent, "at">> = [];
@@ -33,8 +33,23 @@ describe("adapter registry", () => {
   it("builds every declared kind", () => {
     const kinds = allAdapters().map((a) => a.kind).sort();
     expect(kinds).toEqual(
-      ["claude-code", "codex", "echo", "grok", "openai-compatible", "opencode"].sort(),
+      [
+        "claude-code",
+        "codex",
+        "echo",
+        "grok",
+        "hunyuan",
+        "kimi",
+        "openai-compatible",
+        "opencode",
+        "qwen",
+        "qwen-code",
+      ].sort(),
     );
+  });
+
+  it("registers every kind the protocol declares, in the protocol's order", () => {
+    expect(allAdapters().map((a) => a.kind)).toEqual(ADAPTER_KINDS);
   });
 
   it("gives every adapter an install hint, so `doctor` can always say what to do", () => {
@@ -49,8 +64,21 @@ describe("adapter registry", () => {
   });
 
   it("probes availability without throwing, even when a CLI is missing", async () => {
-    const results = await detectAvailable();
-    expect(results).toHaveLength(6);
+    // With no model keys set the hosted adapters answer "no" without touching
+    // the network — which is also what keeps this test offline.
+    const keys = ["XORV_QWEN_API_KEY", "DASHSCOPE_API_KEY", "XORV_KIMI_API_KEY", "MOONSHOT_API_KEY", "XORV_HUNYUAN_API_KEY", "TOKENHUB_API_KEY"];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    for (const k of keys) delete process.env[k];
+    let results: Awaited<ReturnType<typeof detectAvailable>>;
+    try {
+      results = await detectAvailable();
+    } finally {
+      for (const k of keys) if (saved[k] !== undefined) process.env[k] = saved[k];
+    }
+    expect(results).toHaveLength(10);
+    for (const kind of ["qwen", "kimi", "hunyuan", "qwen-code"]) {
+      expect(results.find((r) => r.adapter.kind === kind)!.available).toBe(false);
+    }
     for (const r of results) expect(typeof r.available).toBe("boolean");
     // Echo needs nothing installed and must always be usable.
     expect(results.find((r) => r.adapter.kind === "echo")!.available).toBe(true);

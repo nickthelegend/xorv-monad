@@ -48,7 +48,7 @@ describe("wrap", () => {
   });
 
   it("hard-breaks a long URL — the case that actually broke the receipt box", () => {
-    const url = "https://hashscan.io/testnet/transaction/0.0.9842030-1785475549-131327424";
+    const url = "https://testnet.monadscan.com/tx/0x5c3e9f1d2b7a4c8e6f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f607";
     const lines = wrap(url, 40);
     for (const line of lines) expect(visibleLength(line)).toBeLessThanOrEqual(40);
     expect(lines.join("")).toBe(url);

@@ -51,8 +51,22 @@ describe("spending discipline", () => {
 });
 
 describe("the receipt", () => {
-  it("requires the hashscan link to be reported with every paid job", () => {
+  it("requires the explorer link to be reported with every paid job", () => {
     expect(body).toMatch(/Never report a paid job without its link/i);
+    expect(body).toContain("\"explorer\": \"https://testnet.monadscan.com/tx/0x");
+  });
+
+  it("documents the run --json keys exactly as run.ts emits them", () => {
+    // The skill parses this output; a renamed key silently drops the receipt.
+    for (const key of ["settlementTransaction", "explorer", "receiptExplorer", "agentExplorer", "priceLabel", "usdcAmount"]) {
+      expect(body).toContain(`"${key}"`);
+    }
+    expect(body).not.toMatch(/hashscan|hedera|0\.0\.\d/i);
+  });
+
+  it("says a buyer needs USDC and no MON", () => {
+    expect(body).toMatch(/USDC on Monad and nothing else/);
+    expect(body).toContain("faucet.circle.com");
   });
 
   it("asks for the provider and price alongside the answer", () => {
@@ -70,11 +84,15 @@ describe("known traps", () => {
   it("explains that a provider cannot buy from itself", () => {
     // The first thing anyone hits when they demo on the machine they host on.
     expect(body).toMatch(/cannot pay yourself/i);
-    expect(body).toContain("XORV_PAYER_ID");
+    expect(body).toContain("XORV_PAYER_KEY");
   });
 
   it("warns that the prompt travels without any local context", () => {
     expect(body).toMatch(/no other context/i);
+  });
+
+  it("names the sponsor-model adapters with their exact model ids", () => {
+    for (const id of ["qwen3.8-max", "kimi-k3", "hy4-preview", "qwen-code"]) expect(body).toContain(id);
   });
 
   it("bakes in the broker this install points at", () => {
