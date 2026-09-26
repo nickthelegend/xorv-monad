@@ -3,45 +3,76 @@
  * "my machine is earning".
  *
  * The wizard's job is to make the two genuinely hard parts painless: which of
- * the operator's agent CLIs actually work right now (probed, not asked), and
- * getting them a Hedera account that can receive USDC (generated, with the one
- * manual step spelled out precisely).
+ * the operator's agent CLIs and model keys actually work right now (probed, not
+ * asked), and where the money goes.
+ *
+ * On Monad the second part got much smaller. A payout destination is just an
+ * address — nothing to fund, nothing to opt into — so there are three honest
+ * ways to supply one:
+ *
+ *  - **generate** a fresh key here (quickest; the key lives in the node config),
+ *  - **import** a key the operator already has, or
+ *  - **address only** — paste an address whose key lives somewhere else (the
+ *    Privy wallet from the Xorv web app, a hardware wallet). No key is written
+ *    to this machine at all, which is the safest node there is: a prompt that
+ *    escapes the sandbox finds nothing worth stealing. A provider never signs
+ *    anything to get paid, so it loses nothing but `xorv run` and
+ *    `xorv identity register`, which need a key.
  */
 
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { PrivateKey } from "@hiero-ledger/sdk";
 import {
-  HEDERA_TESTNET_CAIP2,
+  DEFAULT_NETWORK,
+  explorerAddress,
   fetchBalances,
+  formatMon,
   formatUsd,
-  hashscanAccount,
-  isAccountId,
+  formatUsdc,
+  networkConfig,
   networkLabel,
+  normalizeAddress,
+  parsePrivateKey,
   parseUsd,
-  usdcTokenId,
   type AdapterKind,
   type Capability,
 } from "@xorv/protocol";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { detectAvailable } from "../adapters/index.js";
 import {
   XORV_HOME,
   configExists,
   configPath,
   defaultCapability,
-  loadConfig,
+  loadPreviousConfig,
   saveConfig,
   type NodeConfig,
 } from "../config.js";
 import * as ui from "../ui.js";
 
+/** The prompts the wizard needs — the `ui` module in real use, a script in tests. */
+export interface Prompter {
+  ask(question: string, fallback?: string): Promise<string>;
+  confirm(question: string, fallback?: boolean): Promise<boolean>;
+  select<T extends { label: string; hint?: string }>(question: string, options: T[]): Promise<T>;
+}
+
 export async function initCommand(opts: { broker?: string; force?: boolean }): Promise<void> {
   console.log(ui.banner("set up this machine as a provider node"));
 
-  if (configExists() && !opts.force) {
-    const existing = loadConfig();
-    ui.warn(`this machine is already set up as ${ui.c.bold(existing?.label ?? "a node")}`);
+  const { config: previous, legacy } = loadPreviousConfig();
+
+  if (legacy) {
+    ui.warn("this machine was set up by the Hedera version of Xorv");
+    ui.muted(
+      `  ${legacy.accountId ? `account ${legacy.accountId}` : "the old account"}${legacy.network ? ` on ${legacy.network}` : ""} ` +
+        "can't be paid on Monad — this sets up a Monad payout address instead",
+    );
+    ui.muted("  your node name, capabilities and prices carry over");
+    ui.blank();
+  } else if (configExists() && !opts.force) {
+    ui.warn(`this machine is already set up as ${ui.c.bold(previous?.label ?? "a node")}`);
     ui.muted(`  config: ${configPath()}`);
     const again = await ui.confirm("reconfigure it?", false);
     if (!again) {
@@ -51,11 +82,9 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
     }
   }
 
-  const previous = loadConfig();
-
   // -- 1. identity ----------------------------------------------------------
 
-  ui.heading("1 · identity");
+  ui.heading("1 · this node");
   const label = await ui.ask(
     "what should this node be called?",
     previous?.label ?? `${os.hostname().split(".")[0]}-xorv`,
@@ -68,14 +97,14 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
   // -- 2. capacity ----------------------------------------------------------
 
   ui.heading("2 · what are you selling?");
-  const spin = ui.spinner("probing the agent CLIs on this machine…");
+  const spin = ui.spinner("probing the agent CLIs and model keys on this machine…");
   const detected = await detectAvailable();
   spin.stop();
 
   const rows = detected.map(({ adapter, available }) => [
     available ? ui.glyph.ok() : ui.glyph.off(),
     ui.c.bold(adapter.kind),
-    available ? ui.c.ok("ready") : ui.c.muted("not found"),
+    available ? ui.c.ok("ready") : ui.c.muted("not set up"),
     available ? "" : ui.c.muted(adapter.installHint),
   ]);
   console.log(
@@ -86,12 +115,15 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
   );
   ui.blank();
 
-  const options = detected.map(({ adapter, available }) => ({
-    label: adapter.kind,
-    hint: available ? "ready now" : "not installed — you can still list it",
-    kind: adapter.kind,
-    available,
-  }));
+  const options = detected.map(({ adapter, available }) => {
+    const preset = defaultCapability(adapter.kind);
+    return {
+      label: preset.model ? `${adapter.kind} ${ui.c.muted(`(${preset.model})`)}` : adapter.kind,
+      hint: available ? "ready now" : "not set up — you can still list it",
+      kind: adapter.kind,
+      available,
+    };
+  });
   const defaults = options
     .map((opt, i) => (opt.available && opt.kind !== "echo" ? i : -1))
     .filter((i) => i >= 0);
@@ -126,8 +158,8 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
       priceUsdMicros = preset.priceUsdMicros;
     }
     const model = await ui.ask(
-      `  pin a model for ${preset.displayName}? (blank = the CLI's default)`,
-      prior?.model ?? "",
+      `  pin a model for ${preset.displayName}? (blank = the ${preset.model ? "preset" : "CLI's"} default)`,
+      prior?.model ?? preset.model ?? "",
     );
     capabilities.push({
       ...preset,
@@ -137,11 +169,12 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
     });
   }
 
-  // -- 3. payout account ----------------------------------------------------
+  // -- 3. payout address ----------------------------------------------------
 
   ui.heading("3 · where should the money go?");
-  const network = previous?.network ?? HEDERA_TESTNET_CAIP2;
-  const wallet = await setupWallet(previous, network);
+  const network = previous?.network ?? DEFAULT_NETWORK;
+  const wallet = await setupWallet(previous, ui);
+  await reportBalances(network, wallet.address);
 
   // -- 4. broker ------------------------------------------------------------
 
@@ -151,13 +184,18 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
     opts.broker ?? previous?.brokerUrl ?? "http://localhost:8402",
   );
 
+  // An identity is bound to the address it was registered from; a new payout
+  // address makes the old one meaningless for this node.
+  const keepAgent = previous?.agentId && previous.address && wallet.address === previous.address;
+
   const config: NodeConfig = {
     nodeId: previous?.nodeId || randomBytes(12).toString("hex"),
     label: label.trim() || "xorv-node",
     network,
     brokerUrl: brokerUrl.replace(/\/+$/, ""),
-    accountId: wallet.accountId,
+    address: wallet.address,
     privateKey: wallet.privateKey,
+    agentId: keepAgent ? (previous?.agentId ?? null) : null,
     capabilities,
     region: region.trim() || null,
     tunnel: previous?.tunnel ?? { enabled: false, hostname: null },
@@ -179,12 +217,16 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
         ...ui.kv([
           ["node", ui.c.bold(config.label)],
           ["selling", capabilities.map((c) => `${c.displayName} ${ui.c.money(formatUsd(c.priceUsdMicros))}`).join(", ")],
-          ["payout", `${config.accountId} ${ui.c.muted(`(${networkLabel(network)})`)}`],
+          ["payout", `${config.address} ${ui.c.muted(`(Monad ${networkLabel(network)})`)}`],
+          ["key", config.privateKey ? ui.c.muted("stored in the config (0600)") : ui.c.ok("none on this machine")],
           ["broker", config.brokerUrl],
           ["config", configPath()],
         ]),
         "",
         `${ui.c.muted("next:")}  ${ui.c.accent("xorv start")}   ${ui.c.muted("— go live and start taking jobs")}`,
+        ...(config.privateKey && !config.agentId
+          ? [`${ui.c.muted("then:")}  ${ui.c.accent("xorv identity register")}   ${ui.c.muted("— optional ERC-8004 identity")}`]
+          : []),
       ],
       { title: "ready" },
     ),
@@ -192,121 +234,116 @@ export async function initCommand(opts: { broker?: string; force?: boolean }): P
   ui.blank();
 }
 
-interface WalletChoice {
-  accountId: string;
+export interface WalletChoice {
+  /** Checksummed payout address. */
+  address: string;
+  /** 0x key, or "" for an address-only node. */
   privateKey: string;
 }
 
 /**
- * Get the operator a Hedera account that can receive USDC.
+ * Settle where this node gets paid.
  *
- * Importing is offered first because anyone who already has a testnet account
- * from the portal is one paste away from done. Generating is the fallback, and
- * it deliberately stops and shows the funding step rather than pretending an
- * unfunded account is finished — an account that has never received HBAR does
- * not exist on Hedera yet, and a node registered against one would look healthy
- * right up until the first payment failed.
+ * Pure over its prompts, so every path — reuse, generate, import (with a bad
+ * key first), address-only (with a typo'd checksum first) — is tested without a
+ * terminal.
  */
-async function setupWallet(
-  previous: NodeConfig | null,
-  network: string,
-): Promise<WalletChoice> {
-  if (previous?.accountId && previous.privateKey) {
-    const keep = await ui.confirm(
-      `reuse the existing payout account ${ui.c.bold(previous.accountId)}?`,
+export async function setupWallet(previous: NodeConfig | null, prompt: Prompter): Promise<WalletChoice> {
+  if (previous?.address) {
+    const how = previous.privateKey ? "key on this machine" : "address only, no key here";
+    const keep = await prompt.confirm(
+      `reuse the existing payout address ${ui.c.bold(previous.address)} (${how})?`,
       true,
     );
-    if (keep) return { accountId: previous.accountId, privateKey: previous.privateKey };
+    if (keep) return { address: normalizeAddress(previous.address), privateKey: previous.privateKey };
   }
 
-  const choice = await ui.select("how do you want to get paid?", [
+  const choice = await prompt.select("how do you want to get paid?", [
     {
-      label: "I have a Hedera account already",
-      hint: "paste an account id + private key",
-      mode: "import" as const,
+      label: "Generate a new key for me",
+      hint: "quickest — the key is stored in the node config (0600)",
+      mode: "generate" as const,
     },
     {
-      label: "Generate a new keypair for me",
-      hint: "then fund it from the faucet",
-      mode: "generate" as const,
+      label: "Use an address I already control",
+      hint: "safest — e.g. your Privy wallet from the Xorv web app; no key is stored here",
+      mode: "address" as const,
+    },
+    {
+      label: "Import an existing private key",
+      hint: "0x + 64 hex characters",
+      mode: "import" as const,
     },
   ]);
 
-  if (choice.mode === "import") {
+  if (choice.mode === "address") {
+    ui.muted("  A provider never signs anything to get paid, so this node needs no key at all.");
+    ui.muted("  You give up `xorv run` and `xorv identity register` on this machine — both need a key.");
     while (true) {
-      const accountId = await ui.ask("  Hedera account id (0.0.…)");
-      if (!isAccountId(accountId)) {
-        ui.bad("  that doesn't look like a Hedera account id");
-        continue;
+      const raw = await prompt.ask("  payout address (0x…)");
+      try {
+        return { address: normalizeAddress(raw), privateKey: "" };
+      } catch (err) {
+        ui.bad(`  ${err instanceof Error ? err.message : String(err)}`);
       }
-      const privateKey = await ui.ask("  private key (hex or DER)");
-      if (!privateKey.trim()) {
-        ui.bad("  a private key is required to sign payouts");
-        continue;
-      }
-      await reportBalances(network, accountId);
-      return { accountId: accountId.trim(), privateKey: privateKey.trim() };
     }
   }
 
-  // Generate. ECDSA, because it yields an EVM address the faucet accepts.
-  const key = PrivateKey.generateECDSA();
-  const evmAddress = `0x${key.publicKey.toEvmAddress()}`;
+  if (choice.mode === "import") {
+    while (true) {
+      const raw = await prompt.ask("  private key (0x…)");
+      try {
+        const key = parsePrivateKey(raw);
+        const address = privateKeyToAccount(key).address;
+        ui.ok(`  that key controls ${ui.c.bold(address)}`);
+        return { address, privateKey: key };
+      } catch (err) {
+        ui.bad(`  ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
 
+  const key = generatePrivateKey();
+  const address = privateKeyToAccount(key).address;
   ui.blank();
   console.log(
     ui.box(
       [
-        ui.c.bold("a new keypair for this node"),
+        ui.c.bold("a new payout key for this node"),
         "",
         ...ui.kv([
-          ["evm address", ui.c.accent(evmAddress)],
-          ["private key", ui.c.muted(`${key.toStringRaw().slice(0, 14)}…  (saved to ${configPath()})`)],
+          ["address", ui.c.accent(address)],
+          ["private key", ui.c.muted(`${key.slice(0, 10)}…  (saved to ${configPath()})`)],
         ]),
         "",
-        ui.c.warn("Hedera creates the account when it first receives HBAR."),
-        "",
-        `  1. open ${ui.c.accent(`https://portal.hedera.com/faucet`)}`,
-        `  2. paste the EVM address above and request ${networkLabel(network)} HBAR`,
-        `  3. copy the ${ui.c.bold("account id")} it gives you back (0.0.…) and paste it below`,
+        "  Nothing to fund: any Monad address can receive USDC, and the",
+        "  facilitator pays the gas on every payment you receive.",
       ],
-      { title: "fund this account", color: ui.BRAND.amber },
+      { title: "payout key", color: ui.BRAND.amber },
     ),
   );
   ui.blank();
-
-  while (true) {
-    const accountId = await ui.ask("  account id from the faucet (0.0.…)");
-    if (!isAccountId(accountId)) {
-      ui.bad("  that doesn't look like a Hedera account id — it looks like 0.0.12345");
-      continue;
-    }
-    await reportBalances(network, accountId);
-    return { accountId: accountId.trim(), privateKey: key.toStringRaw() };
-  }
+  return { address, privateKey: key };
 }
 
-/** Show what the account holds, and whether it can receive USDC at all. */
-async function reportBalances(network: string, accountId: string): Promise<void> {
-  const spin = ui.spinner(`checking ${accountId} on ${networkLabel(network)}…`);
+/** Show what the address holds — informational only; nothing here blocks setup. */
+async function reportBalances(network: string, address: string): Promise<void> {
+  const cfg = networkConfig(network);
+  const spin = ui.spinner(`checking ${address} on ${cfg.name}…`);
   try {
-    const balances = await fetchBalances(network, accountId);
+    const balances = await fetchBalances(network, address);
     spin.stop();
-    const hbar = (Number(balances.hbarTinybars) / 1e8).toFixed(4);
-    ui.ok(`  account found — ${ui.c.money(`${hbar} ℏ`)}`);
-    if (balances.usdcAssociated) {
-      ui.ok(`  associated with USDC ${ui.c.muted(`(${usdcTokenId(network)})`)}`);
-    } else {
-      ui.warn(
-        `  not associated with USDC yet — run ${ui.c.accent("xorv wallet associate")} before taking USDC-priced jobs`,
-      );
+    ui.ok(
+      `  ${ui.c.money(formatUsdc(balances.usdcUnits))} USDC · ${formatMon(balances.monWei)} ` +
+        ui.c.muted("(no MON needed to earn)"),
+    );
+    ui.muted(`  ${explorerAddress(network, address)}`);
+    if (cfg.faucets.mon) {
+      ui.muted(`  MON for an optional identity: ${cfg.faucets.mon} · test USDC: ${cfg.faucets.usdc}`);
     }
-    ui.muted(`  ${hashscanAccount(network, accountId)}`);
   } catch (err) {
     spin.stop();
-    ui.warn(
-      `  couldn't reach the mirror node to verify (${err instanceof Error ? err.message : String(err)})`,
-    );
+    ui.warn(`  couldn't reach ${cfg.rpcUrl} to read the balance (${err instanceof Error ? err.message : String(err)})`);
     ui.muted("  continuing — `xorv doctor` will re-check this later");
   }
 }

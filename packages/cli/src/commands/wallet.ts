@@ -1,120 +1,73 @@
 /**
- * `xorv wallet` — the payout account.
+ * `xorv wallet` — the payout address.
  *
- * The question that matters is "can this account actually be paid in USDC?",
- * and it has two possible yeses. Explicit association is one. The other is
- * automatic association slots (HIP-904), where a token lands without any prior
- * opt-in — which is how every account `pnpm setup:hedera` creates is
- * configured.
+ * On Monad there is nothing to set up before an address can be paid: any
+ * address can receive an ERC-20, so the Hedera-era chores (token association,
+ * funding an account into existence) are gone. What is left to show is what the
+ * address holds and where to look it up.
  *
- * Reporting only on explicit association told those operators they could not be
- * paid and sent them to spend HBAR on a transaction they did not need. So both
- * this and `doctor` read `canReceiveUsdc`, which mirrors what x402's own
- * preflight checks before it will settle.
+ * Both balances are shown, with what each is for, because they are easy to
+ * confuse: USDC is what jobs pay in; MON is gas, which a provider only needs
+ * for the optional `xorv identity register` (the facilitator pays the gas on
+ * every settlement, so earning never costs MON).
  */
 
-import { PrivateKey } from "@hiero-ledger/sdk";
 import {
-  associateToken,
+  explorerAddress,
+  explorerToken,
   fetchBalances,
-  formatUsd,
-  hashscanAccount,
-  hashscanToken,
-  hederaClient,
-
+  formatMon,
+  formatUsdc,
+  networkConfig,
   networkLabel,
-  parsePrivateKey,
-  usdcTokenId,
+  type AccountBalances,
 } from "@xorv/protocol";
-import { loadConfig, requireConfig, resolvePrivateKey, saveConfig } from "../config.js";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { loadConfig, payoutAddress, requireConfig, saveConfig, type NodeConfig } from "../config.js";
 import * as ui from "../ui.js";
+
+/** The rows `xorv wallet` shows — pure, so the layout is tested without an RPC. */
+export function walletRows(config: Pick<NodeConfig, "network" | "address" | "privateKey" | "agentId">, balances: AccountBalances): Array<[string, string]> {
+  const cfg = networkConfig(config.network);
+  const address = config.address;
+  const rows: Array<[string, string]> = [
+    ["address", ui.c.bold(address)],
+    ["network", `${cfg.name} ${ui.c.muted(`(${cfg.caip2})`)}`],
+    ["usdc", `${ui.c.money(formatUsdc(balances.usdcUnits))} ${ui.c.muted("— what jobs pay you in")}`],
+    [
+      "mon",
+      `${formatMon(balances.monWei)} ${ui.c.muted(
+        BigInt(balances.monWei) === 0n ? "— none needed to earn; gas only for `xorv identity register`" : "— gas, for `xorv identity register`",
+      )}`,
+    ],
+    ["key", config.privateKey ? ui.c.muted("stored locally (0600)") : ui.c.muted("none on this machine — address-only")],
+    ["identity", config.agentId ? `agent #${config.agentId}` : ui.c.muted("none — `xorv identity register`")],
+    ["token", ui.c.muted(`${cfg.usdc.symbol} ${explorerToken(cfg.caip2, cfg.usdc.address)}`)],
+    ["explorer", ui.c.muted(explorerAddress(cfg.caip2, address))],
+  ];
+  if (cfg.faucets.usdc || cfg.faucets.mon) {
+    rows.push([
+      "faucets",
+      ui.c.muted([cfg.faucets.usdc && `USDC ${cfg.faucets.usdc}`, cfg.faucets.mon && `MON ${cfg.faucets.mon}`].filter(Boolean).join(" · ")),
+    ]);
+  }
+  return rows;
+}
 
 export async function walletShow(): Promise<void> {
   const config = requireConfig();
+  const address = payoutAddress(config);
   console.log(ui.banner("payout wallet"));
 
-  const spin = ui.spinner(`querying ${config.accountId}…`);
+  const spin = ui.spinner(`reading ${address} on Monad ${networkLabel(config.network)}…`);
   try {
-    const balances = await fetchBalances(config.network, config.accountId);
+    const balances = await fetchBalances(config.network, address);
     spin.stop();
-    console.log(
-      ui.box(
-        ui.kv([
-          ["account", ui.c.bold(config.accountId)],
-          ["network", `${config.network} ${ui.c.muted(`(${networkLabel(config.network)})`)}`],
-          ["usdc", ui.c.money(formatUsd(Number(balances.usdcUnits)))],
-          ["hbar", `${(Number(balances.hbarTinybars) / 1e8).toFixed(4)} ℏ`],
-          [
-            "can be paid",
-            balances.canReceiveUsdc
-              ? `${ui.c.ok("yes")} ${ui.c.muted(
-                  balances.usdcAssociated ? "(associated)" : "(automatic association)",
-                )}`
-              : `${ui.c.bad("no")} ${ui.c.muted("→ xorv wallet associate")}`,
-          ],
-          ["token", ui.c.muted(`${usdcTokenId(config.network)}  ${hashscanToken(config.network, usdcTokenId(config.network))}`)],
-          ["hashscan", ui.c.muted(hashscanAccount(config.network, config.accountId))],
-        ]),
-        { title: "wallet", color: ui.BRAND.mint },
-      ),
-    );
+    console.log(ui.box(ui.kv(walletRows({ ...config, address }, balances)), { title: "wallet", color: ui.BRAND.mint }));
   } catch (err) {
-    spin.fail(`could not read the account: ${err instanceof Error ? err.message : String(err)}`);
+    spin.fail(`could not reach ${networkConfig(config.network).rpcUrl}: ${err instanceof Error ? err.message : String(err)}`);
+    ui.muted(`  ${explorerAddress(config.network, address)}`);
     process.exitCode = 1;
-  }
-  ui.blank();
-}
-
-export async function walletAssociate(): Promise<void> {
-  const config = requireConfig();
-  const token = usdcTokenId(config.network);
-
-  console.log(ui.banner("associate USDC"));
-
-  const balances = await fetchBalances(config.network, config.accountId).catch(() => null);
-  if (balances?.usdcAssociated) {
-    ui.ok(`${config.accountId} is already associated with USDC (${token})`);
-    ui.blank();
-    return;
-  }
-  if (balances?.canReceiveUsdc) {
-    // Spending HBAR to opt into a token the account would auto-associate
-    // anyway is pure waste, so say so rather than doing it.
-    ui.ok(`${config.accountId} can already receive USDC via automatic association`);
-    ui.muted(
-      `  ${balances.maxAutoAssociations === -1 ? "unlimited" : balances.maxAutoAssociations} automatic slot(s) — no transaction needed`,
-    );
-    ui.blank();
-    return;
-  }
-
-  ui.info(`associating ${ui.c.bold(config.accountId)} with USDC ${ui.c.muted(token)}`);
-  ui.muted("  this costs a fraction of a cent in HBAR and only has to be done once");
-  ui.blank();
-
-  const spin = ui.spinner("submitting TokenAssociateTransaction…");
-  let client;
-  try {
-    const key = parsePrivateKey(resolvePrivateKey(config));
-    client = hederaClient(config.network, config.accountId, key);
-    const result = await associateToken(client, config.accountId, token);
-    spin.succeed("associated");
-    if (result.transactionId) {
-      ui.muted(`  tx ${result.transactionId}`);
-    }
-    ui.blank();
-    ui.ok(`${config.accountId} can now receive USDC — it will show up in \`xorv earnings\``);
-  } catch (err) {
-    spin.fail(`association failed: ${err instanceof Error ? err.message : String(err)}`);
-    const message = err instanceof Error ? err.message : "";
-    if (message.includes("INSUFFICIENT_PAYER_BALANCE") || message.includes("INSUFFICIENT_TX_FEE")) {
-      ui.blank();
-      ui.warn("this account has no HBAR to pay the association fee");
-      ui.muted(`  fund it at https://portal.hedera.com/faucet, then run this again`);
-    }
-    process.exitCode = 1;
-  } finally {
-    client?.close();
   }
   ui.blank();
 }
@@ -122,17 +75,22 @@ export async function walletAssociate(): Promise<void> {
 /**
  * Rotate to a fresh keypair.
  *
- * The old account keeps whatever it already earned — this changes where future
+ * The old address keeps whatever it already earned — this changes where future
  * payouts land, it does not move money, and it says so rather than implying a
- * sweep happened.
+ * sweep happened. An ERC-8004 identity is bound to the old address, so it is
+ * cleared here too: keeping it would register the node under an agent whose
+ * wallet no longer matches, and XorvLedger would refuse every receipt for it.
  */
 export async function walletNew(): Promise<void> {
-  const config = loadConfig();
+  const config = loadConfig() ?? requireConfig();
   console.log(ui.banner("new payout keypair"));
 
-  if (config?.accountId) {
-    ui.warn(`this node currently pays out to ${ui.c.bold(config.accountId)}`);
-    ui.muted("  generating a new key does NOT move existing funds — the old account keeps them");
+  if (config.address) {
+    ui.warn(`this node currently pays out to ${ui.c.bold(config.address)}`);
+    ui.muted("  generating a new key does NOT move existing funds — the old address keeps them");
+    if (config.agentId) {
+      ui.muted(`  agent #${config.agentId} stays bound to the old address; register a new identity afterwards`);
+    }
     const go = await ui.confirm("generate a new keypair anyway?", false);
     if (!go) {
       ui.blank();
@@ -140,45 +98,29 @@ export async function walletNew(): Promise<void> {
     }
   }
 
-  const key = PrivateKey.generateECDSA();
-  const evm = `0x${key.publicKey.toEvmAddress()}`;
+  const key = generatePrivateKey();
+  const address = privateKeyToAccount(key).address;
+  saveConfig({ ...config, address, privateKey: key, agentId: null });
 
+  const cfg = networkConfig(config.network);
   console.log(
     ui.box(
       [
-        ui.c.bold("new ECDSA keypair"),
+        ui.c.bold("new payout keypair"),
         "",
         ...ui.kv([
-          ["evm address", ui.c.accent(evm)],
-          ["private key", ui.c.bold(key.toStringRaw())],
+          ["address", ui.c.accent(address)],
+          ["private key", ui.c.muted(`saved to the node config (0600) — back it up: xorv config --path`)],
         ]),
         "",
-        ui.c.warn("Write the private key down now — it is not shown again."),
-        "",
-        `  1. fund the EVM address at ${ui.c.accent("https://portal.hedera.com/faucet")}`,
-        `  2. copy the account id it returns (0.0.…)`,
-        `  3. paste it below to point this node at the new account`,
+        "  Nothing to fund: any Monad address can receive USDC.",
+        ...(cfg.faucets.mon ? [`  (MON for an identity: ${cfg.faucets.mon})`] : []),
       ],
       { title: "keypair", color: ui.BRAND.amber },
     ),
   );
   ui.blank();
-
-  const accountId = await ui.ask("  new account id (blank to skip)");
-  if (!accountId.trim()) {
-    ui.info("keypair not saved — nothing changed");
-    ui.blank();
-    return;
-  }
-  if (!/^\d+\.\d+\.\d+$/.test(accountId.trim())) {
-    ui.bad("that doesn't look like a Hedera account id — nothing changed");
-    process.exitCode = 1;
-    return;
-  }
-
-  const next = { ...(config ?? requireConfig()), accountId: accountId.trim(), privateKey: key.toStringRaw() };
-  saveConfig(next);
-  ui.ok(`payouts now go to ${ui.c.bold(next.accountId)}`);
-  ui.info(`run ${ui.c.accent("xorv wallet associate")} so it can receive USDC`);
+  ui.ok(`payouts now go to ${ui.c.bold(address)}`);
+  ui.info(`restart ${ui.c.accent("xorv start")} so the broker pays the new address`);
   ui.blank();
 }
