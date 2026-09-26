@@ -160,7 +160,9 @@ function Facts({ network }: { network: NetworkSnapshot | null }) {
                 <span className="hidden sm:inline">{value}</span>
               </a>
             ) : (
-              <span className="text-[12.5px] text-fg-4">not deployed on this network yet</span>
+              <span className="text-[12.5px] text-fg-4">
+                {network ? "this broker isn't writing to a ledger yet" : "address comes from the broker"}
+              </span>
             )}
           </dd>
         </div>
