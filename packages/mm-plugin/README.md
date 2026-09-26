@@ -128,8 +128,9 @@ pnpm --filter @xorv/mm-plugin build          # tsc + oclif manifest
 
 mm config set experimentalAllowUnverifiedInstalls true   # local file: installs are development-only
 cd packages/mm-plugin
-mm plugins install "file:$PWD" --accept-permissions      # bash / zsh
+mm plugins install "file:$PWD" --accept-permissions      # bash / zsh (macOS, Linux)
 # PowerShell:  mm plugins install "file:$((Get-Location).Path)" --accept-permissions
+# Git Bash:    mm plugins install "file:$(pwd -W)" --accept-permissions   (npm needs E:/…, not /e/…)
 ```
 
 Install from the directory, not from a packed tarball. That way Agent Wallet reads `package.json#mm`
