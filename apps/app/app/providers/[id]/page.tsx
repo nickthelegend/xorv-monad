@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui";
 import { api, type Provider } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Provider" };
 
 export default async function ProviderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

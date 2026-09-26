@@ -64,7 +64,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <ul className="space-y-0.5">
             {NAV.map((item) => {
               const active =
-                item.href === "/" ? pathname === "/" || pathname.startsWith("/jobs") : pathname === item.href;
+                item.href === "/"
+                  ? pathname === "/" || pathname.startsWith("/jobs")
+                  : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <li key={item.href}>
                   <Link
@@ -104,7 +106,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className="text-[13.5px] text-fg-3">
             {pathname.startsWith("/jobs")
               ? "Job"
-              : (NAV.find((n) => n.href === pathname)?.label ?? "Jobs")}
+              : pathname.startsWith("/providers/")
+                ? "Provider"
+                : (NAV.find((n) => n.href === pathname)?.label ?? "Jobs")}
           </span>
           <div className="ml-auto flex items-center gap-3">
             <Link
