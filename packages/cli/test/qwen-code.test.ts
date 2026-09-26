@@ -20,10 +20,12 @@ import { resetCredentialCache } from "../src/credentials.js";
 const FAKE_QWEN = String.raw`
 import fs from "node:fs";
 const argv = process.argv.slice(2);
+// The --version probe runs in the caller's cwd, not a job directory: answer it
+// before writing anything.
+if (argv.includes("--version")) { console.log("0.24.6"); process.exit(0); }
 fs.writeFileSync("seen.json", JSON.stringify({ argv, env: process.env }));
 const prompt = argv[argv.indexOf("-p") + 1] ?? "";
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
-if (argv.includes("--version")) { console.log("0.24.6"); process.exit(0); }
 out({ type: "system", subtype: "session_start", session_id: "s1", model: process.env.OPENAI_MODEL });
 if (prompt.startsWith("exit:")) {
   out({ type: "assistant", message: { content: [{ type: "text", text: "half done" }] } });
