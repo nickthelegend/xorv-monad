@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "services/*"
+  - "!services/indexer"
   - "apps/*"
 
 # The Hiero SDK ships protobuf builders that run on install.

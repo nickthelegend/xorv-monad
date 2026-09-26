@@ -1,0 +1,28 @@
+{
+  // Mirrors the envio 3.12 TypeScript template. Standalone on purpose: this package is
+  // outside the pnpm workspace, so it does not extend ../../tsconfig.base.json.
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "target": "es2023",
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+
+    "lib": ["es2023"],
+    "types": ["node"]
+  },
+  // envio-env.d.ts pulls in .envio/types.d.ts, which `envio codegen` writes from
+  // config.yaml + schema.graphql. Run codegen before typecheck.
+  "include": ["envio-env.d.ts", "src", "test", "vitest.config.ts"]
+}

@@ -1,0 +1,15 @@
+# Installed from Linux only (WSL/Docker/CI): never commit, never reuse on Windows.
+node_modules/
+.pnpm-store/
+
+# envio codegen/runtime output (.envio/.gitignore covers types.d.ts; cache and
+# persisted state live here too).
+.envio/
+build/
+generated/
+*.res.js
+*.res.mjs
+
+# local secrets (ENVIO_API_TOKEN)
+.env
+.env.local

@@ -1,0 +1,11 @@
+# This file makes services/indexer its own pnpm workspace root. Without it, pnpm run
+# from here walks up to the monorepo's pnpm-workspace.yaml, which deliberately excludes
+# this package ("!services/indexer"): envio ships no win32 binary, so its node_modules
+# must be installed from Linux (WSL, Docker, CI or Envio Cloud) with this folder's own
+# pnpm-lock.yaml, never from the Windows workspace install.
+packages:
+  - "."
+
+# esbuild (via vitest/tsx) only verifies its platform binary in postinstall.
+onlyBuiltDependencies:
+  - esbuild

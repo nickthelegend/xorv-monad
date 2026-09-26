@@ -1,0 +1,33 @@
+{
+  "name": "@xorv/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Envio HyperIndex indexer for XorvLedger + ERC-8004 identity/reputation on Monad. Self-contained: not part of the pnpm workspace (envio has no Windows binary).",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "codegen": "envio codegen",
+    "codegen:mainnet": "envio codegen --config config.mainnet.yaml",
+    "dev": "envio dev",
+    "dev:mainnet": "envio dev --config config.mainnet.yaml",
+    "start": "envio start",
+    "stop": "envio stop",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --test-timeout=20000",
+    "check": "envio codegen && tsc --noEmit && vitest run --test-timeout=20000"
+  },
+  "dependencies": {
+    "envio": "3.12.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.12.2",
+    "graphql": "17.0.2",
+    "typescript": "6.0.3",
+    "viem": "2.54.0",
+    "vitest": "4.1.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
