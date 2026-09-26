@@ -25,6 +25,7 @@
  */
 
 import type { Job, ProviderStats } from "@xorv/protocol";
+import type { VaultRecord } from "./vaults.js";
 import {
   MemoryPersistence,
   upgradeJob,
@@ -87,8 +88,10 @@ export class LayeredPersistence implements Persistence {
   /** Writes Mongo hasn't acknowledged yet, replayed when it comes back. */
   private pendingJobs = new Map<string, Job>();
   private pendingStats = new Map<string, PersistedProviderStats>();
+  private pendingVaults = new Map<string, VaultRecord>();
   private restoredJobs: Job[] | null = null;
   private restoredStats: Map<string, PersistedProviderStats> | null = null;
+  private restoredVaults: VaultRecord[] | null = null;
 
   constructor(private readonly options: LayeredOptions) {
     this.local = options.local;
@@ -125,6 +128,7 @@ export class LayeredPersistence implements Persistence {
       await db.collection("jobs").createIndex({ createdAt: -1 });
       await db.collection("jobs").createIndex({ id: 1 }, { unique: true });
       await db.collection("providerStats").createIndex({ nodeId: 1 }, { unique: true });
+      await db.collection("vaults").createIndex({ id: 1 }, { unique: true });
 
       const jobRows = (await db
         .collection("jobs")
@@ -153,6 +157,18 @@ export class LayeredPersistence implements Persistence {
           ...upgradeStats(row),
         });
       }
+
+      // Private-job vaults: ciphertext only, so restoring them is restoring
+      // opaque bytes the buyer's passkey will open on whatever device asks.
+      const vaultRows = (await db
+        .collection("vaults")
+        .find({})
+        .sort({ updatedAt: -1 })
+        .limit(10_000)
+        .toArray()) as Array<Record<string, unknown>>;
+      this.restoredVaults = vaultRows
+        .map((row) => row.vault as VaultRecord | undefined)
+        .filter((v): v is VaultRecord => Boolean(v && typeof v.id === "string" && typeof v.version === "number"));
 
       return {
         ok: true,
@@ -183,6 +199,17 @@ export class LayeredPersistence implements Persistence {
   loadStats(): Map<string, PersistedProviderStats> {
     if (this.restoredStats && this.restoredStats.size > 0) return this.restoredStats;
     return this.local.loadStats();
+  }
+
+  loadVaults(): VaultRecord[] {
+    if (this.restoredVaults && this.restoredVaults.length > 0) return this.restoredVaults;
+    return this.local.loadVaults?.() ?? [];
+  }
+
+  saveVault(record: VaultRecord): void {
+    this.local.saveVault?.(record);
+    this.pendingVaults.set(record.id, record);
+    void this.flushVault(record);
   }
 
   saveJob(job: Job): void {
@@ -242,6 +269,21 @@ export class LayeredPersistence implements Persistence {
     }
   }
 
+  private async flushVault(record: VaultRecord): Promise<void> {
+    if (!this.connected) return;
+    try {
+      await this.collection("vaults")?.updateOne(
+        { id: record.id },
+        { $set: { id: record.id, version: record.version, updatedAt: record.updatedAt, vault: record } },
+        { upsert: true },
+      );
+      // Only clear it if no newer write replaced it while this one was in flight.
+      if (this.pendingVaults.get(record.id) === record) this.pendingVaults.delete(record.id);
+    } catch (err) {
+      this.markDisconnected(err);
+    }
+  }
+
   private markDisconnected(err: unknown): void {
     if (!this.connected) return;
     this.connected = false;
@@ -258,7 +300,7 @@ export class LayeredPersistence implements Persistence {
    * the same state the local store already has.
    */
   async retryPending(): Promise<{ retried: number; connected: boolean }> {
-    if (this.pendingJobs.size === 0 && this.pendingStats.size === 0) {
+    if (this.pendingJobs.size === 0 && this.pendingStats.size === 0 && this.pendingVaults.size === 0) {
       return { retried: 0, connected: this.connected };
     }
     if (!this.client) return { retried: 0, connected: false };
@@ -280,17 +322,24 @@ export class LayeredPersistence implements Persistence {
       await this.flushStats(row);
       if (this.pendingStats.size < before) retried += 1;
     }
+    for (const record of [...this.pendingVaults.values()]) {
+      if (!this.connected) break;
+      const before = this.pendingVaults.size;
+      await this.flushVault(record);
+      if (this.pendingVaults.size < before) retried += 1;
+    }
 
     if (retried > 0) this.onStatus(`mongodb reconnected — replayed ${retried} pending write(s)`);
     return { retried, connected: this.connected };
   }
 
   /** For the network panel, so an operator can see the two layers agree. */
-  status(): { connected: boolean; pendingJobs: number; pendingStats: number } {
+  status(): { connected: boolean; pendingJobs: number; pendingStats: number; pendingVaults: number } {
     return {
       connected: this.connected,
       pendingJobs: this.pendingJobs.size,
       pendingStats: this.pendingStats.size,
+      pendingVaults: this.pendingVaults.size,
     };
   }
 }

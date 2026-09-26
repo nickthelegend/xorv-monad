@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { Job, ProviderStats } from "@xorv/protocol";
+import type { VaultRecord } from "./vaults.js";
 
 export interface PersistedProviderStats extends ProviderStats {
   nodeId: string;
@@ -85,6 +86,13 @@ export interface Persistence {
   saveStats(nodeId: string, label: string, address: string, stats: ProviderStats): void;
   /** Drop jobs older than the retention window; returns how many went. */
   prune(olderThanMs: number): number;
+  /**
+   * Private-job history vaults (ciphertext only — see vaults.ts). Optional so
+   * a store that predates them keeps compiling; one without them simply
+   * forgets vaults on restart, like the memory store.
+   */
+  loadVaults?(): VaultRecord[];
+  saveVault?(record: VaultRecord): void;
   close(): void;
 }
 
@@ -111,6 +119,10 @@ interface JobRow {
   created_at: number;
   status: string;
   provider_id: string | null;
+  body: string;
+}
+
+interface VaultRow {
   body: string;
 }
 
@@ -187,7 +199,44 @@ class SqlitePersistence implements Persistence {
         body       TEXT NOT NULL,
         updated_at INTEGER NOT NULL
       );
+
+      -- Private-job history vaults: ciphertext, nonce, version and the
+      -- vault's public key. Nothing in here is readable without the buyer's
+      -- passkey.
+      CREATE TABLE IF NOT EXISTS vaults (
+        id         TEXT PRIMARY KEY,
+        version    INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        body       TEXT NOT NULL
+      );
     `);
+  }
+
+  loadVaults(): VaultRecord[] {
+    const rows = this.db.prepare("SELECT body FROM vaults").all() as unknown as VaultRow[];
+    const out: VaultRecord[] = [];
+    for (const row of rows) {
+      try {
+        const record = JSON.parse(row.body) as VaultRecord;
+        if (typeof record.id === "string" && typeof record.version === "number") out.push(record);
+      } catch {
+        /* skip a corrupt row */
+      }
+    }
+    return out;
+  }
+
+  saveVault(record: VaultRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO vaults (id, version, updated_at, body)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           version = excluded.version,
+           updated_at = excluded.updated_at,
+           body = excluded.body`,
+      )
+      .run(record.id, record.version, record.updatedAt, JSON.stringify(record));
   }
 
   loadJobs(limit = 500): Job[] {
