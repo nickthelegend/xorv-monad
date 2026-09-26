@@ -38,6 +38,12 @@ export interface Match {
   capability: Capability;
 }
 
+export interface MatchOptions {
+  adapter?: AdapterKind | null;
+  maxPriceUsdMicros: number;
+  exclude?: Iterable<string>;
+}
+
 /** A registration whose address is already normalized and whose agent id is verified (or null). */
 export type VerifiedRegistration = RegisterRequest & { agentId: string | null };
 
@@ -220,11 +226,16 @@ export class Registry {
    * `exclude` is for reassignment: a job never goes back to a provider that
    * already had it.
    */
-  match(opts: {
-    adapter?: AdapterKind | null;
-    maxPriceUsdMicros: number;
-    exclude?: Iterable<string>;
-  }): Match | null {
+  match(opts: MatchOptions): Match | null {
+    return this.candidates(opts)[0] ?? null;
+  }
+
+  /**
+   * Every capability that could take this job right now, in the order
+   * `match` would pick them — what the AI router chooses between when the
+   * buyer left the adapter open.
+   */
+  candidates(opts: MatchOptions): Match[] {
     const excluded = new Set(opts.exclude ?? []);
     const candidates: Match[] = [];
 
@@ -241,8 +252,6 @@ export class Registry {
       }
     }
 
-    if (candidates.length === 0) return null;
-
     candidates.sort((a, b) => {
       if (a.capability.priceUsdMicros !== b.capability.priceUsdMicros) {
         return a.capability.priceUsdMicros - b.capability.priceUsdMicros;
@@ -253,7 +262,7 @@ export class Registry {
       return a.provider.activeJobs - b.provider.activeJobs;
     });
 
-    return candidates[0] ?? null;
+    return candidates;
   }
 
   /** Note that a job started on a provider. */
