@@ -71,6 +71,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   const config = loadConfig();
   const cfg = networkConfig(config.network);
   const env: Record<string, string> = {};
+  let newOperator: string | null = null;
 
   console.log("");
   console.log(`  ▁▂▃  XORV setup — ${cfg.name} (${config.network})`);
@@ -86,8 +87,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     console.log("  fresh keys (keep them secret; fund the addresses before use):");
     for (const name of ["XORV_OPERATOR_KEY", "XORV_FACILITATOR_KEY"]) {
       const key = generatePrivateKey();
-      line(name, `${privateKeyToAccount(key).address}`);
+      const address = privateKeyToAccount(key).address;
+      line(name, address);
       env[name] = key;
+      if (name === "XORV_OPERATOR_KEY") newOperator = address;
     }
     console.log("");
   }
@@ -164,7 +167,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
     console.log("  deploy it (the operator becomes the ledger's broker; needs MON for gas):");
     console.log("");
     console.log(
-      `      XORV_BROKER_ADDRESS=${config.operator?.address ?? "<operator address>"} pnpm --filter @xorv/contracts ${task}`,
+      `      XORV_BROKER_ADDRESS=${config.operator?.address ?? newOperator ?? "<operator address>"} pnpm --filter @xorv/contracts ${task}`,
     );
     console.log("");
     console.log("  it prints XORV_LEDGER_ADDRESS and XORV_LEDGER_FROM_BLOCK — paste both into .env.");
