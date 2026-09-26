@@ -432,7 +432,7 @@ export function Composer() {
                 <p className="mt-3 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[11.5px] leading-relaxed text-fg-3">
                   <LockGlyph className="text-fg-2" />
                   Private — the answer is sealed to your inbox key{" "}
-                  <span className="mono text-fg-2">{keys.snapshot.inbox?.fingerprint}</span> on the provider&rsquo;s machine.
+                  <span className="mono text-fg-2">{keys.snapshot.inbox?.fingerprint}</span>{" "}on the provider&rsquo;s machine.
                 </p>
               ) : null}
 
@@ -572,12 +572,12 @@ function PrivateToggle({ on, busy, onChange }: { on: boolean; busy: boolean; onC
       {on ? (
         <div className="mt-2.5 rounded-xl border border-[var(--line)] bg-white/[0.015] px-3.5 py-3 text-[11.5px] leading-relaxed text-fg-3">
           <p>
-            <span className="text-fg-2">Sealed:</span> the answer. The provider encrypts it on their machine to a key only your
+            <span className="text-fg-2">Sealed:</span>{" "}the answer. The provider encrypts it on their machine to a key only your
             passkey can re-derive, so the broker, the public job list and the on-chain receipt hold ciphertext. Open it here or on
             any device your passkey syncs to.
           </p>
           <p className="mt-1.5">
-            <span className="text-fg-2">Not sealed:</span> the prompt. The safety screen, the router and the provider read it; the
+            <span className="text-fg-2">Not sealed:</span>{" "}the prompt. The safety screen, the router and the provider read it; the
             public job list doesn&rsquo;t show it, and your copy goes into your encrypted history.
           </p>
           <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] pt-2.5">
