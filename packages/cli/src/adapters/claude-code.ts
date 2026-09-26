@@ -5,9 +5,8 @@
  *          --permission-mode <mode> [--model <model>]
  *
  * The stream-json surface (`system/init`, `assistant`, `result`) is stable
- * across recent Claude Code releases; each line is one JSON object, and
- * anything that doesn't parse is skipped rather than failing the job — a stray
- * banner line on stdout should not cost the provider a payment.
+ * across recent Claude Code releases; the parser lives in stream-json.ts,
+ * shared with the Qwen Code adapter, which speaks the same dialect.
  */
 
 import type { AdapterKind } from "@xorv/protocol";
@@ -19,6 +18,7 @@ import {
   type JobAdapter,
   type RunInput,
 } from "./base.js";
+import { handleStreamJsonLine } from "./stream-json.js";
 
 export class ClaudeCodeAdapter implements JobAdapter {
   readonly kind: AdapterKind = "claude-code";
@@ -54,18 +54,13 @@ export class ClaudeCodeAdapter implements JobAdapter {
       cwd: input.cwd,
       signal: input.signal,
       onLine: (line) => {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("{")) return;
-        let event: Record<string, unknown>;
-        try {
-          event = JSON.parse(trimmed) as Record<string, unknown>;
-        } catch {
-          return;
+        const outcome = handleStreamJsonLine(line, input, "claude");
+        if (outcome.text !== null) finalText = outcome.text;
+        if (outcome.error) errorText = outcome.error;
+        if (outcome.costUsd !== null) {
+          input.emit({ kind: "status", text: `provider cost $${outcome.costUsd.toFixed(4)}` });
+          input.onCost?.(outcome.costUsd);
         }
-        const text = this.handleEvent(event, input);
-        if (text !== null) finalText = text;
-        const err = event.type === "result" && event.is_error ? String(event.result ?? "") : "";
-        if (err) errorText = err;
       },
     });
 
@@ -78,60 +73,4 @@ export class ClaudeCodeAdapter implements JobAdapter {
     }
     return clampResult(finalText);
   }
-
-  /** Returns the assistant text when this event carried one, else null. */
-  private handleEvent(event: Record<string, unknown>, input: RunInput): string | null {
-    const type = event.type as string | undefined;
-
-    if (type === "system" && (event as { subtype?: string }).subtype === "init") {
-      input.emit({ kind: "status", text: "claude session started" });
-      return null;
-    }
-
-    if (type === "assistant") {
-      const message = event.message as
-        | { content?: Array<Record<string, unknown>>; model?: string }
-        | undefined;
-      let latest: string | null = null;
-      for (const block of message?.content ?? []) {
-        if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-          latest = block.text;
-          input.emit({ kind: "message", text: block.text });
-        } else if (
-          block.type === "thinking" &&
-          typeof block.thinking === "string" &&
-          block.thinking.trim()
-        ) {
-          input.emit({ kind: "reasoning", text: block.thinking.slice(0, 2_000) });
-        } else if (block.type === "tool_use") {
-          const name = String(block.name ?? "tool");
-          const args = (block.input ?? {}) as Record<string, unknown>;
-          input.emit({ kind: "tool_call", text: summarize(name, args) });
-          const file = args.file_path ?? args.notebook_path;
-          if (file && ["Edit", "Write", "MultiEdit", "NotebookEdit"].includes(name)) {
-            input.emit({ kind: "file_edit", text: String(file) });
-          }
-        }
-      }
-      return latest;
-    }
-
-    if (type === "result") {
-      const cost = event.total_cost_usd;
-      if (typeof cost === "number") {
-        input.emit({ kind: "status", text: `provider cost $${cost.toFixed(4)}` });
-        input.onCost?.(cost);
-      }
-      // `result` carries the final answer even when no assistant block did.
-      const text = event.result;
-      if (typeof text === "string" && text.trim() && !event.is_error) return text;
-    }
-
-    return null;
-  }
-}
-
-function summarize(name: string, args: Record<string, unknown>): string {
-  const interesting = args.file_path ?? args.command ?? args.pattern ?? args.url ?? args.prompt ?? "";
-  return `${name}: ${String(interesting).replace(/\s+/g, " ").slice(0, 140)}`;
 }

@@ -8,14 +8,22 @@ import { ClaudeCodeAdapter } from "./claude-code.js";
 import { CodexAdapter } from "./codex.js";
 import { EchoAdapter } from "./echo.js";
 import { GrokAdapter } from "./grok.js";
+import { HunyuanAdapter, KimiAdapter, QwenAdapter } from "./hosted.js";
 import { OpenAiCompatibleAdapter } from "./openai-compatible.js";
 import { OpenCodeAdapter } from "./opencode.js";
+import { QwenCodeAdapter } from "./qwen-code.js";
 
+// Insertion order is the order `xorv init` and `xorv doctor` list them in, and
+// matches the protocol's ADAPTER_KINDS.
 const factories: Record<AdapterKind, () => JobAdapter> = {
   "claude-code": () => new ClaudeCodeAdapter(),
   codex: () => new CodexAdapter(),
   grok: () => new GrokAdapter(),
   opencode: () => new OpenCodeAdapter(),
+  qwen: () => new QwenAdapter(),
+  kimi: () => new KimiAdapter(),
+  hunyuan: () => new HunyuanAdapter(),
+  "qwen-code": () => new QwenCodeAdapter(),
   "openai-compatible": () => new OpenAiCompatibleAdapter(),
   echo: () => new EchoAdapter(),
 };
