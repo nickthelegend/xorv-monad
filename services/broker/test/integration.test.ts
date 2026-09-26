@@ -33,6 +33,7 @@ import {
   ratingMessage,
   sealResult,
   textHash,
+  type DispatchedJob,
   type LedgerEvent,
   type LedgerEventKind,
   type RatingMessage,
@@ -369,14 +370,14 @@ async function connectProvider(
   };
 
   const ws = new WebSocket(`${h.base.replace("http", "ws")}/ws/provider?token=${body.token}`);
-  const dispatched: Array<{ jobId: string; prompt: string }> = [];
+  const dispatched: DispatchedJob[] = [];
   const cancelled: string[] = [];
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("error", reject);
   });
   ws.on("message", (raw) => {
-    const msg = JSON.parse(String(raw)) as { type: string; job?: { jobId: string; prompt: string }; jobId?: string };
+    const msg = JSON.parse(String(raw)) as { type: string; job?: DispatchedJob; jobId?: string };
     if (msg.type === "job.dispatch" && msg.job) dispatched.push(msg.job);
     if (msg.type === "job.cancel" && msg.jobId) cancelled.push(msg.jobId);
   });
@@ -849,6 +850,11 @@ describe("failure handling", () => {
     expect(second.dispatched[0]!.jobId).toBe(paid.jobId);
     // Still exactly one settlement — the buyer was not charged twice.
     expect(h.control.settled).toHaveLength(1);
+    // Both nodes are told who that settlement paid, so only the first one
+    // credits itself: the node that finishes the job knows it was not paid.
+    const settlement = { txHash: paid.payment!.txHash, amount: "1000", payTo: first.address };
+    expect(first.dispatched[0]!.payment).toEqual(settlement);
+    expect(second.dispatched[0]!.payment).toEqual(settlement);
 
     const moved = await getJob(h, paid.jobId);
     expect(moved.providerId).toBe(second.providerId);

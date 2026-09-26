@@ -1449,6 +1449,7 @@ export function createApp(deps: AppDeps) {
       prompt: job.request.prompt,
       timeoutMs: JOB_TIMEOUT_MS,
       priceUsdMicros: job.priceUsdMicros ?? 0,
+      ...dispatchedPayment(job),
       // The node seals the result to this before reporting it.
       ...(job.request.encryptTo ? { encryptTo: job.request.encryptTo } : {}),
     };
@@ -1462,6 +1463,12 @@ export function createApp(deps: AppDeps) {
 
     registry.jobStarted(provider.id);
     jobs.setStatus(job.id, "assigned");
+  }
+
+  /** The settlement a node is told about with its dispatch (see `DispatchedJob.payment`). */
+  function dispatchedPayment(job: StoredJob): Pick<DispatchedJob, "payment"> {
+    if (!job.payment) return {};
+    return { payment: { txHash: job.payment.txHash, amount: job.payment.amount, payTo: job.payment.payTo } };
   }
 
   /**
@@ -1493,6 +1500,8 @@ export function createApp(deps: AppDeps) {
         prompt: job.request.prompt,
         timeoutMs: JOB_TIMEOUT_MS,
         priceUsdMicros: job.priceUsdMicros ?? 0,
+        // Still the first provider's settlement: this node sees it was not the one paid.
+        ...dispatchedPayment(job),
         ...(job.request.encryptTo ? { encryptTo: job.request.encryptTo } : {}),
       },
     });

@@ -15,7 +15,9 @@ import {
   HEARTBEAT_INTERVAL_MS,
   formatUsd,
   isValidEncryptTo,
+  sameAddress,
   sealResult,
+  shortHex,
   type Capability,
   type DispatchedJob,
   type JobEvent,
@@ -396,8 +398,9 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       if (sealTo) forward(status("result sealed to the buyer (X25519 → AES-256-GCM)"));
 
       const durationMs = Date.now() - job.startedAt;
+      const earned = receivedFor(dispatched, payoutAddress(this.config));
       this.stats.jobsCompleted += 1;
-      this.stats.earnedUsdMicros += dispatched.priceUsdMicros;
+      this.stats.earnedUsdMicros += earned.usdMicros;
 
       if (!this.send({ type: "job.result", jobId: job.jobId, result: reported, durationMs })) {
         await this.postJson(`/api/jobs/${job.jobId}/result`, { result: reported, durationMs });
@@ -408,19 +411,26 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
         jobId: job.jobId,
         asset: "usdc",
         // micro-USD and USDC's smallest unit are the same integer (6 decimals).
-        amount: String(dispatched.priceUsdMicros),
-        usdMicros: dispatched.priceUsdMicros,
+        amount: String(earned.usdMicros),
+        usdMicros: earned.usdMicros,
         durationMs,
         ok: true,
+        ...(earned.transactionId ? { transactionId: earned.transactionId } : {}),
         adapter: capability.adapter,
       });
 
-      this.log("ok", `job ${short(job.jobId)} done in ${(durationMs / 1000).toFixed(1)}s — earned ${formatUsd(dispatched.priceUsdMicros)}`);
+      this.log(
+        "ok",
+        `job ${short(job.jobId)} done in ${(durationMs / 1000).toFixed(1)}s — ` +
+          (earned.paidTo === null || earned.usdMicros > 0
+            ? `earned ${formatUsd(earned.usdMicros)}`
+            : `unpaid: reassigned here after the buyer paid ${shortHex(earned.paidTo)}`),
+      );
       this.emit("jobFinished", {
         jobId: job.jobId,
         ok: true,
         durationMs,
-        usdMicros: dispatched.priceUsdMicros,
+        usdMicros: earned.usdMicros,
       });
     } catch (err) {
       const durationMs = Date.now() - job.startedAt;
@@ -484,6 +494,27 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     for (const job of this.running.values()) job.controller.abort();
     this.ws?.close(1000, "node shutting down");
   }
+}
+
+/**
+ * What this node was actually paid for a job it completed.
+ *
+ * Payment settles upfront, to the quoted provider. When the broker says who it
+ * paid, that is the answer: the settled amount (with its transaction) when it
+ * was this node's payout address, nothing when it was another provider's — a
+ * job reassigned here after that provider failed it. A broker that does not
+ * say leaves the quoted price, which is what every job earned before
+ * reassignment existed.
+ */
+export function receivedFor(
+  dispatched: Pick<DispatchedJob, "priceUsdMicros" | "payment">,
+  payout: string,
+): { usdMicros: number; transactionId: string | null; paidTo: string | null } {
+  const payment = dispatched.payment;
+  if (!payment) return { usdMicros: dispatched.priceUsdMicros, transactionId: null, paidTo: null };
+  if (!sameAddress(payment.payTo, payout)) return { usdMicros: 0, transactionId: null, paidTo: payment.payTo };
+  // USDC's smallest unit is a micro-dollar (6 decimals).
+  return { usdMicros: Number(payment.amount), transactionId: payment.txHash, paidTo: payment.payTo };
 }
 
 function short(id: string): string {

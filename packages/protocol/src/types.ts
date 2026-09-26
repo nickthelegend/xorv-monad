@@ -286,6 +286,16 @@ export interface HeartbeatResponse {
   brokerEpoch: number;
 }
 
+/** The slice of a job's `PaymentRecord` its provider node is told about. */
+export interface DispatchedPayment {
+  /** The settlement (`transferWithAuthorization`) transaction. */
+  txHash: string;
+  /** USDC smallest units, integer string. */
+  amount: string;
+  /** Who was paid. */
+  payTo: string;
+}
+
 /** What a node receives when work is handed to it. */
 export interface DispatchedJob {
   jobId: string;
@@ -293,8 +303,16 @@ export interface DispatchedJob {
   prompt: string;
   /** Wall-clock ceiling for this job. */
   timeoutMs: number;
-  /** Price the provider will be paid, in micro-USD, for display in the node UI. */
+  /** The quoted price, in micro-USD, for display in the node UI. */
   priceUsdMicros: number;
+  /**
+   * The x402 settlement that paid for this job. Paid upfront to the quoted
+   * provider, so a node reassigned the job after that provider failed it was
+   * not paid: the node credits itself only when `payTo` is its own payout
+   * address. Absent when the broker has no settlement record for the job, or
+   * predates this field.
+   */
+  payment?: DispatchedPayment | null;
   /**
    * Set for a private job: the buyer's X25519 inbox key (`JobRequest.encryptTo`).
    * The node seals the result to it (`sealResult`) before reporting, and sends
