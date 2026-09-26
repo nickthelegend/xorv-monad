@@ -1,60 +1,47 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, formatUsd, type NetworkInfo } from "@/lib/api";
+import { useCallback } from "react";
+import {
+  explorerAddress,
+  explorerAgent,
+  explorerToken,
+  explorerTx,
+  formatAgo,
+  formatUsdc,
+  shortHex,
+  type LedgerJobRated,
+  type LedgerJobReceipt,
+} from "@xorv/protocol/web";
+import { api, formatUsd, type Leaderboard, type LedgerEvent, type NetworkInfo } from "@/lib/api";
+import { usePoll } from "@/lib/hooks";
+import { NETWORK } from "@/lib/network";
+import { valueToStars } from "@/lib/rating";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
 
-interface Receipt {
-  consensusAt: string;
-  sequence: number;
-  payload: {
-    data?: {
-      jobId?: string;
-      providerAccountId?: string;
-      payer?: string;
-      amount?: string;
-      asset?: string;
-      transactionId?: string;
-      durationMs?: number;
-      ok?: boolean;
-    };
-  } | null;
-}
-
-const HBAR = "0.0.0";
-
+/**
+ * The network, as the chain sees it.
+ *
+ * Xorv keeps live state (who is online, which job is running) in the broker's
+ * memory, and everything that has to be *believed* on Monad: providers
+ * registered and job receipts recorded on the XorvLedger contract, payments as
+ * USDC transfers, reputation in the ERC-8004 registries. This page reads those
+ * back — through the Envio indexer when the broker has one, a bounded RPC log
+ * scan when it doesn't — and links every row to the explorer, so none of it
+ * has to be taken on this dashboard's word.
+ *
+ * Event payloads are narrowed defensively: they arrive as JSON from whichever
+ * backend answered, and a missing field should render as a dash, not crash.
+ */
 export function NetworkView() {
-  const [info, setInfo] = useState<NetworkInfo | null>(null);
-  const [receipts, setReceipts] = useState<Receipt[] | null>(null);
-  const [topic, setTopic] = useState<{ id: string; url: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: info, error } = usePoll<NetworkInfo>(useCallback(() => api.network(), []), 15_000);
+  const { data: receipts } = usePoll(useCallback(() => api.ledger("receipts", 12), []), 15_000);
+  const { data: ratings } = usePoll(useCallback(() => api.ledger("ratings", 8), []), 15_000);
+  const { data: board } = usePoll<Leaderboard>(useCallback(() => api.leaderboard(), []), 30_000);
 
-  useEffect(() => {
-    let alive = true;
-    const load = async (): Promise<void> => {
-      try {
-        const [net, rec] = await Promise.all([api.network(), api.receipts()]);
-        if (!alive) return;
-        setInfo(net);
-        // The broker types the topic payload as `unknown` on purpose — a
-        // message on a public topic could have been written by anyone. Narrow
-        // it here, where we know what shape our own receipts take.
-        setReceipts(rec.receipts as Receipt[]);
-        setTopic(rec.topic);
-        setError(null);
-      } catch (err) {
-        if (alive) setError(err instanceof Error ? err.message : String(err));
-      }
-    };
-    void load();
-    const timer = setInterval(load, 15_000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
+  if (error && !info) return <Empty title="Can't reach the broker" hint="The network page reads everything through it." />;
 
-  if (error && !info) return <Empty title="Can't reach the broker" hint={error} />;
+  const indexed = Boolean(info?.indexer);
+  const via = indexed ? "Envio HyperIndex" : "an RPC log scan";
 
   return (
     <div className="space-y-8">
@@ -63,30 +50,29 @@ export function NetworkView() {
       <Panel className="p-5">
         <h2 className="text-[13px] font-medium text-fg">Settlement</h2>
         <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
-          The facilitator co-signs and pays the network fee on every settlement, which is why a
-          buyer needs no HBAR at all.
+          Every job is paid with an x402 EIP-3009 authorization: the buyer signs, the facilitator submits the
+          USDC transfer and pays the gas, so a buyer needs no MON at all. The money goes straight to the
+          provider.
         </p>
         <div className="mt-4 border-t border-[var(--line)] pt-1">
-          <Row label="network">{info?.network ?? "—"}</Row>
+          <Row label="network">{info ? `Monad ${info.label} · chain ${info.chainId}` : "—"}</Row>
           <Row label="facilitator">{info?.facilitator.description ?? "—"}</Row>
-          <Row label="fee payer">{info?.facilitator.feePayer ?? "—"}</Row>
-          <Row label="usdc">
-            {info ? (
-              <Ext
-                href={`https://hashscan.io/${
-                  info.network === "hedera:mainnet" ? "mainnet" : "testnet"
-                }/token/${info.usdc}`}
-              >
-                {info.usdc} ↗
-              </Ext>
+          <Row label="gas payer">
+            {info?.facilitator.address ? (
+              <Ext href={explorerAddress(NETWORK, info.facilitator.address)}>{shortHex(info.facilitator.address)} ↗</Ext>
+            ) : info ? (
+              "managed by the hosted facilitator"
             ) : (
               "—"
             )}
           </Row>
+          <Row label="usdc">
+            {info ? <Ext href={explorerToken(NETWORK, info.usdc.address)}>{shortHex(info.usdc.address)} ↗</Ext> : "—"}
+          </Row>
           <Row label="providers live">
             <span className="tnum">{info?.stats.providersLive ?? "—"}</span>
           </Row>
-          <Row label="jobs settled">
+          <Row label="jobs completed">
             <span className="tnum">{info?.stats.jobsCompleted ?? "—"}</span>
           </Row>
           <Row label="paid to providers">
@@ -96,77 +82,212 @@ export function NetworkView() {
       </Panel>
 
       <Panel className="p-5">
-        <h2 className="text-[13px] font-medium text-fg">Consensus topics</h2>
+        <h2 className="text-[13px] font-medium text-fg">On-chain record</h2>
         <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
-          Append-only, publicly readable, ordered by consensus timestamp. You don&rsquo;t have to
-          trust this dashboard — read them yourself.
+          Registrations, heartbeats and job receipts are XorvLedger events; buyer ratings are relayed into the
+          ERC-8004 Reputation Registry. Receipts carry hashes of the prompt and result, never the text.
         </p>
-        <div className="mt-4 border-t border-[var(--line)]">
+        <div className="mt-4 border-t border-[var(--line)] pt-1">
+          <Row label="XorvLedger">
+            {info?.ledger ? (
+              <Ext href={info.ledger.url || explorerAddress(NETWORK, info.ledger.address)}>
+                {shortHex(info.ledger.address)} ↗
+              </Ext>
+            ) : info ? (
+              "not configured"
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row label="ERC-8004 identity">
+            {info ? <Ext href={explorerAddress(NETWORK, info.erc8004.identity)}>{shortHex(info.erc8004.identity)} ↗</Ext> : "—"}
+          </Row>
+          <Row label="ERC-8004 reputation">
+            {info ? (
+              <Ext href={explorerAddress(NETWORK, info.erc8004.reputation)}>{shortHex(info.erc8004.reputation)} ↗</Ext>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row label="read via">
+            {info?.indexer ? <Ext href={info.indexer.url}>Envio HyperIndex ↗</Ext> : info ? "RPC log scan" : "—"}
+          </Row>
           {info
-            ? Object.entries(info.topics).map(([kind, t]) => (
-                <div
-                  key={kind}
-                  className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-3"
-                >
-                  <div>
-                    <p className="text-[13px] capitalize text-fg-2">{kind}</p>
-                    <p className="mono text-[11.5px] text-fg-4">{t?.id ?? "not configured"}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="tnum text-[13px] text-fg">
-                      {info.hcsPublished[kind as keyof NetworkInfo["hcsPublished"]] ?? 0}
-                    </p>
-                    {t ? (
-                      <p className="text-[11.5px] text-fg-4">
-                        <Ext href={t.url}>open ↗</Ext>
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
+            ? (["registrations", "heartbeats", "receipts", "ratings"] as const).map((kind) => (
+                <Row key={kind} label={`${kind} published`}>
+                  <span className="tnum">{info.published?.[kind] ?? 0}</span>
+                </Row>
               ))
             : null}
         </div>
+        {info?.lastPublishError ? (
+          <p className="mt-3 break-words text-[12px] leading-relaxed text-warn">
+            Last ledger write failed: {info.lastPublishError}
+          </p>
+        ) : null}
       </Panel>
+
+      {info ? <AiRoles ai={info.ai} /> : null}
+
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-[13px] font-medium text-fg">Leaderboard</h2>
+          {board ? (
+            <span className="text-[11.5px] text-fg-4">
+              {board.source === "indexer" || board.source === "envio" ? "indexed by Envio" : "broker stats"}
+            </span>
+          ) : null}
+        </div>
+        {!board ? (
+          <Skeleton rows={2} />
+        ) : board.rows.length === 0 ? (
+          <Empty title="No providers ranked yet" hint="Rankings fill in as receipts and ratings land on-chain." />
+        ) : (
+          <ol className="border-t border-[var(--line)]">
+            {board.rows.slice(0, 10).map((row, i) => (
+              <li
+                key={row.providerId ?? row.address ?? row.agentId ?? i}
+                className="flex items-start justify-between gap-4 border-b border-[var(--line)] py-3.5"
+              >
+                <div className="flex min-w-0 gap-3">
+                  <span className="tnum w-5 shrink-0 text-[12.5px] text-fg-4">{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] text-fg-2">
+                      {row.label ?? (row.address ? shortHex(row.address) : `agent #${row.agentId}`)}
+                    </p>
+                    <p className="mono mt-0.5 truncate text-[11.5px] text-fg-4">
+                      {row.address ? <Ext href={explorerAddress(NETWORK, row.address)}>{shortHex(row.address)}</Ext> : null}
+                      {row.agentId ? (
+                        <>
+                          {row.address ? " · " : ""}
+                          <Ext href={explorerAgent(NETWORK, row.agentId)}>agent #{row.agentId}</Ext>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right text-[11.5px] text-fg-4">
+                  <p className="tnum text-[13px] font-medium text-fg">{formatUsdc(row.earnedUsdcUnits)}</p>
+                  <p className="tnum mt-0.5">
+                    {row.jobs} job{row.jobs === 1 ? "" : "s"}
+                    {row.successRate != null ? ` · ${Math.round(row.successRate * 100)}%` : ""}
+                    {row.avgRating != null ? ` · ★ ${Math.round(row.avgRating)}` : ""}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-[13px] font-medium text-fg">Receipts from the ledger</h2>
-          {topic ? (
+          {info?.ledger ? (
             <span className="text-[11.5px] text-fg-4">
-              <Ext href={topic.url}>topic {topic.id} ↗</Ext>
+              <Ext href={info.ledger.url || explorerAddress(NETWORK, info.ledger.address)}>JobRecorded events ↗</Ext>
             </span>
           ) : null}
         </div>
-
         {!receipts ? (
           <Skeleton rows={3} />
-        ) : receipts.length === 0 ? (
-          <Empty
-            title="No receipts yet"
-            hint="Every completed job writes one here, read straight from a Hedera mirror node."
-          />
+        ) : receipts.events.length === 0 ? (
+          <Empty title="No receipts yet" hint={`Every finished job writes one to XorvLedger, read back here via ${via}.`} />
         ) : (
           <ul className="border-t border-[var(--line)]">
-            {receipts.map((receipt) => {
-              const d = receipt.payload?.data ?? {};
-              return (
-                <li
-                  key={receipt.sequence}
-                  className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--line)] py-3.5"
-                >
-                  <span className="mono text-[12.5px] text-fg-2">{d.jobId ?? "—"}</span>
-                  <span className="mono truncate text-[11.5px] text-fg-4">
-                    {d.payer} → {d.providerAccountId}
-                  </span>
-                  <span className="mono tnum text-[12.5px] text-fg-2">
-                    {d.amount} {d.asset === HBAR ? "tℏ" : "µUSDC"}
-                  </span>
-                </li>
-              );
-            })}
+            {receipts.events.map((event) => (
+              <ReceiptRow key={event.id} event={event} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-[13px] font-medium text-fg">Buyer ratings</h2>
+        {!ratings ? (
+          <Skeleton rows={2} />
+        ) : ratings.events.length === 0 ? (
+          <Empty title="No ratings yet" hint="A buyer's rating is one gasless signature, relayed into ERC-8004 reputation." />
+        ) : (
+          <ul className="border-t border-[var(--line)]">
+            {ratings.events.map((event) => (
+              <RatingRow key={event.id} event={event} />
+            ))}
           </ul>
         )}
       </section>
     </div>
+  );
+}
+
+function AiRoles({ ai }: { ai: NetworkInfo["ai"] }) {
+  const roles: Array<{ label: string; what: string; role: NetworkInfo["ai"]["router"] }> = [
+    { label: "screener", what: "checks each prompt before a provider sees it", role: ai?.screener ?? null },
+    { label: "router", what: "picks the adapter when the buyer chooses Auto", role: ai?.router ?? null },
+    { label: "verifier", what: "scores results and writes ERC-8004 feedback", role: ai?.verifier ?? null },
+  ];
+  return (
+    <Panel className="p-5">
+      <h2 className="text-[13px] font-medium text-fg">AI roles</h2>
+      <div className="mt-3 border-t border-[var(--line)]">
+        {roles.map(({ label, what, role }) => (
+          <div key={label} className="flex items-baseline justify-between gap-4 border-b border-[var(--line)] py-2.5 last:border-b-0">
+            <div className="min-w-0">
+              <p className="text-[12.5px] capitalize text-fg-2">{label}</p>
+              <p className="text-[11.5px] text-fg-4">{what}</p>
+            </div>
+            <span className="mono shrink-0 text-[12px] text-fg-2">{role ? `${role.by} · ${role.model}` : "off"}</span>
+          </div>
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function ReceiptRow({ event }: { event: LedgerEvent<"receipts"> }) {
+  const d: Partial<LedgerJobReceipt> = event.data ?? {};
+  return (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--line)] py-3.5">
+      <span className="mono text-[12px] text-fg-2">
+        <Ext href={explorerTx(NETWORK, event.txHash)}>{d.jobId ? shortHex(d.jobId, 10, 6) : shortHex(event.txHash)}</Ext>
+        <span className={d.ok === false ? "ml-2 text-fail" : "ml-2 text-fg-4"}>{d.ok === false ? "failed" : "ok"}</span>
+      </span>
+      <span className="mono truncate text-[11.5px] text-fg-4">
+        {d.buyer ? shortHex(d.buyer) : "—"} → {d.payTo ? shortHex(d.payTo) : "—"}
+        {d.agentId ? ` · agent #${d.agentId}` : ""}
+      </span>
+      <span className="text-[11.5px] text-fg-4">
+        <span className="mono tnum text-[12.5px] text-fg-2">{d.amount ? formatUsdc(d.amount) : "—"}</span>
+        {event.at ? ` · ${formatAgo(event.at)}` : ""}
+      </span>
+    </li>
+  );
+}
+
+function RatingRow({ event }: { event: LedgerEvent<"ratings"> }) {
+  const d: Partial<LedgerJobRated> = event.data ?? {};
+  const value = typeof d.value === "number" ? d.value : Number(d.value ?? Number.NaN);
+  return (
+    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--line)] py-3">
+      <span className="text-[13px]">
+        {Number.isFinite(value) ? (
+          <>
+            <span className="text-fg">{"★".repeat(valueToStars(value))}</span>
+            <span className="text-fg-4">{"★".repeat(5 - valueToStars(value))}</span>
+            <span className="tnum ml-2 text-[11.5px] text-fg-3">{value}/100</span>
+          </>
+        ) : (
+          "—"
+        )}
+      </span>
+      <span className="mono truncate text-[11.5px] text-fg-4">
+        {d.agentId ? <Ext href={explorerAgent(NETWORK, d.agentId)}>agent #{d.agentId}</Ext> : "—"} · by{" "}
+        {d.buyer ? shortHex(d.buyer) : "—"}
+      </span>
+      <span className="text-[11.5px] text-fg-4">
+        <Ext href={explorerTx(NETWORK, event.txHash)}>tx ↗</Ext>
+        {event.at ? ` · ${formatAgo(event.at)}` : ""}
+      </span>
+    </li>
   );
 }

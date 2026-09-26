@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Connect } from "@/components/connect";
 import { api, type NetworkInfo } from "@/lib/api";
+import { NETWORK, NETWORK_LABEL } from "@/lib/network";
 import { cn } from "@/lib/utils";
 
 /**
@@ -107,7 +108,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </span>
           <div className="ml-auto flex items-center gap-3">
             <Link
-              href="https://github.com/nickthelegend/xorv"
+              href="https://github.com/nickthelegend/xorv-monad"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden text-[13px] text-fg-3 transition-colors hover:text-fg sm:block"
@@ -162,7 +163,9 @@ function NetworkFoot() {
           {down ? "broker offline" : info ? `${info.stats.providersLive} provider(s) live` : "connecting…"}
         </span>
       </div>
-      <p className="mono mt-1.5 text-[11px] text-fg-4">{info?.network ?? "hedera:testnet"}</p>
+      <p className="mono mt-1.5 text-[11px] text-fg-4">
+        {info ? `Monad ${info.label} · ${info.network}` : `${NETWORK_LABEL} · ${NETWORK}`}
+      </p>
     </div>
   );
 }

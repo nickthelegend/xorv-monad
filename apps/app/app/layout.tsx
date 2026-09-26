@@ -13,7 +13,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: { default: "Xorv", template: "%s · Xorv" },
   description:
-    "Post an AI job, pay per job in USDC over x402 on Hedera, and watch it run on a live provider node.",
+    "Post an AI job, pay per job in USDC over x402 on Monad from a Privy wallet, watch it run on a live provider node, and rate it on ERC-8004.",
   icons: { icon: [{ url: "/brand/xorv-mark.svg", type: "image/svg+xml" }] },
 };
 

@@ -9,7 +9,7 @@ export default function NetworkPage() {
     <>
       <PageHeader
         title="Network"
-        sub="Xorv keeps its operational state in memory and its record on Hedera. These are the topics anyone can read to check what the broker says is true."
+        sub="Xorv keeps live state in memory and its record on Monad: payments as USDC transfers, receipts on the XorvLedger contract, reputation in ERC-8004. Everything here links to the chain, so you can check it yourself."
       />
       <NetworkView />
     </>

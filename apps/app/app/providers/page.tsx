@@ -8,9 +8,9 @@ export default function ProvidersPage() {
     <>
       <PageHeader
         title="Providers"
-        sub="Every node here is proving liveness by heartbeat, and every registration is recorded on a Hedera Consensus Service topic you can read yourself."
+        sub="Every node here proves liveness by heartbeat, is registered on the XorvLedger contract, and earns its reputation as ERC-8004 feedback from the buyers it served."
       />
-      <ProviderList />
+      <ProviderList detailed />
     </>
   );
 }

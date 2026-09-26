@@ -1,50 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { explorerAddress, explorerAgent, formatUsdc, sameAddress, shortHex } from "@xorv/protocol/web";
 import { EASE, useEntrance } from "@/lib/motion";
-import { api, formatAgo, formatUsd, type Job, type Provider } from "@/lib/api";
-import { Empty, Skeleton, Status } from "@/components/ui";
+import { api, formatAgo, formatUsd, type Job, type Leaderboard, type Provider } from "@/lib/api";
+import { usePoll } from "@/lib/hooks";
+import { NETWORK } from "@/lib/network";
+import type { LeaderboardRow } from "@/lib/wire";
+import { Empty, Ext, Skeleton, Status } from "@/components/ui";
+import { valueToStars } from "@/lib/rating";
 
-/**
- * Polling, not sockets.
- *
- * The broker streams per-job events over SSE — that's what the job page uses.
- * These two lists are summaries that change on the order of seconds, so a
- * five-second poll is a dozen lines and survives a broker restart with no
- * reconnection logic. A socket here would be machinery for its own sake.
- */
-function usePoll<T>(load: () => Promise<T>, intervalMs = 5_000): { data: T | null; error: boolean } {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState(false);
-  const stable = useCallback(load, [load]);
-
-  useEffect(() => {
-    let alive = true;
-    const run = async (): Promise<void> => {
-      try {
-        const next = await stable();
-        if (!alive) return;
-        setData(next);
-        setError(false);
-      } catch {
-        if (alive) setError(true);
-      }
-    };
-    void run();
-    const timer = setInterval(run, intervalMs);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [stable, intervalMs]);
-
-  return { data, error };
+/** Match a live provider to its leaderboard row: by broker id when known, else by payout address. */
+function rowFor(provider: Provider, board: Leaderboard | null): LeaderboardRow | null {
+  if (!board) return null;
+  return (
+    board.rows.find((r) => r.providerId === provider.id) ??
+    board.rows.find((r) => sameAddress(r.address, provider.address)) ??
+    null
+  );
 }
 
-export function ProviderList() {
+/**
+ * Live providers.
+ *
+ * `detailed` (the providers page) adds what a buyer weighs before trusting a
+ * stranger's machine: the ERC-8004 identity, reputation from buyer ratings,
+ * success rate and lifetime USDC earned — joined from the leaderboard, which
+ * the Envio indexer serves when the broker has one.
+ */
+export function ProviderList({ detailed = false }: { detailed?: boolean }) {
   const { data: providers, error } = usePoll<Provider[]>(useCallback(() => api.providers(), []));
+  const { data: board } = usePoll<Leaderboard | null>(
+    useCallback(() => (detailed ? api.leaderboard().catch(() => null) : Promise.resolve(null)), [detailed]),
+    15_000,
+  );
 
   if (error) {
     return (
@@ -66,7 +57,7 @@ export function ProviderList() {
         hint={
           <>
             Run <span className="mono text-fg-3">npm i -g @xorv/cli &amp;&amp; xorv init</span> on any
-            machine with Claude Code, Codex or Grok installed.
+            machine with Claude Code, Codex, Qwen Code or a Qwen / Kimi / Hunyuan API key.
           </>
         }
       />
@@ -80,6 +71,9 @@ export function ProviderList() {
           (min, c) => Math.min(min, c.priceUsdMicros),
           Number.POSITIVE_INFINITY,
         );
+        const rank = detailed ? rowFor(p, board) : null;
+        const jobs = p.stats.jobsCompleted + p.stats.jobsFailed;
+        const successRate = rank?.successRate ?? (jobs > 0 ? p.stats.jobsCompleted / jobs : null);
         return (
           <li
             key={p.id}
@@ -94,15 +88,47 @@ export function ProviderList() {
                 {p.capabilities.map((c) => c.displayName).join(" · ")}
               </p>
               <p className="mono mt-1 truncate text-[11.5px] text-fg-4">
-                {p.accountId}
+                <Ext href={p.addressUrl || explorerAddress(NETWORK, p.address)}>{shortHex(p.address)}</Ext>
+                {p.agentId ? (
+                  <>
+                    {" · "}
+                    <Ext href={p.agentUrl || explorerAgent(NETWORK, p.agentId)}>agent #{p.agentId}</Ext>
+                  </>
+                ) : detailed ? (
+                  " · no ERC-8004 identity"
+                ) : null}
                 {p.region ? ` · ${p.region}` : ""} · beat {formatAgo(p.lastHeartbeatAt)}
               </p>
+              {detailed ? (
+                <p className="mt-1.5 text-[11.5px] text-fg-3">
+                  {rank?.avgRating != null ? (
+                    <>
+                      <span className="text-fg-2">{"★".repeat(valueToStars(rank.avgRating))}</span>{" "}
+                      <span className="tnum">{Math.round(rank.avgRating)}/100</span> from {rank.ratings} rating
+                      {rank.ratings === 1 ? "" : "s"}
+                    </>
+                  ) : (
+                    "no ratings yet"
+                  )}
+                  {successRate != null ? (
+                    <>
+                      {" · "}
+                      <span className="tnum">{Math.round(successRate * 100)}%</span> success
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
             </div>
             <div className="shrink-0 text-right">
               <p className="tnum text-[14px] font-medium text-fg">
                 {Number.isFinite(cheapest) ? formatUsd(cheapest) : "—"}
               </p>
               <p className="tnum mt-0.5 text-[11.5px] text-fg-4">{p.stats.jobsCompleted} done</p>
+              {detailed ? (
+                <p className="tnum mt-0.5 text-[11.5px] text-fg-3">
+                  {formatUsdc(rank?.earnedUsdcUnits ?? p.stats.earnedUsdcMicros)} earned
+                </p>
+              ) : null}
             </div>
           </li>
         );
@@ -122,7 +148,7 @@ export function JobList({ limit = 15 }: { limit?: number }) {
     return (
       <Empty
         title="No jobs yet"
-        hint="Post one above — it settles on Hedera in about three seconds."
+        hint="Post one above — it settles on Monad in about a second."
       />
     );
   }
@@ -156,7 +182,8 @@ export function JobList({ limit = 15 }: { limit?: number }) {
               </p>
               <p className="mt-1 truncate text-[11.5px] text-fg-4">
                 {job.providerLabel ?? "unassigned"} · {formatAgo(job.createdAt)}
-                {job.payment ? ` · ${job.payment.asset.toUpperCase()}` : ""}
+                {job.payment ? " · paid in USDC" : ""}
+                {job.rating ? ` · ${"★".repeat(valueToStars(job.rating.value))}` : ""}
               </p>
             </div>
             <span className="tnum shrink-0 text-[14px] font-medium text-fg">
