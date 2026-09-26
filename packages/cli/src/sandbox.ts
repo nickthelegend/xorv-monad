@@ -107,6 +107,14 @@ const ENV_ALLOW = new Set([
  * `openai-compatible` is configured entirely from the environment, so its own
  * variables have to survive. They are the operator's deliberate choice to
  * expose, unlike everything else in the shell.
+ *
+ * The sponsor-model keys (`XORV_QWEN_*`, `XORV_KIMI_*`, `XORV_HUNYUAN_*`,
+ * `DASHSCOPE_API_KEY`, `MOONSHOT_API_KEY`, `TOKENHUB_API_KEY`) are deliberately
+ * *not* here. The HTTP adapters read them in-process and never spawn anything;
+ * `qwen-code` gets its key as `OPENAI_API_KEY` through `agentCredentials`,
+ * scoped to that one child. Allowlisting them would hand every provider's
+ * paid API key to every job on every adapter — a Claude Code job has no reason
+ * to be able to `echo $DASHSCOPE_API_KEY`.
  */
 const ENV_ALLOW_PREFIX = ["XORV_OPENAI_"];
 
@@ -139,14 +147,32 @@ export function withheldEnvKeys(): string[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * Where the node keeps its config and key, as the environment says right now.
+ *
+ * Read per call rather than imported from config.ts, so it tracks the same
+ * `XORV_HOME` the running node resolved and tests can move it freely.
+ */
+export function xorvHomeDir(home = os.homedir(), env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.XORV_HOME?.trim();
+  return configured ? path.resolve(configured) : path.join(home, ".xorv");
+}
+
+/**
  * Everything worth stealing that a job has no reason to touch.
  *
- * `~/.xorv` is first for a reason: it holds the payout key, and a job reading
- * it can take every future payment the provider earns.
+ * The Xorv home is first for a reason: it can hold the payout key (and any
+ * buyer key used with `xorv run`), and a job reading it can take every future
+ * payment the provider earns. It is wherever `XORV_HOME` points, not a
+ * hard-coded `~/.xorv` — an operator who moved it would otherwise have moved
+ * their key out from under the deny rules. `~/.xorv` stays on the list as well,
+ * since an older install may still have a key sitting there.
  */
-export function secretPaths(home = os.homedir()): string[] {
+export function secretPaths(home = os.homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
+  const xorvHome = xorvHomeDir(home, env);
+  const defaultHome = path.join(home, ".xorv");
   return [
-    path.join(home, ".xorv"),
+    xorvHome,
+    ...(xorvHome === defaultHome ? [] : [defaultHome]),
     path.join(home, ".ssh"),
     path.join(home, ".aws"),
     path.join(home, ".gnupg"),
@@ -274,6 +300,7 @@ export function seatbeltProfile(jobDir: string, home = os.homedir()): string {
   // working directory. Both spellings are allowed because the process may open
   // either one.
   const writable = new Set<string>([jobDir, realpath(jobDir), realpath(os.tmpdir()), os.tmpdir()]);
+  const ownDir = new Set<string>([jobDir, realpath(jobDir)]);
 
   return `(version 1)
 (allow default)
@@ -281,6 +308,12 @@ export function seatbeltProfile(jobDir: string, home = os.homedir()): string {
 ; --- secrets: unreadable, whatever the prompt asks for -----------------------
 ${deny}
   (deny file-read* (regex #"^${escapeRegex(home)}/\\.env.*"))
+
+; --- except the job's own directory, which lives under the (denied) Xorv home
+;     by default. Seatbelt applies the last matching rule, so this re-allows
+;     exactly the scratch directory and nothing beside it. -------------------
+(allow file-read*
+${[...ownDir].map((p) => `  (subpath ${JSON.stringify(p)})`).join("\n")})
 
 ; --- writes: the job directory and the temp dir, nothing else ----------------
 (deny file-write*)
@@ -397,9 +430,15 @@ export function wrapCommand(
       "--dev", "/dev",
       "--proc", "/proc",
       "--tmpfs", home,
-      "--bind", opts.jobDir, opts.jobDir,
-      "--tmpfs", "/tmp",
     ];
+    // A XORV_HOME outside the home directory would otherwise stay visible
+    // through the read-only root bind, key and all. Hide it the same way; the
+    // job directory is bound back on top below.
+    const xorvHome = xorvHomeDir(home);
+    if (path.relative(home, xorvHome).startsWith("..") || path.isAbsolute(path.relative(home, xorvHome))) {
+      binds.push("--tmpfs", xorvHome);
+    }
+    binds.push("--bind", opts.jobDir, opts.jobDir, "--tmpfs", "/tmp");
     for (const dir of [".claude", ".codex", ".config/opencode"]) {
       const full = path.join(home, dir);
       if (fs.existsSync(full)) binds.push("--ro-bind", full, full);

@@ -28,7 +28,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AdapterKind } from "@xorv/protocol";
+import { resolvePreset, type AdapterKind } from "@xorv/protocol";
 
 /**
  * Cached with its expiry, not forever.
@@ -112,6 +112,14 @@ function claudeTokenFromFile(): { token: string; expiresAt: number | null } | nu
  * sandbox already permits needs nothing injected.
  */
 export function agentCredentials(kind: AdapterKind): Record<string, string> {
+  // Qwen Code reads its model credentials from OPENAI_* — the operator's key
+  // lives in XORV_QWEN_API_KEY / DASHSCOPE_API_KEY, which the sandbox never
+  // passes through. Copying it into the child's own env here, and only for
+  // this adapter, is what keeps a DashScope key out of every other job (and
+  // off argv, where `ps` would show it). Resolved fresh each time: it is an
+  // env lookup, and an operator rotating the key should not need a restart.
+  if (kind === "qwen-code") return qwenCodeCredentials();
+
   const hit = cache.get(kind);
   if (hit && !isStale(hit)) return hit.creds;
 
@@ -157,8 +165,27 @@ export function credentialsExpired(kind: AdapterKind): boolean {
 
 /** Whether a job for this adapter will be able to authenticate. */
 export function canAuthenticate(kind: AdapterKind): boolean {
+  if (kind === "qwen-code") return Object.keys(qwenCodeCredentials()).length > 0;
   if (kind !== "claude-code" || process.platform !== "darwin") return true;
   return Object.keys(agentCredentials(kind)).length > 0;
+}
+
+/**
+ * The Qwen preset's key, base URL and model as the `OPENAI_*` trio Qwen Code
+ * reads with `--auth-type openai`. Empty when no key is configured — the job
+ * then fails at the CLI rather than quietly using some other credential.
+ *
+ * The base URL travels with the key on purpose: a DashScope key only works in
+ * the region that issued it, so a key without its endpoint is a 401 waiting.
+ */
+function qwenCodeCredentials(): Record<string, string> {
+  const preset = resolvePreset("qwen", process.env);
+  if (!preset.apiKey) return {};
+  return {
+    OPENAI_API_KEY: preset.apiKey,
+    OPENAI_BASE_URL: preset.baseUrl,
+    OPENAI_MODEL: preset.model,
+  };
 }
 
 /** For tests, and for `xorv doctor` re-checking after a login. */
