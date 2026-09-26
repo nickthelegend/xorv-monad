@@ -25,9 +25,10 @@ import { normalizeLeaderboard, normalizeLedgerFeed, type Leaderboard, type Ledge
 export { NETWORK } from "@/lib/network";
 export { formatAgo, formatDuration };
 
-export const BROKER_URL = (
-  process.env.NEXT_PUBLIC_XORV_BROKER_URL ?? "http://localhost:8402"
-).replace(/\/+$/, "");
+export const BROKER_URL = (process.env.NEXT_PUBLIC_XORV_BROKER_URL?.trim() || "http://localhost:8402").replace(
+  /\/+$/,
+  "",
+);
 
 export type Job = PublicJob;
 export type Provider = PublicProvider;
@@ -73,9 +74,4 @@ export const api = {
 export function formatUsd(micros: number | null | undefined): string {
   if (micros == null) return "—";
   return formatUsdMicros(micros);
-}
-
-/** Narrow a ledger event feed to one kind without trusting the wire shape. */
-export function eventsOf<K extends LedgerEventKind>(feed: LedgerFeed<K> | null): LedgerEvent<K>[] {
-  return feed?.events ?? [];
 }

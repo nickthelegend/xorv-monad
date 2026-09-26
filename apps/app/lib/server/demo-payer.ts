@@ -72,8 +72,9 @@ export function loadDemoPayer(): DemoPayerResult {
     return { ok: false, status: 500, error: "XORV_DEMO_MAX_USDC_UNITS must be a positive integer of USDC units." };
   }
 
+  // `||`, not `??`: an empty `XORV_BROKER_URL=` line in .env.local means "unset".
   const brokerUrl = (
-    process.env.XORV_BROKER_URL ?? process.env.NEXT_PUBLIC_XORV_BROKER_URL ?? "http://localhost:8402"
+    process.env.XORV_BROKER_URL?.trim() || process.env.NEXT_PUBLIC_XORV_BROKER_URL?.trim() || "http://localhost:8402"
   ).replace(/\/+$/, "");
 
   return { ok: true, payer: { account, network, brokerUrl, maxUsdcUnits: BigInt(cap).toString() } };
