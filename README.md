@@ -27,9 +27,11 @@ AI agent) asks for a quote, signs one USDC authorization, and the job runs on th
 The USDC moves **straight from buyer to provider** in a single Monad transaction that the network's
 facilitator submits and pays gas for. The broker only introduces the two parties and never holds the
 money. Every paid job is written to the `XorvLedger` contract. The buyer rates it with a free EIP-712
-signature, and that rating becomes ERC-8004 reputation which only a paying buyer can give. Three
-sponsor models sit in the core loop: Hunyuan screens every prompt, Qwen routes "Auto" jobs, and Kimi
-verifies results and writes its score on-chain.
+signature, and that rating becomes ERC-8004 reputation which only a paying buyer can give (and which
+the broker refuses to relay when Nansen links the buyer's wallet to the provider's). Three sponsor
+models sit in the core loop: Hunyuan screens every prompt, Qwen routes "Auto" jobs, and Kimi
+verifies results and writes its score on-chain. The broker itself is a paying agent too: it buys
+Nansen wallet data per call, over x402 on Monad, to score every provider's payout wallet.
 
 ## Track 04: Trust, Identity & AI Infrastructure
 
@@ -45,10 +47,15 @@ layer, not a consumer app:
   (`PayToNotAgentWallet`), so the broker cannot simply assert it.
 - **Reputation that costs something to fake.** Buyer ratings reach the ERC-8004 Reputation Registry
   only through `XorvLedger.rateJob`. There is one rating per recorded job, and it must be signed by
-  the wallet that paid for that job. `getSummary(agentId, [ledger], "starred", "")` is therefore a
-  score built from paid jobs only, and any other marketplace can read it.
+  the wallet that paid for that job, and the broker refuses to relay it when Nansen links the buyer's
+  wallet to the provider's (one funded the other, a shared non-exchange funder, related wallets).
+  `getSummary(agentId, [ledger], "starred", "")` is therefore a score built from paid jobs by
+  independent buyers, and any other marketplace can read it.
 - **AI trust services in the loop.** A safety screen protects provider machines, and a verifier
   publishes an independent quality score to the same registry under a separate tag.
+- **Wallet trust, bought agent to agent.** The broker pays Nansen a cent per call in USDC over x402
+  on Monad for each provider's payout-wallet history, and turns it into a trust score that breaks
+  matching ties and is shown, with attribution, on every provider.
 
 ## For judges: verify in three commands
 
@@ -91,9 +98,11 @@ binary. Its 52 tests run in a Linux container with the one command in
 | Gas for every call the broker pays for, measured on **live Monad** with state overrides (nothing deployed) | `pnpm --filter @xorv/contracts gas:monad`, table in [`packages/contracts/README.md`](packages/contracts/README.md#gas) |
 | MetaMask plugin manifest accepted by MetaMask's own `PluginManifestSchema`; `providers` and `quote` run inside Agent Wallet 7.0.0 | `packages/mm-plugin/test/manifest.test.ts`, example session in [`packages/mm-plugin/README.md`](packages/mm-plugin/README.md#example-session) |
 | Private job keys reproduced on a second (simulated, synced) authenticator | `apps/app/test/private-keyring.test.ts` |
+| Nansen x402 payments: only the Monad mainnet USDC row of Nansen's real 402s is paid, at the captured price, under a per-call cap and a daily budget; a related-wallet rating refused with 403 and nothing relayed | `services/broker/test/trust.test.ts` (replays the captured 402s), "Nansen trust" in `services/broker/test/integration.test.ts` |
 | **XorvLedger deployed on Monad testnet** | <!-- TODO(deploy): XorvLedger address + deploy tx --> **Not yet.** TBD, fill in after deploy |
 | **A job paid, receipted, rated and verified on Monad testnet** | <!-- TODO(deploy): settlement / receipt / rating / feedback tx hashes --> **Not yet.** TBD, fill in after deploy |
 | **Envio indexer live on Envio Cloud** | <!-- TODO(deploy): Envio GraphQL endpoint --> **Not yet.** Deploy between Oct 10 and 13 (see [SUBMISSION.md](SUBMISSION.md#before-you-submit)) |
+| **A Nansen call paid over x402 on Monad mainnet** | <!-- TODO(deploy): Nansen settlement tx on monadscan.com --> **Not yet.** Needs a mainnet key with a few USDC: `pnpm nansen:probe --mode live <address>` |
 
 Nothing in this README claims an on-chain transaction that isn't linked. Every "TBD" is filled in
 after deployment.
@@ -203,11 +212,15 @@ job. Monad does both, and it is EVM, so the standards already exist.
    │ 5  broker: Kimi scores the result → ERC-8004 giveFeedback (tag "xorv-verified", verifier EOA)
    │            XorvLedger.recordJobs (batched receipt: payment tx, request/result hashes, ok)
    │
-   │ 6  buyer signs an EIP-712 Rating (free) ─► broker relays XorvLedger.rateJob
+   │ 6  buyer signs an EIP-712 Rating (free) ─► broker asks Nansen: buyer and provider related? (403 if so)
+   │                                            relays XorvLedger.rateJob
    │                                            └─► ERC-8004 ReputationRegistry.giveFeedback ("starred")
    ▼
  Envio HyperIndex follows XorvLedger + ERC-8004 → GraphQL → broker /api/leaderboard, /api/ledger
    → app network and providers pages, landing ledger
+
+ Nansen (paid per call, x402 exact USDC on Monad mainnet) ← broker: provider wallet trust on
+   registration, the related-wallet check before each rating relay, a tie-breaker in matching
 ```
 
 Three rules hold the design together. They are explained in [ARCHITECTURE.md](ARCHITECTURE.md):
@@ -321,6 +334,44 @@ where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md
 - **In the demo.** The private toggle, the passkey prompts, the sealed result decrypting in the tab,
   then the same fingerprints and history on a second device.
 
+### Nansen: wallet trust the broker buys per call, over x402 on Monad
+
+- **What it does.** When a provider registers, the broker looks up its payout wallet on Nansen in
+  the background: who first funded it and when (cross-chain), what it is linked to on Monad, and
+  its Monad activity. It folds the answers into a **0–100 trust score** with written rules
+  (age, exchange funding, activity, risky counterparties) that **never penalise missing data**, so a
+  testnet-only wallet reads "No wallet history", not "low". That signal does three jobs. (1) It is
+  shown on every provider: the badge on each row, and on `/providers/<id>` the wallet's age, first
+  funder, activity, risk flags and "Xorv paid Nansen $0.03 over x402 on Monad" with each settlement
+  linked on Monadscan. (2) **It stops wash ratings.** Before relaying a rating into ERC-8004 the
+  broker checks whether buyer and provider are one party: the same wallet, one funded the other, a
+  shared first funder that is not an exchange or bridge, or listed as related wallets. If so the
+  rating is refused with **403 `related_wallets`**, nothing is relayed, and the check is stored on
+  the job. (3) It breaks ties between equally priced providers in matching (at most ±0.1 on the
+  0–1 reliability scale, so it never beats a cheaper node or a real track record).
+- **How it pays.** Nansen answers with an x402 v2 402 whose Monad row is `exact` USDC on
+  **mainnet** (`eip155:143`), $0.01 per profiler call. The broker's client registers only that
+  network, hard-codes mainnet USDC, validates every request locally first (Nansen charges before it
+  validates), checks the price per endpoint, caps each payment, reserves against a daily budget
+  (released if signing or settlement fails) and keeps the settlement transaction with the cached
+  answer. A few dollars of mainnet USDC on a separate key (`XORV_NANSEN_PAYER_KEY`) covers weeks;
+  `NANSEN_API_KEY` takes precedence when set. `XORV_NANSEN_MODE=fixture` serves deterministic
+  recorded-shape data with no network and no money for development and CI.
+- **What stays internal.** Nansen's redistribution guide keeps labels, smart-money data and
+  leaderboards internal. Smart-money membership only nudges matching and never leaves the broker;
+  related-wallet addresses are used for the sybil check and not published. Everything shown carries
+  "Powered by Nansen".
+- **Bounty fit ("a product experience … that goes beyond exposing raw data").** Nansen's answers
+  become decisions the product acts on (a refused rating, a ranking) and one explained number per
+  provider, paid for agent to agent over x402 on Monad.
+- **Code.** `services/broker/src/trust/{nansen,signal,service,fixtures}.ts`,
+  `services/broker/src/app.ts` (registration, `/api/providers/:id`, the rate guard, `/api/network`
+  `nansen`), `services/broker/src/registry.ts` (`TRUST_TIEBREAK_WEIGHT`),
+  `services/broker/src/scripts/nansen-probe.ts`, `apps/app/lib/trust.ts`,
+  `apps/app/components/{trust,provider-view,rate-job}.tsx`. Full design: [docs/NANSEN.md](docs/NANSEN.md).
+- **In the demo.** The provider's trust badge and panel with its Monad mainnet payment links, then a
+  rating from a wallet the provider funded, refused.
+
 ### Qwen 3.8 Max: the job router, and two adapters
 
 - **What it does.** When a buyer picks **Auto** and at least two adapters are live under the ceiling,
@@ -403,6 +454,7 @@ key turns a role off and never stops the broker. `GET /api/network` reports each
 | Example `recordJobs` receipt | TBD |
 | Example `rateJob` → ERC-8004 feedback | TBD |
 | Example Kimi `giveFeedback` (`xorv-verified`) | TBD |
+| Example Nansen x402 payment (Monad **mainnet**, broker → Nansen) | TBD (`https://monadscan.com/tx/<hash>`, from `/api/network` → `nansen.lastPaidTx`) |
 | Demo provider's ERC-8004 agent | TBD (`https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/<agentId>`) |
 | Envio GraphQL endpoint | TBD |
 | Broker URL | TBD |
@@ -433,7 +485,8 @@ With **no keys at all**, the broker boots on Monad testnet. It matches and dispa
 payments through Monad's hosted facilitator, and serves the ledger read-only. Each key adds a
 capability: `XORV_OPERATOR_KEY` enables ledger writes, rating relays and verifier feedback;
 `XORV_FACILITATOR_KEY` self-hosts settlement; `DASHSCOPE_API_KEY`, `MOONSHOT_API_KEY` and
-`TOKENHUB_API_KEY` turn on the AI roles.
+`TOKENHUB_API_KEY` turn on the AI roles; `XORV_NANSEN_MODE=fixture` (or `live` with
+`XORV_NANSEN_PAYER_KEY`) turns on Nansen wallet trust ([docs/NANSEN.md](docs/NANSEN.md)).
 
 Then in three terminals:
 
@@ -491,7 +544,8 @@ xorv-monad/
 │   └── mm-plugin/    @xorv/mm-plugin: MetaMask Agent Wallet plugin, `mm xorv …`, companion skill
 ├── services/
 │   ├── broker/       @xorv/broker: registry, matcher, x402 (upfront), facilitator, XorvLedger writer,
-│   │                 rating relay, AI roles (src/ai), private-job vaults, SQLite/Mongo, metrics
+│   │                 rating relay, AI roles (src/ai), Nansen wallet trust (src/trust),
+│   │                 private-job vaults, SQLite/Mongo, metrics
 │   └── indexer/      Envio HyperIndex v3 (own lockfile, outside the pnpm workspace)
 ├── apps/
 │   ├── app/          xorv-app: job board; Privy wallet pays and rates; network, providers and
@@ -499,6 +553,7 @@ xorv-monad/
 │   └── landing/      xorv-landing: marketing site with the live XorvLedger receipts feed
 ├── e2e/                   `pnpm e2e`: the whole system on a Monad testnet fork, checked on-chain
 ├── docs/PRIVATE_JOBS.md   private jobs: derivations, envelope, vault, threat model, demo script
+├── docs/NANSEN.md         Nansen wallet trust: x402 payments, scoring, the wash-rating guard
 ├── videos/xorv-launch/    HyperFrames trailer from the Hedera prototype (pre-existing)
 └── brand/                 logo + mark
 ```
@@ -530,7 +585,8 @@ keys. Xorv is infrastructure and does not decide this for you.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup on Monad testnet, tests, the indexer, commit style |
 | [CHANGELOG.md](CHANGELOG.md) | 0.2.0, the Monad port |
 | [docs/PRIVATE_JOBS.md](docs/PRIVATE_JOBS.md) | Mera private jobs |
-| [services/broker/README.md](services/broker/README.md) | The AI roles |
+| [docs/NANSEN.md](docs/NANSEN.md) | Nansen wallet trust: how the broker pays per call, the score, the wash-rating guard |
+| [services/broker/README.md](services/broker/README.md) | The AI roles and Nansen trust |
 | [services/indexer/README.md](services/indexer/README.md) | The Envio indexer |
 | [packages/contracts/README.md](packages/contracts/README.md) | XorvLedger, gas, deploy |
 | [packages/cli/README.md](packages/cli/README.md) · [packages/mcp/README.md](packages/mcp/README.md) · [packages/mm-plugin/README.md](packages/mm-plugin/README.md) | The three non-browser buyers and the provider node |

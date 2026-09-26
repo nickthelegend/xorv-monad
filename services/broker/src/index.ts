@@ -119,7 +119,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
         ? "fixture data — deterministic, no network, no payments"
         : nansen.auth === "api-key"
           ? "live, NANSEN_API_KEY"
-          : `live, x402 on Monad mainnet from ${nansen.payer?.address} (≤ ${nansen.perCallCapUsdc}/call, ${nansen.budgetUsdc}/day)`,
+          : `live, x402 on Monad mainnet from ${nansen.payer?.address} (≤ $${nansen.perCallCapUsdc}/call, $${nansen.budgetUsdc}/day)`,
   );
   console.log("");
 });
