@@ -35,16 +35,18 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm typecheck
-
+      # Build before typecheck: every package resolves @xorv/protocol through its
+      # compiled dist/*.d.ts, which a clean checkout doesn't have yet.
       - name: Build
         run: pnpm build
 
-      # Every test in the repo runs with no Hedera credentials and no network:
-      # the two pieces that would touch the ledger — the facilitator and the HCS
-      # writer — are stubbed, so CI proves the logic without spending testnet
-      # HBAR or depending on a mirror node being up.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Every test in the repo runs with no keys and no network: the facilitator
+      # and the XorvLedger writer are stubbed, the contracts run on Hardhat's
+      # in-process chain against the vendored ERC-8004 registries, so CI proves
+      # the logic without spending testnet MON or depending on an RPC being up.
       - name: Test
         run: pnpm test
 
