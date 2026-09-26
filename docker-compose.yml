@@ -1,11 +1,13 @@
 # Xorv broker on Monad.
 #
-#   docker compose up                   broker only (SQLite in the xorv-data volume)
+#   docker compose up --build           broker only (SQLite in the xorv-data volume)
 #   docker compose --profile mongo up   plus MongoDB; set XORV_MONGO_URI=mongodb://mongo:27017
 #
-# No variable is required: with none set the broker boots on Monad testnet,
-# settles payments through the hosted facilitator and runs the ledger
-# read-only. See .env.example for what each key adds.
+# Compose reads the root .env for the ${…} values below, so `cp .env.example
+# .env` and fill in what you have. No variable is required: with none set the
+# broker boots on Monad testnet, settles payments through the hosted
+# facilitator and runs the ledger read-only. .env.example says what each key
+# adds. Only the variables listed here reach the container.
 services:
   broker:
     build: .
@@ -37,6 +39,8 @@ services:
       # Behind a reverse proxy, set this so rate limiting sees real client IPs.
       XORV_TRUST_PROXY: ${XORV_TRUST_PROXY:-0}
       XORV_STABLECOIN: ${XORV_STABLECOIN:-}
+      XORV_STABLECOIN_NAME: ${XORV_STABLECOIN_NAME:-}
+      XORV_STABLECOIN_VERSION: ${XORV_STABLECOIN_VERSION:-}
       XORV_MONGO_URI: ${XORV_MONGO_URI:-}
       XORV_MONGO_DB: ${XORV_MONGO_DB:-xorv_monad}
       # AI roles — each on when its key is set (auto); see .env.example.
@@ -49,8 +53,20 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
       TOKENHUB_API_KEY: ${TOKENHUB_API_KEY:-}
+      # Per-preset overrides (the key ones win over the vendor keys above).
+      XORV_QWEN_API_KEY: ${XORV_QWEN_API_KEY:-}
+      XORV_QWEN_BASE_URL: ${XORV_QWEN_BASE_URL:-}
+      XORV_QWEN_MODEL: ${XORV_QWEN_MODEL:-}
+      XORV_KIMI_API_KEY: ${XORV_KIMI_API_KEY:-}
+      XORV_KIMI_BASE_URL: ${XORV_KIMI_BASE_URL:-}
+      XORV_KIMI_MODEL: ${XORV_KIMI_MODEL:-}
+      XORV_HUNYUAN_API_KEY: ${XORV_HUNYUAN_API_KEY:-}
+      XORV_HUNYUAN_BASE_URL: ${XORV_HUNYUAN_BASE_URL:-}
+      XORV_HUNYUAN_MODEL: ${XORV_HUNYUAN_MODEL:-}
+      # XORV_DB and XORV_BROKER_PORT are fixed by the image (/data, 8402).
     volumes:
-      # Jobs and lifetime earnings. Without this they go with the container.
+      # Jobs, lifetime earnings and private-job vaults. Without this they go
+      # with the container.
       - xorv-data:/data
     restart: unless-stopped
 
