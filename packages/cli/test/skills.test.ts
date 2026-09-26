@@ -117,6 +117,16 @@ describe("skillDir", () => {
   });
 });
 
+describe("the committed copy", () => {
+  it("in .claude/skills/xorv matches what `xorv skills` generates", () => {
+    // The repo ships a generated SKILL.md for this checkout's own Claude Code
+    // sessions. Nothing else keeps it in sync with skillMarkdown(), so a stale
+    // one (say, still documenting the old --json keys) would go unnoticed.
+    const committed = path.resolve(import.meta.dirname, "..", "..", "..", ".claude", "skills", "xorv", "SKILL.md");
+    expect(fs.readFileSync(committed, "utf8").replace(/\r\n/g, "\n")).toBe(skillMarkdown("http://localhost:8402"));
+  });
+});
+
 describe("as written to disk", () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "xorv-skill-"));
   afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
