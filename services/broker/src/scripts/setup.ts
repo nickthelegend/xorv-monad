@@ -1,13 +1,14 @@
 /**
- * `pnpm setup:monad` — what this broker needs on Monad, and what it has.
+ * `pnpm --filter @xorv/broker setup` — what this broker needs on Monad, and
+ * what it has.
  *
  * Read-only and idempotent: it never sends a transaction or edits a file. It
  * reports the operator and facilitator EOAs and their MON/USDC balances, says
  * where to get more, checks the XorvLedger deployment (or prints the exact
  * command that makes one), and ends with the env lines to paste into `.env`.
  *
- *   pnpm setup:monad              the report
- *   pnpm setup:monad --new-keys   also print freshly generated keys to use
+ *   pnpm --filter @xorv/broker setup                the report
+ *   pnpm --filter @xorv/broker setup -- --new-keys  also print fresh keys to use
  *
  * Deploying the ledger is deliberately a separate, explicit step
  * (`pnpm --filter @xorv/contracts deploy:testnet`): a redeploy moves the

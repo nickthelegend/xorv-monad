@@ -1,28 +1,63 @@
+# Xorv broker on Monad.
+#
+#   docker compose up                   broker only (SQLite in the xorv-data volume)
+#   docker compose --profile mongo up   plus MongoDB; set XORV_MONGO_URI=mongodb://mongo:27017
+#
+# No variable is required: with none set the broker boots on Monad testnet,
+# settles payments through the hosted facilitator and runs the ledger
+# read-only. See .env.example for what each key adds.
 services:
   broker:
     build: .
     ports:
       - "8402:8402"
     environment:
-      # A funded testnet account takes ~60s at https://portal.hedera.com
-      HEDERA_OPERATOR_ID: ${HEDERA_OPERATOR_ID:?set this in .env}
-      HEDERA_OPERATOR_KEY: ${HEDERA_OPERATOR_KEY:?set this in .env}
-      XORV_NETWORK: ${XORV_NETWORK:-hedera:testnet}
-      XORV_TOPIC_REGISTRY: ${XORV_TOPIC_REGISTRY:-}
-      XORV_TOPIC_HEARTBEAT: ${XORV_TOPIC_HEARTBEAT:-}
-      XORV_TOPIC_RECEIPTS: ${XORV_TOPIC_RECEIPTS:-}
+      XORV_NETWORK: ${XORV_NETWORK:-eip155:10143}
+      XORV_RPC_URL: ${XORV_RPC_URL:-}
+      XORV_EXPLORER_URL: ${XORV_EXPLORER_URL:-}
+      # Broker EOA (ledger writes, rating relays) and the facilitator EOA
+      # (settlement gas; defaults to the operator). Both need MON, above
+      # Monad's ~10 MON per-account reserve.
+      XORV_OPERATOR_KEY: ${XORV_OPERATOR_KEY:-}
+      XORV_FACILITATOR_KEY: ${XORV_FACILITATOR_KEY:-}
+      XORV_FACILITATOR: ${XORV_FACILITATOR:-}
+      XORV_LEDGER_ADDRESS: ${XORV_LEDGER_ADDRESS:-}
+      XORV_LEDGER_FROM_BLOCK: ${XORV_LEDGER_FROM_BLOCK:-}
+      XORV_HEARTBEAT_PUBLISH_EVERY: ${XORV_HEARTBEAT_PUBLISH_EVERY:-20}
+      XORV_RECEIPT_BATCH_MS: ${XORV_RECEIPT_BATCH_MS:-4000}
+      XORV_RECEIPT_BATCH_MAX: ${XORV_RECEIPT_BATCH_MAX:-20}
       # Must be the URL clients actually reach this broker on — not the
-      # in-container one. The node now rewrites the advertised control-channel
-      # host to match, so a mismatch no longer breaks dispatch, but an
-      # externally reachable value here keeps links in receipts correct.
+      # in-container one. It is baked into on-chain agent and feedback URIs.
+      XORV_PUBLIC_URL: ${XORV_PUBLIC_URL:-http://localhost:8402}
       XORV_BROKER_URL: ${XORV_BROKER_URL:-http://localhost:8402}
+      XORV_APP_URL: ${XORV_APP_URL:-}
+      XORV_INDEXER_URL: ${XORV_INDEXER_URL:-}
       XORV_CORS_ORIGINS: ${XORV_CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
+      XORV_FEE_BPS: ${XORV_FEE_BPS:-0}
       # Behind a reverse proxy, set this so rate limiting sees real client IPs.
       XORV_TRUST_PROXY: ${XORV_TRUST_PROXY:-0}
+      XORV_STABLECOIN: ${XORV_STABLECOIN:-}
+      XORV_MONGO_URI: ${XORV_MONGO_URI:-}
+      XORV_MONGO_DB: ${XORV_MONGO_DB:-xorv_monad}
+      # AI roles (phase 3) — off unless switched on and keyed.
+      XORV_ROUTER: ${XORV_ROUTER:-off}
+      XORV_SCREENER: ${XORV_SCREENER:-off}
+      XORV_VERIFIER: ${XORV_VERIFIER:-off}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      TOKENHUB_API_KEY: ${TOKENHUB_API_KEY:-}
     volumes:
       # Jobs and lifetime earnings. Without this they go with the container.
       - xorv-data:/data
     restart: unless-stopped
 
+  mongo:
+    image: mongo:7
+    profiles: ["mongo"]
+    volumes:
+      - xorv-mongo:/data/db
+    restart: unless-stopped
+
 volumes:
   xorv-data:
+  xorv-mongo:

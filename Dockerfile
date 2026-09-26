@@ -1,8 +1,11 @@
-# Xorv broker.
+# Xorv broker (Monad).
 #
-# Node 24 rather than 20: the persistence layer uses node:sqlite, which lands in
-# 22.5. Running the broker without it is supported but means losing every job on
-# restart, which is not a default worth shipping in a container.
+# Node 24 rather than 20: the persistence layer uses node:sqlite (unflagged
+# from 22.13). Running the broker without it is supported but means losing
+# every job on restart, which is not a default worth shipping in a container.
+#
+# Everything the broker needs is pure JS — viem, @x402/*, hono, ws — so there
+# are no native build tools in either stage.
 FROM node:24-slim AS build
 
 WORKDIR /app
@@ -31,8 +34,10 @@ COPY --from=build /app/services/broker services/broker
 COPY --from=build /app/node_modules node_modules
 
 # Jobs and earnings live here; mount a volume or they go with the container.
+# A Monad-specific file name, so a volume that held the Hedera broker's
+# xorv.db is never read as this one.
 RUN mkdir -p /data && chown -R node:node /data /app
-ENV XORV_DB=/data/xorv.db
+ENV XORV_DB=/data/xorv-monad.db
 VOLUME ["/data"]
 
 USER node
