@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -13,6 +14,8 @@ import { PaymentError, classifyPaymentError, payQuote, payableQuote, type Paymen
 import { EASE, useEntrance } from "@/lib/motion";
 import { describeRouting, describeScreening, roleLabel } from "@/lib/ai";
 import { cn } from "@/lib/utils";
+import { usePrivateKeys } from "@/components/private-keys";
+import { LockGlyph } from "@/components/passkey-panel";
 
 /**
  * The composer.
@@ -26,6 +29,12 @@ import { cn } from "@/lib/utils";
  * one-click "just do it" would be faster and worse. The payment that follows
  * is pinned to that quote — the x402 client refuses to sign for any other
  * payee or amount (lib/x402-pay.ts).
+ *
+ * A private job is the same flow with one more field on the quote: the
+ * buyer's passkey-derived inbox key (`encryptTo`). The provider seals the
+ * answer to it before it leaves their machine, and after payment the job is
+ * added to the buyer's encrypted history vault — the only place its prompt
+ * stays readable to them, since public views redact it.
  */
 
 const ADAPTERS: ModelOption[] = [
@@ -41,7 +50,15 @@ const ADAPTERS: ModelOption[] = [
   { id: "echo", label: "Echo", hint: "test" },
 ];
 
-type Busy = "quoting" | "signing" | "settling" | null;
+type Busy = "unlocking" | "quoting" | "signing" | "settling" | "saving" | null;
+
+/** How long a private job's history write may hold up the redirect to its page. */
+const HISTORY_SAVE_WAIT_MS = 8_000;
+
+/** When a payment landed, for the history entry. Only ever called from a payment handler. */
+function paidAt(): number {
+  return Date.now();
+}
 
 interface PayFailure {
   message: string;
@@ -57,8 +74,12 @@ export function Composer() {
   const wallet = useWallet();
   const demo = useDemoPayer();
   const info = useNetworkInfo();
+  const keys = usePrivateKeys();
 
   const [prompt, setPrompt] = useState("");
+  const [isPrivate, setPrivate] = useState(false);
+  /** The inbox key the current quote was taken for — set only for a private quote. */
+  const [quotedKey, setQuotedKey] = useState<string | null>(null);
   const [model, setModel] = useState("");
   const [maxUsd, setMaxUsd] = useState("0.50");
 
@@ -85,20 +106,37 @@ export function Composer() {
 
   const reset = (): void => {
     setQuote(null);
+    setQuotedKey(null);
     setError(null);
   };
 
   async function getQuote(): Promise<void> {
     if (!prompt.trim()) return;
     setError(null);
-    setBusy("quoting");
     setQuote(null);
+    setQuotedKey(null);
     try {
       const maxPriceUsdMicros = Math.round(Number(maxUsd.replace(/[$,\s]/g, "")) * 1_000_000);
       if (!Number.isFinite(maxPriceUsdMicros) || maxPriceUsdMicros <= 0) {
         throw new Error("Set a maximum price above zero.");
       }
-      setQuote(await api.quote({ prompt, adapter: model || null, maxPriceUsdMicros }));
+      // A private quote needs the inbox key now, and the vault keys right
+      // after payment — so all three are unlocked up front, one passkey
+      // confirmation each, rather than interrupting the redirect later.
+      let encryptTo: string | null = null;
+      if (isPrivate) {
+        if (!keys.ready) {
+          setBusy("unlocking");
+          if (!(await keys.unlock())) {
+            setBusy(null);
+            return;
+          }
+        }
+        encryptTo = keys.keyring.encryptTo();
+      }
+      setBusy("quoting");
+      setQuote(await api.quote({ prompt, adapter: model || null, maxPriceUsdMicros, encryptTo }));
+      setQuotedKey(encryptTo);
     } catch (err) {
       setError({ message: err instanceof Error ? err.message : String(err), kind: null });
     } finally {
@@ -106,7 +144,25 @@ export function Composer() {
     }
   }
 
-  function paid(jobId: string, txHash: string | null): void {
+  async function paid(jobId: string, txHash: string | null): Promise<void> {
+    if (quotedKey && quote) {
+      // Paid is paid: the history write is bounded, and if it fails the entry
+      // waits in memory for a retry (see PrivateKeysProvider) rather than
+      // keeping the buyer from their job.
+      setBusy("saving");
+      await Promise.race([
+        keys.saveToHistory({
+          jobId,
+          title: null,
+          prompt,
+          createdAt: paidAt(),
+          priceUsdMicros: quote.priceUsdMicros,
+          providerLabel: quote.provider.label,
+          encryptTo: quotedKey,
+        }),
+        new Promise((resolve) => setTimeout(resolve, HISTORY_SAVE_WAIT_MS)),
+      ]);
+    }
     // The settlement tx rides along so the job page can link it on first
     // paint, before the broker's payment record reaches the stream.
     router.push(`/jobs/${encodeURIComponent(jobId)}${txHash ? `?tx=${txHash}` : ""}`);
@@ -148,7 +204,7 @@ export function Composer() {
         },
       });
       void wallet.refreshBalances();
-      paid(result.jobId, result.txHash);
+      await paid(result.jobId, result.txHash);
     } catch (err) {
       const failure = classifyPaymentError(err);
       setError({ message: failure.message, kind: failure.kind });
@@ -179,7 +235,7 @@ export function Composer() {
         setBusy(null);
         return;
       }
-      paid(body.jobId, body.txHash ?? null);
+      await paid(body.jobId, body.txHash ?? null);
     } catch (err) {
       setError({ message: classifyPaymentError(err).message, kind: null, demo: true });
       setBusy(null);
@@ -321,6 +377,17 @@ export function Composer() {
         </div>
       </motion.div>
 
+      <motion.div {...rise(0.27)}>
+        <PrivateToggle
+          on={isPrivate}
+          busy={busy === "unlocking"}
+          onChange={(next) => {
+            setPrivate(next);
+            reset();
+          }}
+        />
+      </motion.div>
+
       <motion.p {...rise(0.3)} className="mt-2.5 text-[11.5px] text-fg-4">
         ⌘↵ to quote · you see the provider and the price before anything is paid
       </motion.p>
@@ -361,6 +428,14 @@ export function Composer() {
                 <p className="tnum shrink-0 text-[19px] font-semibold text-fg">{quote.priceLabel}</p>
               </div>
 
+              {quotedKey ? (
+                <p className="mt-3 flex items-center gap-1.5 border-t border-[var(--line)] pt-3 text-[11.5px] leading-relaxed text-fg-3">
+                  <LockGlyph className="text-fg-2" />
+                  Private — the answer is sealed to your inbox key{" "}
+                  <span className="mono text-fg-2">{keys.snapshot.inbox?.fingerprint}</span> on the provider&rsquo;s machine.
+                </p>
+              ) : null}
+
               {quote.screening || quote.routing ? (
                 <div className="mt-3 space-y-1 border-t border-[var(--line)] pt-3 text-[11.5px] leading-relaxed text-fg-4">
                   {quote.screening ? (
@@ -387,7 +462,9 @@ export function Composer() {
                   ? "Approve the payment in your wallet…"
                   : busy === "settling"
                     ? "Settling on Monad…"
-                    : primary.label}
+                    : busy === "saving"
+                      ? "Saving to your encrypted history…"
+                      : primary.label}
               </button>
 
               {offerDemo ? (
@@ -452,6 +529,88 @@ export function Composer() {
           </motion.div>
         ) : null}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * The private-job switch, and — when it is on — what it does and doesn't
+ * hide, stated before anyone pays. The honest version matters more than the
+ * reassuring one: the prompt is still read by the screen, the router and the
+ * provider; what's sealed is the answer.
+ */
+function PrivateToggle({ on, busy, onChange }: { on: boolean; busy: boolean; onChange: (next: boolean) => void }) {
+  const keys = usePrivateKeys();
+  const { snapshot, error } = keys;
+  const anyOpen = Boolean(snapshot.inbox || snapshot.vault || snapshot.vaultAuth);
+
+  return (
+    <div className="mt-3 text-left">
+      <div className="flex items-center gap-2.5 px-1">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label="Private job"
+          onClick={() => onChange(!on)}
+          className={cn(
+            "relative h-[18px] w-[30px] shrink-0 rounded-full border transition-colors duration-200",
+            on ? "border-white bg-white" : "border-[var(--line-2)] bg-transparent hover:border-[var(--line-3)]",
+          )}
+        >
+          <span
+            className={cn(
+              "absolute top-[2px] h-3 w-3 rounded-full transition-all duration-200",
+              on ? "left-[14px] bg-black" : "left-[2px] bg-fg-3",
+            )}
+          />
+        </button>
+        <span className="text-[12.5px] text-fg-2">Private job</span>
+        <span className="text-[11.5px] text-fg-4">· answer sealed to your passkey</span>
+      </div>
+
+      {on ? (
+        <div className="mt-2.5 rounded-xl border border-[var(--line)] bg-white/[0.015] px-3.5 py-3 text-[11.5px] leading-relaxed text-fg-3">
+          <p>
+            <span className="text-fg-2">Sealed:</span> the answer. The provider encrypts it on their machine to a key only your
+            passkey can re-derive, so the broker, the public job list and the on-chain receipt hold ciphertext. Open it here or on
+            any device your passkey syncs to.
+          </p>
+          <p className="mt-1.5">
+            <span className="text-fg-2">Not sealed:</span> the prompt. The safety screen, the router and the provider read it; the
+            public job list doesn&rsquo;t show it, and your copy goes into your encrypted history.
+          </p>
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] pt-2.5">
+            <span className="mono text-[11px] text-fg-4">
+              {busy
+                ? `confirm with your passkey · ${snapshot.pending ?? "…"}`
+                : keys.ready
+                  ? `keys unlocked · inbox ${snapshot.inbox?.fingerprint}`
+                  : "quoting asks your passkey 3 times: inbox, vault, vault-auth"}
+            </span>
+            {!anyOpen && !busy ? (
+              <button
+                type="button"
+                onClick={() => void keys.create().then((ok) => (ok ? keys.unlock() : false))}
+                className="rounded-md border border-[var(--line-2)] px-2 py-1 text-[11.5px] text-fg-2 transition-colors hover:border-[var(--line-3)] hover:text-fg"
+              >
+                New here? Create an encryption passkey
+              </button>
+            ) : null}
+          </div>
+          {error ? (
+            <p role="alert" className={cn("mt-2", error.kind === "cancelled" ? "text-fg-3" : "text-fail")}>
+              {error.message}
+            </p>
+          ) : null}
+          <p className="mt-2 text-fg-4">
+            The passkey only derives encryption keys; it is not a wallet and can&rsquo;t move money.{" "}
+            <Link href="/private" className="text-fg-3 underline underline-offset-2 hover:text-fg-2">
+              How it works
+            </Link>
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

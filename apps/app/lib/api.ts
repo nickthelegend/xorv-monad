@@ -58,7 +58,13 @@ export const api = {
   ledger: <K extends LedgerEventKind>(kind: K, limit = 20) =>
     get<unknown>(`/api/ledger?kind=${kind}&limit=${limit}`).then((r) => normalizeLedgerFeed(r, kind)),
   leaderboard: () => get<unknown>("/api/leaderboard").then(normalizeLeaderboard),
-  quote: async (body: { prompt: string; adapter: string | null; maxPriceUsdMicros: number }): Promise<Quote> => {
+  /** `encryptTo` makes it a private job: the buyer's passkey-derived inbox key (see lib/private). */
+  quote: async (body: {
+    prompt: string;
+    adapter: string | null;
+    maxPriceUsdMicros: number;
+    encryptTo?: string | null;
+  }): Promise<Quote> => {
     const res = await fetch(`${BROKER_URL}/api/quotes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
