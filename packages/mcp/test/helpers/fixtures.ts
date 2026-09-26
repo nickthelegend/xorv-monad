@@ -104,11 +104,14 @@ export function fakePrivy(overrides: Partial<PrivyWalletRecord> = {}): FakePrivy
                 throw new Error("400 Policy violation: request denied by policy pol_test");
               }
               const { domain, types, primary_type, message } = body.params.typed_data;
-              const signature = await enclave.signTypedData({
-                domain: domain as never,
-                types: types as never,
-                primaryType: primary_type as never,
-                message: reviveMessage(types, primary_type, message) as never,
+              // Arbitrary typed data from the wire: viem's generic signature
+              // cannot be satisfied statically, so call it untyped.
+              const signTypedData = enclave.signTypedData as (parameters: unknown) => Promise<Hex>;
+              const signature = await signTypedData({
+                domain,
+                types,
+                primaryType: primary_type,
+                message: reviveMessage(types, primary_type, message),
               });
               return { signature };
             },

@@ -4,7 +4,8 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
-    // Each test spawns a real server process through tsx.
+    // The stdio tests spawn a real server process through tsx, which takes a
+    // few seconds on Windows; the unit tests are fast.
     testTimeout: 60_000,
     hookTimeout: 30_000,
   },
