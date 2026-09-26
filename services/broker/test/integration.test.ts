@@ -307,6 +307,10 @@ async function boot(opts: { config?: Partial<BrokerConfig>; injectFacilitator?: 
     sweep,
     async stop() {
       hub?.close();
+      // Drop keep-alive sockets too: the next test's server can be handed the
+      // same port, and a pooled socket to this one would then fail its first
+      // request.
+      server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
   };
