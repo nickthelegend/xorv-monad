@@ -69,7 +69,7 @@ const ADAPTER_HINT =
 function proofLines(network: string, job: PublicJob, settlementTx?: string | null): string[] {
   const lines: string[] = [];
   const tx = settlementTx ?? job.payment?.txHash ?? null;
-  if (tx) lines.push(`Payment: ${job.payment?.explorerUrl ?? explorerTx(network, tx)}`);
+  if (tx) lines.push(`Payment: ${explorerTx(network, tx)}`);
   if (job.receiptTxHash) lines.push(`Ledger receipt (XorvLedger): ${explorerTx(network, job.receiptTxHash)}`);
   if (job.resultHash) lines.push(`Result keccak256: ${job.resultHash}`);
   if (job.verification) {

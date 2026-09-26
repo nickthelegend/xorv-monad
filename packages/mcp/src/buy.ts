@@ -41,6 +41,13 @@ import type { PayerSigner, ResolvedPayer } from "./signer.js";
 
 export type BuyStage = "setup" | "budget" | "quote" | "payment" | "job";
 
+/**
+ * How long the pay request (402, sign, paid retry with settlement) may take.
+ * Monad settles in about a second; this is slack for a slow RPC behind the
+ * facilitator, not an expected duration.
+ */
+export const PAYMENT_TIMEOUT_MS = 90_000;
+
 /** A refusal or failure with the stage it happened at, so the tool can say what to do. */
 export class BuyError extends Error {
   constructor(
@@ -224,6 +231,9 @@ export async function buyJob(deps: BuyDeps, args: BuyArgs): Promise<BuyResult> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
+      // Covers the 402 round-trip and the paid retry, which includes the
+      // on-chain settlement (the broker settles before it answers).
+      signal: AbortSignal.timeout(PAYMENT_TIMEOUT_MS),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
