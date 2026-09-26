@@ -1,13 +1,28 @@
 {
   "name": "@xorv/protocol",
-  "version": "0.1.0",
-  "description": "Shared Xorv protocol types, money math, Hedera helpers and x402 wiring.",
+  "version": "0.2.0",
+  "description": "Shared Xorv protocol: domain types, money math, Monad chain config, XorvLedger + ERC-8004 helpers, x402 (EVM exact) wiring and OpenAI-compatible LLM presets.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "web": [
+        "./dist/web.d.ts"
+      ]
+    }
   },
   "files": [
     "dist"
@@ -15,14 +30,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@hiero-ledger/sdk": "2.85.0",
-    "@x402/core": "~2.20.0",
-    "@x402/hedera": "~2.20.0"
+    "@x402/core": "~2.27.0",
+    "@x402/evm": "~2.27.0",
+    "viem": "^2.56.9"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
