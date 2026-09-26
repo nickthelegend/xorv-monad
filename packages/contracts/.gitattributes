@@ -1,0 +1,4 @@
+# Solidity metadata hashes the exact source bytes, so a CRLF checkout on Windows would compile to
+# different bytecode than an LF checkout elsewhere. Pin LF so every machine reproduces (and can
+# verify) the deployed bytecode.
+*.sol text eol=lf
