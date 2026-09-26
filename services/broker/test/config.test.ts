@@ -22,6 +22,10 @@ const VARS = [
   "XORV_BROKER_URL",
   "XORV_STABLECOIN",
   "XORV_ROUTER",
+  "XORV_SCREENER",
+  "XORV_VERIFIER",
+  "XORV_SCREENER_FAIL",
+  "XORV_VERIFIER_KEY",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -46,7 +50,9 @@ describe("loadConfig", () => {
     expect(config.ledgerAddress).toBeNull();
     expect(config.heartbeatPublishEvery).toBe(20);
     expect(config.dbFile).toMatch(/xorv-monad\.db$/);
-    expect(config.ai).toEqual({ router: "off", screener: "off", verifier: "off" });
+    // "auto": each role turns on exactly when its provider's key is set (src/ai/index.ts).
+    expect(config.ai).toEqual({ router: "auto", screener: "auto", verifier: "auto", screenerFail: "open" });
+    expect(config.verifierAccount).toBeNull();
   });
 
   it("refuses a leftover Hedera network with a message that names the fix", () => {
@@ -91,8 +97,28 @@ describe("loadConfig", () => {
   it("validates the AI role switches", () => {
     process.env.XORV_ROUTER = "qwen";
     expect(loadConfig().ai.router).toBe("qwen");
+    process.env.XORV_ROUTER = "OFF";
+    expect(loadConfig().ai.router).toBe("off");
+    process.env.XORV_SCREENER = "hunyuan";
+    process.env.XORV_VERIFIER = "auto";
+    process.env.XORV_SCREENER_FAIL = "closed";
+    expect(loadConfig().ai).toEqual({ router: "off", screener: "hunyuan", verifier: "auto", screenerFail: "closed" });
     process.env.XORV_ROUTER = "gpt";
     expect(() => loadConfig()).toThrow(/XORV_ROUTER/);
+    process.env.XORV_ROUTER = "qwen";
+    process.env.XORV_SCREENER_FAIL = "sometimes";
+    expect(() => loadConfig()).toThrow(/XORV_SCREENER_FAIL/);
+  });
+
+  it("signs verifier feedback with the operator key unless given its own", () => {
+    const operatorKey = generatePrivateKey();
+    process.env.XORV_OPERATOR_KEY = operatorKey;
+    expect(loadConfig().verifierAccount!.address).toBe(privateKeyToAccount(operatorKey).address);
+    const verifierKey = generatePrivateKey();
+    process.env.XORV_VERIFIER_KEY = verifierKey;
+    expect(loadConfig().verifierAccount!.address).toBe(privateKeyToAccount(verifierKey).address);
+    process.env.XORV_VERIFIER_KEY = "0.0.1234";
+    expect(() => loadConfig()).toThrow(/XORV_VERIFIER_KEY/);
   });
 });
 

@@ -32,19 +32,31 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 loadDotenv({ path: path.resolve(here, "../../../.env"), quiet: true });
 loadDotenv({ quiet: true });
 
-/** Which AI role providers are switched on. Only the config lives here; the roles plug in later. */
+/**
+ * The AI role switches (src/ai/). `auto` — the default — turns a role on
+ * exactly when its provider's key is set; naming the provider asks for it
+ * explicitly (still off without a key, but loudly); `off` is off. Keys are
+ * resolved when the roles are built, not here, so a missing one never stops
+ * the broker from booting.
+ */
 export interface AiRoleConfig {
-  router: "qwen" | "off";
-  screener: "hunyuan" | "off";
-  verifier: "kimi" | "off";
+  router: "qwen" | "auto" | "off";
+  screener: "hunyuan" | "auto" | "off";
+  verifier: "kimi" | "auto" | "off";
+  /**
+   * What a quote does when the screen can't answer: `open` (default) lets it
+   * through with a record saying it went unscreened; `closed` refuses it.
+   */
+  screenerFail?: "open" | "closed";
 }
 
 export interface BrokerConfig {
   /** CAIP-2 id; `eip155:10143` (testnet) unless told otherwise. */
   network: MonadNetwork;
   /**
-   * The broker's own EOA: ledger writes, rating relays and (later) verifier
-   * feedback. Null means read-only — nothing is written on-chain.
+   * The broker's own EOA: ledger writes, rating relays and (unless
+   * XORV_VERIFIER_KEY is set) verifier feedback. Null means read-only —
+   * nothing is written on-chain.
    */
   operator: PrivateKeyAccount | null;
   /**
@@ -54,6 +66,13 @@ export interface BrokerConfig {
    * behind each other.
    */
   facilitatorAccount: PrivateKeyAccount | null;
+  /**
+   * The EOA that writes the Kimi verifier's scores to the ERC-8004
+   * Reputation Registry (`giveFeedback`). XORV_VERIFIER_KEY, falling back to
+   * the operator key; null (or unset) keeps scores off-chain. It must never
+   * own or operate a provider's agent — the registry refuses self-feedback.
+   */
+  verifierAccount?: PrivateKeyAccount | null;
   /**
    * `self`, `hosted`, or a facilitator URL. Null when `XORV_FACILITATOR` is
    * unset, which means "self if there is a key to self-host with, hosted
@@ -116,11 +135,18 @@ function nonNegativeInt(name: string, fallback: number): number {
   return value;
 }
 
-function role<T extends string>(name: string, on: T): T | "off" {
-  const raw = (optional(name) ?? "off").toLowerCase();
+function role<T extends string>(name: string, on: T): T | "auto" | "off" {
+  const raw = (optional(name) ?? "auto").toLowerCase();
   if (raw === "off" || raw === "0" || raw === "false") return "off";
+  if (raw === "auto") return "auto";
   if (raw === on) return on;
-  throw new Error(`${name} must be "${on}" or "off", got "${raw}"`);
+  throw new Error(`${name} must be "${on}", "auto" or "off", got "${raw}"`);
+}
+
+function failMode(name: string): "open" | "closed" {
+  const raw = (optional(name) ?? "open").toLowerCase();
+  if (raw === "open" || raw === "closed") return raw;
+  throw new Error(`${name} must be "open" or "closed", got "${raw}"`);
 }
 
 export function loadConfig(): BrokerConfig {
@@ -131,6 +157,7 @@ export function loadConfig(): BrokerConfig {
 
   const operator = key("XORV_OPERATOR_KEY");
   const facilitatorAccount = key("XORV_FACILITATOR_KEY") ?? operator;
+  const verifierAccount = key("XORV_VERIFIER_KEY") ?? operator;
 
   const ledgerRaw = optional("XORV_LEDGER_ADDRESS");
   let ledgerAddress: Address | null = null;
@@ -157,6 +184,7 @@ export function loadConfig(): BrokerConfig {
     network,
     operator,
     facilitatorAccount,
+    verifierAccount,
     facilitatorMode: optional("XORV_FACILITATOR"),
     ledgerAddress,
     ledgerFromBlock: fromBlockRaw === null ? null : BigInt(fromBlockRaw),
@@ -182,6 +210,7 @@ export function loadConfig(): BrokerConfig {
       router: role("XORV_ROUTER", "qwen"),
       screener: role("XORV_SCREENER", "hunyuan"),
       verifier: role("XORV_VERIFIER", "kimi"),
+      screenerFail: failMode("XORV_SCREENER_FAIL"),
     },
   };
 }
