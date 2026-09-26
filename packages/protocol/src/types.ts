@@ -295,6 +295,12 @@ export interface DispatchedJob {
   timeoutMs: number;
   /** Price the provider will be paid, in micro-USD, for display in the node UI. */
   priceUsdMicros: number;
+  /**
+   * Set for a private job: the buyer's X25519 inbox key (`JobRequest.encryptTo`).
+   * The node seals the result to it (`sealResult`) before reporting, and sends
+   * only coarse status events while the job runs — no reasoning, no text.
+   */
+  encryptTo?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +411,13 @@ export interface PublicProvider {
 /** `GET /api/jobs` → `{ jobs: PublicJob[] }`, `GET /api/jobs/:id` → `{ job: PublicJob }` */
 export interface PublicJob {
   id: string;
+  /**
+   * A private job (`JobRequest.encryptTo` was set). Its `result` is a sealed
+   * envelope (`parseSealedResult`), its `prompt` and `title` are redacted to
+   * "" / null, and its events are coarse status lines only. The buyer's own
+   * copy of the prompt lives in their passkey-encrypted history vault.
+   */
+  private?: boolean;
   title: string | null;
   prompt: string;
   adapter: AdapterKind | null;
