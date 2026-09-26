@@ -32,11 +32,24 @@ export function stripSecrets<T extends { token?: string }>(record: T): Omit<T, "
   return rest;
 }
 
+/**
+ * A job as the world sees it.
+ *
+ * A private job (`request.encryptTo`) is listed, priced, paid and receipted
+ * like any other, but its words are not public: the prompt and title are
+ * redacted (the buyer's own copy lives in their passkey-encrypted history
+ * vault), the result is the sealed envelope only the buyer's passkey opens,
+ * and `private: true` lets every surface say so rather than render a blank.
+ * The broker still holds the prompt internally, because routing, screening
+ * and a free reassignment all need it.
+ */
 export function publicJob(job: StoredJob, opts: { events?: boolean } = {}): PublicJob {
+  const sealed = Boolean(job.request.encryptTo);
   return {
     id: job.id,
-    title: job.request.title ?? null,
-    prompt: job.request.prompt,
+    private: sealed,
+    title: sealed ? null : (job.request.title ?? null),
+    prompt: sealed ? "" : job.request.prompt,
     adapter: job.request.adapter ?? null,
     status: job.status,
     createdAt: job.createdAt,

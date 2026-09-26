@@ -14,6 +14,7 @@ import { JobStore } from "./jobs.js";
 import { Registry } from "./registry.js";
 import { openPersistence } from "./store.js";
 import { LayeredPersistence } from "./store-mongo.js";
+import { VaultStore } from "./vaults.js";
 
 const config = loadConfig();
 const net = networkConfig(config.network);
@@ -60,6 +61,7 @@ const ai = createAiHooks({
 });
 const registry = new Registry(persistence);
 const jobs = new JobStore(persistence);
+const vaults = new VaultStore(persistence);
 
 let hub: Hub | null = null;
 const { app, hubHandlers, sweep, settlement } = createApp({
@@ -67,6 +69,7 @@ const { app, hubHandlers, sweep, settlement } = createApp({
   chain,
   registry,
   jobs,
+  vaults,
   getHub: () => hub,
   ai,
 });

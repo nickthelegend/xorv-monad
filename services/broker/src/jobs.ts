@@ -261,17 +261,29 @@ export class JobStore {
    * The tail is capped: a chatty agent can emit thousands of tool calls in one
    * job, and the broker holds every job in memory. Keeping the most recent 400
    * bounds that without losing the part anyone reads.
+   *
+   * A private job keeps status lines only. The node already sends nothing
+   * else for one; this is the broker refusing to store reasoning or streamed
+   * text for a private job even if an older node sends it. The event still
+   * counts as a sign of life.
    */
   addEvent(id: string, event: JobEvent): StoredJob | undefined {
     const job = this.jobs.get(id);
     if (!job) return undefined;
-    job.events.push(event);
-    if (job.events.length > 400) job.events.splice(0, job.events.length - 400);
+    const kept = !job.request.encryptTo
+      ? event
+      : event.kind === "status"
+        ? { ...event, text: String(event.text ?? "").slice(0, 200) }
+        : null;
+    if (kept) {
+      job.events.push(kept);
+      if (job.events.length > 400) job.events.splice(0, job.events.length - 400);
+    }
     if (job.status === "assigned") {
       job.status = "running";
       job.startedAt ??= Date.now();
     }
-    this.emit(job, event);
+    this.emit(job, kept);
     return job;
   }
 

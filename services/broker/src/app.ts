@@ -53,10 +53,13 @@ import {
   formatUsd,
   getAgentWallet,
   isEvmAddress,
+  isValidEncryptTo,
+  isVaultId,
   jobIdHash,
   logPaymentRejections,
   networkConfig,
   normalizeAddress,
+  parseSealedResult,
   sameAddress,
   serializeFeedbackFile,
   sha256,
@@ -65,6 +68,8 @@ import {
   usdMicrosToUsdcUnits,
   usdcPaymentOption,
   usdcUnitsToUsdMicros,
+  verifyVaultWrite,
+  VAULT_MAX_CIPHERTEXT_BYTES,
   type AdapterKind,
   type Capability,
   type DispatchedJob,
@@ -76,6 +81,7 @@ import {
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
+  type VaultWrite,
 } from "@xorv/protocol";
 import type { BrokerConfig } from "./config.js";
 import { describeLedger, type ChainLike, type PublishResult } from "./chain.js";
@@ -90,6 +96,7 @@ import { hookDeadline, withHookTimeout, type AiHooks, type JobVerifier } from ".
 import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/feedback.js";
 import { verifiable } from "./ai/verifier.js";
 import type { RouteCandidate, RoutingRecord, ScreeningRecord, VerificationRecord } from "./ai/types.js";
+import { VaultStore } from "./vaults.js";
 import {
   RATING_TTL_SECONDS,
   feedbackFor,
@@ -141,10 +148,13 @@ export interface AppDeps {
   agentWallet?: (agentId: string) => Promise<string | null>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
+  /** Private-job history vaults; defaults to an in-memory store. */
+  vaults?: VaultStore;
 }
 
 export function createApp(deps: AppDeps) {
   const { config, chain, registry, jobs } = deps;
+  const vaults = deps.vaults ?? new VaultStore();
   const app = new Hono();
   const metrics = deps.metrics ?? new Metrics();
   const net = networkConfig(config.network);
@@ -325,6 +335,10 @@ export function createApp(deps: AppDeps) {
   app.use("/api/providers/register", rateLimit({ limit: 10, windowMs: 60_000 }));
   // Each rating relay costs the operator ~0.03 MON of gas.
   app.use("/api/jobs/:id/rate", rateLimit({ limit: 10, windowMs: 60_000 }));
+  // Anyone can mint a vault key, so vault writes are storage anyone can ask
+  // for; reads are free.
+  const vaultWriteLimit = rateLimit({ limit: 20, windowMs: 60_000 });
+  app.use("/api/vaults/:id", (c, next) => (c.req.method === "PUT" ? vaultWriteLimit(c, next) : next()));
 
   app.get("/metrics", (c) =>
     c.text(
@@ -564,7 +578,7 @@ export function createApp(deps: AppDeps) {
     if (!job || job.providerId !== provider.id) return c.json({ error: "not found" }, 404);
     const body = ((await readJson(c)) ?? {}) as { result?: string; error?: string; durationMs?: number };
     if (body.error) {
-      finishJobFailed(job.id, provider.id, body.error, body.durationMs ?? 0);
+      finishJobFailed(job.id, provider.id, providerError(job, body.error), body.durationMs ?? 0);
     } else {
       finishJobOk(job.id, provider.id, body.result ?? "", body.durationMs ?? 0);
     }
@@ -584,12 +598,23 @@ export function createApp(deps: AppDeps) {
     if (!Number.isFinite(maxPrice) || maxPrice <= 0) {
       return c.json({ error: "maxPriceUsdMicros must be a positive number" }, 400);
     }
+    // A private job names the buyer's passkey-derived inbox key. It is
+    // checked here, before a provider is reserved, because a key nobody can
+    // seal to would only fail on the provider after the buyer had paid.
+    const { encryptTo, ...rest } = body;
+    if (encryptTo !== undefined && encryptTo !== null && !isValidEncryptTo(encryptTo)) {
+      return c.json(
+        { error: "encryptTo must be a 32-byte X25519 public key in unpadded base64url (a private job's inbox key)" },
+        400,
+      );
+    }
     const request: JobRequest = {
-      ...body,
+      ...rest,
       prompt: body.prompt,
       // "auto" (or nothing) is how a buyer says "you choose" — the router's cue.
       adapter: adapterChoice(body.adapter),
       maxPriceUsdMicros: maxPrice,
+      ...(encryptTo ? { encryptTo } : {}),
     };
 
     // 1. The safety screen, before any provider could see the prompt and
@@ -980,6 +1005,75 @@ export function createApp(deps: AppDeps) {
   });
 
   // -------------------------------------------------------------------------
+  // Private-job vaults — ciphertext the broker stores and cannot read
+  // -------------------------------------------------------------------------
+
+  /**
+   * A buyer's encrypted private-job history.
+   *
+   * Unauthenticated on purpose: the id is the hash of a key derived from the
+   * buyer's passkey, and what comes back is AES-GCM ciphertext under another
+   * key from the same passkey. A fresh browser that unlocks the passkey
+   * derives the id and asks for it — no account, no session, no cookie.
+   */
+  app.get("/api/vaults/:id", (c) => {
+    const id = c.req.param("id");
+    if (!isVaultId(id)) return c.json({ error: "a vault id is 64 lowercase hex characters" }, 400);
+    const record = vaults.get(id);
+    if (!record) return c.json({ error: "no vault with this id yet", id, version: 0 }, 404);
+    return c.json({
+      id: record.id,
+      ciphertext: record.ciphertext,
+      iv: record.iv,
+      version: record.version,
+      updatedAt: record.updatedAt,
+    });
+  });
+
+  /**
+   * Replace a vault's ciphertext.
+   *
+   * The write must be signed by the vault-auth key whose hash is the id (so
+   * only the passkey that owns a vault can change it), and must be exactly the
+   * next version (so an old signed write can't be replayed to roll it back, and
+   * two devices writing at once get a 409 carrying the version to merge onto).
+   */
+  app.put("/api/vaults/:id", async (c) => {
+    const id = c.req.param("id");
+    if (!isVaultId(id)) return c.json({ error: "a vault id is 64 lowercase hex characters" }, 400);
+    const body = (await readJson(c)) as Partial<VaultWrite> | null;
+    // Size first: cheaper than a signature check, and the answer doesn't depend on it.
+    if (typeof body?.ciphertext === "string" && Math.floor((body.ciphertext.length * 3) / 4) > VAULT_MAX_CIPHERTEXT_BYTES) {
+      return c.json(
+        { error: `vault ciphertext is larger than ${Math.round(VAULT_MAX_CIPHERTEXT_BYTES / 1024)} KiB` },
+        413,
+      );
+    }
+    const check = verifyVaultWrite(id, body);
+    if (!check.ok) return c.json({ error: check.reason }, check.forbidden ? 403 : 400);
+
+    const write = body as VaultWrite;
+    const stored = vaults.put(id, {
+      ciphertext: write.ciphertext,
+      iv: write.iv,
+      version: write.version,
+      publicKey: write.publicKey,
+    });
+    if (!stored.ok) {
+      if (stored.reason === "full") return c.json({ error: "this broker is not accepting new vaults" }, 507);
+      return c.json(
+        {
+          error: `stale write: this vault is at version ${stored.current}, so the next write must be version ${stored.current + 1}`,
+          version: stored.current,
+        },
+        409,
+      );
+    }
+    metrics.inc("xorv_vault_writes_total");
+    return c.json({ ok: true, id, version: stored.record.version, updatedAt: stored.record.updatedAt });
+  });
+
+  // -------------------------------------------------------------------------
   // Ratings — gasless for the buyer, relayed through XorvLedger into ERC-8004
   // -------------------------------------------------------------------------
 
@@ -1355,6 +1449,8 @@ export function createApp(deps: AppDeps) {
       prompt: job.request.prompt,
       timeoutMs: JOB_TIMEOUT_MS,
       priceUsdMicros: job.priceUsdMicros ?? 0,
+      // The node seals the result to this before reporting it.
+      ...(job.request.encryptTo ? { encryptTo: job.request.encryptTo } : {}),
     };
 
     if (!hub.send(provider.id, { type: "job.dispatch", job: payload })) {
@@ -1397,6 +1493,7 @@ export function createApp(deps: AppDeps) {
         prompt: job.request.prompt,
         timeoutMs: JOB_TIMEOUT_MS,
         priceUsdMicros: job.priceUsdMicros ?? 0,
+        ...(job.request.encryptTo ? { encryptTo: job.request.encryptTo } : {}),
       },
     });
     if (!sent) return false;
@@ -1421,6 +1518,23 @@ export function createApp(deps: AppDeps) {
     // A result for a job that is already over (cancelled, timed out), or from a
     // provider the job was taken away from, changes nothing.
     if (!job || isTerminal(job.status) || job.providerId !== providerId) return;
+    if (job.request.encryptTo) {
+      // A private job's result must arrive sealed. Plaintext is exactly what
+      // the buyer paid to keep off this broker, so it is dropped unstored and
+      // the job gets a free retry elsewhere, like any other provider failure.
+      // A sealed one is re-serialized from its allowlisted fields, so nothing
+      // extra a provider tacked on is stored, served or hashed.
+      let sealed: string;
+      try {
+        sealed = JSON.stringify(parseSealedResult(result));
+      } catch {
+        finishJobFailed(jobId, providerId, "the provider returned an unsealed result for a private job; it was discarded", durationMs);
+        return;
+      }
+      result = sealed;
+    }
+    // For a private job this hashes the envelope: the receipt commits to the
+    // ciphertext, which anyone can check and only the buyer can open.
     const done = jobs.complete(jobId, result, textHash(result));
     if (!done) return;
 
@@ -1662,6 +1776,17 @@ export function createApp(deps: AppDeps) {
   // helpers
   // -------------------------------------------------------------------------
 
+  /**
+   * A provider's failure text, as the broker will store and serve it. For a
+   * private job only the node's own coarse vocabulary ("private job …")
+   * passes: anything else could be an older node's adapter error quoting the
+   * prompt or a partial answer.
+   */
+  function providerError(job: StoredJob | undefined, error: string): string {
+    if (!job?.request.encryptTo) return error;
+    return error.startsWith("private job") ? error.slice(0, 200) : "private job failed on the provider";
+  }
+
   function authProvider(header: string | undefined) {
     const token = header?.replace(/^Bearer\s+/i, "").trim();
     return token ? registry.byAuthToken(token) : undefined;
@@ -1681,7 +1806,7 @@ export function createApp(deps: AppDeps) {
         finishJobOk(jobId, providerId, result, durationMs);
       },
       onError: (providerId: string, jobId: string, error: string, durationMs: number) => {
-        finishJobFailed(jobId, providerId, error, durationMs);
+        finishJobFailed(jobId, providerId, providerError(jobs.get(jobId), error), durationMs);
       },
       onAccepted: (providerId: string, jobId: string) => {
         const job = jobs.get(jobId);
