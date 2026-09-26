@@ -150,7 +150,13 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
     if (wallet.chainId !== `eip155:${APP_CHAIN.id}`) await wallet.switchChain(APP_CHAIN.id);
     // A viem LocalAccount whose signTypedData goes through Privy (its own
     // confirmation modal for the embedded wallet, the extension for others).
-    return toViemAccount({ wallet });
+    // Only the typed-data signer is handed on: an x402 exact payment and a
+    // rating need nothing else, and nothing else should be reachable.
+    const account = await toViemAccount({ wallet });
+    return {
+      address: account.address,
+      signTypedData: (message) => account.signTypedData(message as never),
+    };
   }, [wallet]);
 
   const exportKey = useCallback(async () => {
@@ -276,7 +282,7 @@ function InjectedWalletProvider({ children }: { children: ReactNode }) {
     }
     return {
       address,
-      signTypedData: (message) => client.signTypedData({ account: address, ...(message as never) }),
+      signTypedData: (message) => client.signTypedData({ ...message, account: address } as never),
     };
   }, [address]);
 

@@ -265,7 +265,7 @@ export async function payQuote(opts: PayQuoteOptions): Promise<PaymentResult> {
     throw new PaymentError("wrong_network", `This quote is priced on ${quote.network}, but the app is on ${network}. Nothing was signed.`);
   }
 
-  let client;
+  let client: ReturnType<typeof buyerX402Client>;
   try {
     client = buyerX402Client({
       signer,
