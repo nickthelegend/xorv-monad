@@ -65,7 +65,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @xorv/protocol build
-      - run: pnpm --filter xorv build
+      - run: pnpm --filter @xorv/cli build
       # The floor that matters for `npm i -g @xorv/cli`: it has to at least start.
       - run: node packages/cli/dist/index.js --version
 
