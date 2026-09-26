@@ -6,6 +6,7 @@ import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
 import { networkConfig } from "@xorv/protocol";
 import { createApp } from "./app.js";
+import { createAiHooks, describeAiRoles } from "./ai/index.js";
 import { LedgerWriter } from "./chain.js";
 import { loadConfig } from "./config.js";
 import { Hub } from "./hub.js";
@@ -49,6 +50,14 @@ if (layered) {
 }
 
 const persistence = layered ?? local;
+
+// The sponsor-model roles: Hunyuan screens, Qwen routes, Kimi verifies. Each
+// is on when its key is set (or explicitly asked for), off otherwise.
+const ai = createAiHooks({
+  ai: config.ai,
+  network: config.network,
+  verifierAccount: config.verifierAccount ?? null,
+});
 const registry = new Registry(persistence);
 const jobs = new JobStore(persistence);
 
@@ -59,6 +68,7 @@ const { app, hubHandlers, sweep, settlement } = createApp({
   registry,
   jobs,
   getHub: () => hub,
+  ai,
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -96,8 +106,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
       : local.location,
   );
   line("mongodb", mongoStatus);
-  const ai = Object.entries(config.ai).filter(([, value]) => value !== "off");
-  line("ai roles", ai.length ? `${ai.map(([role, by]) => `${role}=${by}`).join(", ")} (requested)` : "off");
+  describeAiRoles(ai).forEach((role, i) => line(i === 0 ? "ai roles" : "", role));
   console.log("");
 });
 

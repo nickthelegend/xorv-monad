@@ -81,13 +81,23 @@ import type { BrokerConfig } from "./config.js";
 import { describeLedger, type ChainLike, type PublishResult } from "./chain.js";
 import type { Hub } from "./hub.js";
 import { JobStore, isTerminal, type Quote, type StoredJob } from "./jobs.js";
-import { Registry, providerIdFor, type ProviderRecord, type VerifiedRegistration } from "./registry.js";
+import { Registry, providerIdFor, type Match, type ProviderRecord, type VerifiedRegistration } from "./registry.js";
 import { bodyLimit, rateLimit, requestLog } from "./guards.js";
 import { Metrics } from "./metrics.js";
 import { resolveFacilitator } from "./facilitator.js";
 import { createLedgerReader, type LedgerReader } from "./ledger-reader.js";
-import { withHookTimeout, type AiHooks } from "./ai-hooks.js";
-import { RATING_TTL_SECONDS, feedbackFor, ratingMessage, ratingParts, type RatingEnv } from "./ratings.js";
+import { hookDeadline, withHookTimeout, type AiHooks, type JobVerifier } from "./ai-hooks.js";
+import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/feedback.js";
+import { verifiable } from "./ai/verifier.js";
+import type { RouteCandidate, RoutingRecord, ScreeningRecord, VerificationRecord } from "./ai/types.js";
+import {
+  RATING_TTL_SECONDS,
+  feedbackFor,
+  ratingMessage,
+  ratingParts,
+  ratingTag,
+  type RatingEnv,
+} from "./ratings.js";
 import {
   leaderboardFromIndexer,
   leaderboardFromMemory,
@@ -129,7 +139,7 @@ export interface AppDeps {
   ledgerReader?: LedgerReader;
   /** ERC-8004 agent-wallet lookup; defaults to the Identity Registry over RPC. */
   agentWallet?: (agentId: string) => Promise<string | null>;
-  /** The AI roles, when installed — see ai-hooks.ts. */
+  /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
 }
 
@@ -385,11 +395,15 @@ export function createApp(deps: AppDeps) {
       published: chain.counts(),
       pendingReceipts: chain.pendingReceipts(),
       lastPublishError: chain.lastPublishError(),
+      // Enabled roles as the protocol's AiRoleInfo (null when off — what the
+      // CLI and the apps test for), and every role's full state, including
+      // why it's off, under aiRoles.
       ai: {
         router: deps.ai?.router?.info ?? null,
         screener: deps.ai?.screener?.info ?? null,
         verifier: deps.ai?.verifier?.info ?? null,
       },
+      aiRoles: deps.ai?.report?.() ?? null,
       feeBps: config.feeBps,
       epoch: deps.getHub()?.epoch ?? bootedAt,
       stats: {
@@ -562,7 +576,7 @@ export function createApp(deps: AppDeps) {
   // -------------------------------------------------------------------------
 
   app.post("/api/quotes", async (c) => {
-    const body = (await readJson(c)) as JobRequest | null;
+    const body = (await readJson(c)) as (Omit<JobRequest, "adapter"> & { adapter?: string | null }) | null;
     if (!body?.prompt?.trim()) return c.json({ error: "prompt is required" }, 400);
     if (body.prompt.length > 20_000) return c.json({ error: "prompt is too long (max 20k chars)" }, 400);
 
@@ -570,33 +584,45 @@ export function createApp(deps: AppDeps) {
     if (!Number.isFinite(maxPrice) || maxPrice <= 0) {
       return c.json({ error: "maxPriceUsdMicros must be a positive number" }, 400);
     }
-    const request: JobRequest = { ...body, prompt: body.prompt, maxPriceUsdMicros: maxPrice };
-
-    // AI screen, before any provider could see the prompt. Fails open.
-    const screener = deps.ai?.screener;
-    const screening = screener
-      ? await withHookTimeout("prompt screen", () => screener.screen(request))
-      : null;
-    if (screening?.verdict === "block") {
-      return c.json({ error: `the safety screen refused this prompt: ${screening.reason}`, screening }, 422);
-    }
-
-    // AI routing, only when the buyer left the adapter open. Fails open to price.
-    const router = deps.ai?.router;
-    const available = [...new Set(registry.live().flatMap((p) => p.capabilities.map((cap) => cap.adapter)))];
-    const routing =
-      router && !request.adapter && available.length > 1
-        ? await withHookTimeout("job router", () => router.route(request, available))
-        : null;
-
-    let match = registry.match({
-      adapter: request.adapter ?? routing?.adapter ?? null,
+    const request: JobRequest = {
+      ...body,
+      prompt: body.prompt,
+      // "auto" (or nothing) is how a buyer says "you choose" — the router's cue.
+      adapter: adapterChoice(body.adapter),
       maxPriceUsdMicros: maxPrice,
-    });
-    if (!match && !request.adapter && routing?.adapter) {
-      match = registry.match({ adapter: null, maxPriceUsdMicros: maxPrice });
+    };
+
+    // 1. The safety screen, before any provider could see the prompt and
+    //    before anyone has paid. The quote freezes this exact request, so what
+    //    was screened is what runs.
+    const screener = deps.ai?.screener;
+    let screening: ScreeningRecord | null = null;
+    if (screener) {
+      screening = await withHookTimeout("prompt screen", () => screener.screen(request), hookDeadline(screener));
+      if (screening) {
+        metrics.inc("xorv_ai_screen_total", { verdict: screening.unavailable ? "unscreened" : screening.verdict });
+        metrics.observe("xorv_ai_latency_ms", screening.ms, { role: "screener" });
+      }
+      const unscreened = !screening || (screening.unavailable === true && screening.verdict === "block");
+      if (unscreened && screener.failMode === "closed") {
+        return c.json(
+          {
+            error:
+              "the safety screen is unavailable, and this broker only quotes screened prompts " +
+              "(XORV_SCREENER_FAIL=closed) — try again in a moment",
+            screening,
+          },
+          503,
+        );
+      }
+      if (screening?.verdict === "block") {
+        return c.json({ error: `the safety screen refused this prompt: ${screening.reason}`, screening }, 422);
+      }
     }
-    if (!match) {
+
+    // 2. Everything that could take the job right now, in matcher order.
+    const candidates = registry.candidates({ adapter: request.adapter ?? null, maxPriceUsdMicros: maxPrice });
+    if (candidates.length === 0) {
       const live = registry.live().length;
       return c.json(
         {
@@ -608,6 +634,38 @@ export function createApp(deps: AppDeps) {
         },
         503,
       );
+    }
+
+    // 3. The router, when the buyer left the adapter open and there is a real
+    //    choice to make. Its pick is checked against the live candidates (all
+    //    under the ceiling); the matcher then picks the node for that adapter.
+    const router = deps.ai?.router;
+    let routing: RoutingRecord | null = null;
+    if (router && !request.adapter && new Set(candidates.map((m) => m.capability.adapter)).size > 1) {
+      routing = await withHookTimeout(
+        "job router",
+        () => router.route(request, routeCandidates(candidates)),
+        hookDeadline(router),
+      );
+    }
+    let match: Match = candidates[0]!;
+    if (routing?.adapter) {
+      const picked = routing.adapter;
+      const routed = candidates.find((m) => m.capability.adapter === picked);
+      if (routed) {
+        match = routed;
+      } else {
+        routing = {
+          ...routing,
+          adapter: null,
+          fallback: "invalid",
+          reason: `${picked} is not a live option within the ceiling — matched on price instead`,
+        };
+      }
+    }
+    if (routing) {
+      metrics.inc("xorv_ai_route_total", { outcome: routing.fallback ? `fallback_${routing.fallback}` : "routed" });
+      metrics.observe("xorv_ai_latency_ms", routing.ms, { role: "router" });
     }
 
     metrics.inc("xorv_quotes_total");
@@ -1089,6 +1147,44 @@ export function createApp(deps: AppDeps) {
     });
   });
 
+  /**
+   * The ERC-8004 feedback file behind a Kimi verification — what the
+   * verifier's `giveFeedback` points at. Canonical JSON, byte-for-byte what
+   * was hashed: `keccak256(body)` is the `feedbackHash` in the registry's
+   * `NewFeedback` event. It carries the model, score, rationale, the job's
+   * request and result hashes and the x402 proof of payment.
+   */
+  app.get("/verifications/:file", (c) => {
+    const file = c.req.param("file");
+    if (!file.endsWith(".json")) return c.json({ error: "not found" }, 404);
+    const job = jobs.get(file.slice(0, -".json".length));
+    if (!job) return c.json({ error: "not found" }, 404);
+    const verification = job.verification;
+    if (!verification) return c.json({ error: "this job has not been verified" }, 404);
+    if (!verification.feedbackHash || !verification.agentId || !verification.verifier) {
+      return c.json(
+        { error: "this job's verification was not written to ERC-8004, so it has no feedback file", verification },
+        404,
+      );
+    }
+    const parts = verificationFeedback(verificationEnv(), job, verification, {
+      agentId: verification.agentId,
+      verifier: verification.verifier,
+    });
+    if (parts.feedbackHash !== verification.feedbackHash) {
+      // Only reachable if a fact the file is built from changed after it was
+      // committed (XORV_PUBLIC_URL or the ledger moved). Serve it, loudly.
+      console.error(
+        `[broker] /verifications/${job.id}.json hashes to ${parts.feedbackHash}, not the committed ${verification.feedbackHash}`,
+      );
+    }
+    return c.body(parts.bytes, 200, {
+      "Content-Type": "application/json; charset=utf-8",
+      "X-Feedback-Hash": parts.feedbackHash,
+      "Cache-Control": verification.feedbackTxHash ? "public, max-age=31536000, immutable" : "no-store",
+    });
+  });
+
   // -------------------------------------------------------------------------
   // The public record — XorvLedger feeds, indexer-first
   // -------------------------------------------------------------------------
@@ -1337,12 +1433,10 @@ export function createApp(deps: AppDeps) {
     metrics.inc("xorv_jobs_completed_total");
     metrics.observe("xorv_job_duration", durationMs);
 
+    // Kimi scores the result after the buyer already has it. Private jobs
+    // are skipped: their result is sealed to the buyer, not readable here.
     const verifier = deps.ai?.verifier;
-    if (verifier) {
-      void withHookTimeout("result verifier", () => verifier.verify(done), 60_000).then((verification) => {
-        if (verification) jobs.patch(jobId, { verification });
-      });
-    }
+    if (verifier && verifiable(done)) void verifyJob(verifier, done);
   }
 
   function finishJobFailed(jobId: string, providerId: string, error: string, durationMs: number): void {
@@ -1356,6 +1450,139 @@ export function createApp(deps: AppDeps) {
     // A free retry elsewhere before the poster is told it failed.
     if (reassign(job)) return;
     jobs.fail(jobId, error);
+  }
+
+  // -------------------------------------------------------------------------
+  // AI roles — router inputs, verification and its ERC-8004 feedback
+  // -------------------------------------------------------------------------
+
+  /**
+   * The live candidates as the router sees them: price and model, plus the
+   * provider's track record — success rate, mean buyer rating, mean Kimi
+   * score — and whether it holds an ERC-8004 identity.
+   */
+  function routeCandidates(matches: Match[]): RouteCandidate[] {
+    const quality = new Map<string, { rating: number[]; verified: number[] }>();
+    const ids = new Set(matches.map((m) => m.provider.id));
+    for (const job of jobs.list({ limit: 2_000 })) {
+      if (!job.providerId || !ids.has(job.providerId)) continue;
+      const q = quality.get(job.providerId) ?? { rating: [], verified: [] };
+      if (job.rating) q.rating.push(job.rating.value);
+      if (job.verification) q.verified.push(job.verification.score);
+      quality.set(job.providerId, q);
+    }
+    const mean = (xs: number[] | undefined) => (xs && xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+    return matches.map(({ provider, capability }) => {
+      const { jobsCompleted, jobsFailed } = provider.stats;
+      const total = jobsCompleted + jobsFailed;
+      const q = quality.get(provider.id);
+      return {
+        adapter: capability.adapter,
+        displayName: capability.displayName,
+        model: capability.model ?? null,
+        priceUsdMicros: capability.priceUsdMicros,
+        successRate: total === 0 ? null : jobsCompleted / total,
+        jobs: total,
+        avgRating: mean(q?.rating),
+        avgVerified: mean(q?.verified),
+        hasAgent: provider.agentId !== null,
+      };
+    });
+  }
+
+  /** Score a finished job, store the verdict, then write it to ERC-8004. Never throws. */
+  async function verifyJob(verifier: JobVerifier, job: StoredJob): Promise<void> {
+    const verification = await withHookTimeout("result verifier", () => verifier.verify(job), hookDeadline(verifier));
+    if (!verification) {
+      metrics.inc("xorv_ai_verify_total", { outcome: "skipped" });
+      return;
+    }
+    metrics.inc("xorv_ai_verify_total", { outcome: verification.pass ? "pass" : "fail" });
+    metrics.observe("xorv_ai_latency_ms", verification.ms, { role: "verifier" });
+    jobs.patch(job.id, { verification });
+    await publishVerification(verifier.feedback ?? null, job.id);
+  }
+
+  const verificationEnv = () => ({
+    network: config.network,
+    publicUrl: config.publicUrl,
+    jobsEndpoint,
+    ledger: chain.ledgerAddress,
+  });
+
+  /**
+   * Who a job's verification feedback would go to, or why it can't go at all.
+   *
+   * Same attribution rule as receipts and ratings (`receiptAgentId`): only
+   * the quoted provider's own agent, and only when that provider did the
+   * work. A payer on record is needed for the file's proof of payment. And
+   * ERC-8004 refuses feedback from an agent's own wallet, so a verifier that
+   * *is* the provider's payout address is caught here rather than on-chain.
+   */
+  function verificationTarget(job: StoredJob, sink: FeedbackSink): { agentId: string } | { skip: string } {
+    const agentId = receiptAgentId(job);
+    if (!agentId) return { skip: "the provider has no verified ERC-8004 identity for this job" };
+    if (!job.payment || !isEvmAddress(job.payment.payer)) return { skip: "the job has no recorded payer" };
+    if (sameAddress(sink.address, job.payment.payTo)) {
+      return { skip: "the verifier EOA is the provider's own wallet, and ERC-8004 refuses self-feedback" };
+    }
+    return { agentId };
+  }
+
+  /**
+   * Write a verified score to the Reputation Registry — best-effort, after
+   * the job is over, and never able to change the job itself. The feedback
+   * file's hash is stored on the job *before* the transaction goes out, so
+   * `/verifications/<id>.json` already serves the committed file by the time
+   * the registry's `NewFeedback` event points at it.
+   */
+  async function publishVerification(sink: FeedbackSink | null, jobId: string): Promise<void> {
+    const job = jobs.get(jobId);
+    const verification = job?.verification;
+    if (!job || !verification || !sink) return;
+    const target = verificationTarget(job, sink);
+    if ("skip" in target) {
+      console.log(`[broker] verification of ${jobId} stays off-chain: ${target.skip}`);
+      return;
+    }
+    let staged: VerificationRecord;
+    try {
+      const parts = verificationFeedback(verificationEnv(), job, verification, {
+        agentId: target.agentId,
+        verifier: sink.address,
+      });
+      staged = {
+        ...verification,
+        agentId: target.agentId,
+        verifier: sink.address,
+        feedbackURI: parts.feedbackURI,
+        feedbackHash: parts.feedbackHash,
+        feedbackTxHash: null,
+        feedbackError: null,
+      };
+    } catch (err) {
+      console.error(`[broker] verification feedback for ${jobId}: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
+    jobs.patch(jobId, { verification: staged });
+    try {
+      const result = await sink.giveFeedback({
+        agentId: target.agentId,
+        value: verification.score,
+        tag1: VERIFIED_TAG1,
+        tag2: ratingTag(job),
+        endpoint: jobsEndpoint,
+        feedbackURI: staged.feedbackURI as string,
+        feedbackHash: staged.feedbackHash as Hex,
+      });
+      jobs.patch(jobId, { verification: { ...staged, feedbackTxHash: result.txHash } });
+      metrics.inc("xorv_ai_feedback_total", { outcome: "ok" });
+    } catch (err) {
+      jobs.patch(jobId, {
+        verification: { ...staged, feedbackError: err instanceof Error ? err.message : String(err) },
+      });
+      metrics.inc("xorv_ai_feedback_total", { outcome: "failed" });
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -1552,6 +1779,17 @@ export function validateRegistration(body: RegisterRequest | null): ParsedRegist
     },
     agentId,
   };
+}
+
+/**
+ * The adapter a quote request asked for, or null for "you choose": missing,
+ * empty and "auto" all mean the buyer left it to the network.
+ */
+export function adapterChoice(raw: unknown): AdapterKind | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value || value.toLowerCase() === "auto") return null;
+  return value as AdapterKind;
 }
 
 function hasPaymentHeader(c: Context): boolean {

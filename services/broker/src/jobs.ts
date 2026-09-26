@@ -9,6 +9,7 @@
  */
 
 import { MemoryPersistence, type Persistence } from "./store.js";
+import type { RoutingRecord, ScreeningRecord, VerificationRecord } from "./ai/types.js";
 import {
   JOB_TIMEOUT_MS,
   QUOTE_TTL_SECONDS,
@@ -17,8 +18,6 @@ import {
   type JobEvent,
   type JobRating,
   type JobRequest,
-  type JobRouting,
-  type JobScreening,
   type JobStatus,
   type PaymentRecord,
   newId,
@@ -52,8 +51,10 @@ export interface Quote {
    * commitment; this is where it's kept.
    */
   usdcAmount: string;
-  routing?: JobRouting | null;
-  screening?: JobScreening | null;
+  /** What the AI router (Qwen) decided, when it ran — carried onto the job. */
+  routing?: RoutingRecord | null;
+  /** The prompt screen's (Hunyuan) verdict — carried onto the job. */
+  screening?: ScreeningRecord | null;
   createdAt: number;
   expiresAt: number;
   /** Set once the quote has been paid, so a replayed payment can't buy twice. */
@@ -94,6 +95,10 @@ export interface StoredJob extends Job {
   /** sha-256 of the buyer's cancel token; only the payer can cancel. */
   cancelTokenHash?: string | null;
   rating?: StoredRating | null;
+  routing?: RoutingRecord | null;
+  screening?: ScreeningRecord | null;
+  /** The verifier's (Kimi) score, with the bookkeeping that rebuilds its ERC-8004 feedback file. */
+  verification?: VerificationRecord | null;
 }
 
 type Listener = (job: StoredJob, event: JobEvent | null) => void;
