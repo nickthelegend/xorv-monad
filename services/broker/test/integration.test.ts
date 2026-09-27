@@ -270,6 +270,7 @@ interface Harness {
   paidFetch: typeof fetch;
   payAs(account: PrivateKeyAccount): typeof fetch;
   agentWallets: Map<string, string>;
+  hub(): Hub | null;
   /** `${agentId}:${spender lowercase}` pairs the Identity Registry reports as authorized. */
   authorized: Set<string>;
   sweep(): void;
@@ -339,6 +340,7 @@ async function boot(
     paidFetch: payAs(buyer),
     payAs,
     agentWallets,
+    hub: () => hub,
     authorized,
     sweep,
     async stop() {
@@ -447,6 +449,11 @@ async function connectProvider(
       ws.close();
     },
   };
+}
+
+/** Whether the broker's hub holds an open control socket for this provider. */
+function hubConnected(providerId: string): boolean {
+  return h.hub()?.isConnected(providerId) ?? false;
 }
 
 async function waitFor<T>(probe: () => T | undefined | Promise<T | undefined>, timeoutMs = 4_000): Promise<T> {
@@ -1054,6 +1061,60 @@ describe("failure handling", () => {
     const done = await waitForStatus(h, paid.jobId, "completed");
     expect(done.result).toBe("still here");
     provider.close();
+  }, 20_000);
+
+  it("never quotes a provider that heartbeats over HTTP but holds no control socket", async () => {
+    // Heartbeats are HTTP, so a node that never opened /ws/provider looked
+    // online, won every quote at the lowest price and got paid, and each job
+    // then went to an honest node for free.
+    const res = await fetch(`${h.base}/api/providers/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "socketless",
+        address: PAYEE_B,
+        endpoint: "http://localhost:1",
+        capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo", model: null, priceUsdMicros: 1, maxConcurrency: 4 }],
+        version: "0.2.0",
+        region: null,
+        nodeId: "node-socketless",
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect((await quote(h)).status).toBe(503);
+    const honest = await connectProvider(h, { label: "honest", nodeId: "n-honest", address: PAYEE_A, price: 1_000 });
+    const { body } = await quote(h);
+    expect(body.provider.id).toBe(honest.providerId);
+    honest.close();
+  });
+
+  it("refuses payment, before it settles, for a quoted provider whose socket closed", async () => {
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    provider.close();
+    await waitFor(() => (h.registry.get(provider.providerId) && !hubConnected(provider.providerId) ? true : undefined));
+    const { res } = await pay(h, q.quoteId);
+    expect(res.status).toBe(409);
+    expect(h.control.settled).toHaveLength(0);
+  });
+
+  it("counts a paid dispatch the socket couldn't take against the quoted provider, and credits it nothing", async () => {
+    const a = await connectProvider(h, { label: "a", nodeId: "n1", address: PAYEE_A, price: 1_000 });
+    const b = await connectProvider(h, { label: "b", nodeId: "n2", address: PAYEE_B, price: 2_000 });
+    const { body: q } = await quote(h);
+    expect(q.provider.id).toBe(a.providerId);
+    // The socket drops after the pre-payment check, while the payment settles.
+    h.control.onSettle = async () => {
+      a.close();
+      await waitFor(() => (!hubConnected(a.providerId) ? true : undefined));
+    };
+    const { body: paid } = await pay(h, q.quoteId);
+    await waitFor(() => b.dispatched[0]);
+    await b.completeNextJob("rescued");
+    await waitForStatus(h, paid.jobId, "completed");
+    expect(h.registry.get(a.providerId)!.stats).toMatchObject({ jobsFailed: 1, jobsCompleted: 0, earnedUsdcMicros: 0 });
+    expect(h.registry.get(a.providerId)!.activeJobs).toBe(0);
+    b.close();
   }, 20_000);
 
   it("never bounces a job back to a provider that already failed it", async () => {

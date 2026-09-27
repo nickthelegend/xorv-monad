@@ -6,7 +6,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Registry, RegistrationRefused, providerIdFor, type VerifiedRegistration } from "../src/registry.js";
+import {
+  RECENT_OUTCOME_WINDOW_MS,
+  Registry,
+  RegistrationRefused,
+  providerIdFor,
+  type VerifiedRegistration,
+} from "../src/registry.js";
 import type { Capability } from "@xorv/protocol";
 
 /** A distinct, valid payout address per small integer. */
@@ -228,6 +234,40 @@ describe("match", () => {
       registration({ nodeId: "paid", address: addr(2), capabilities: [capability({ priceUsdMicros: 5_000 })] }),
     );
     expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(paid.id);
+  });
+
+  it("only matches providers the eligibility check accepts", () => {
+    const a = registry.register(registration({ nodeId: "a", address: addr(1) }));
+    const b = registry.register(registration({ nodeId: "b", address: addr(2), capabilities: [capability({ priceUsdMicros: 20_000 })] }));
+    registry.setEligibility((id) => id === b.id);
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(b.id);
+    registry.setEligibility(() => false);
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })).toBeNull();
+    registry.setEligibility(null);
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(a.id);
+  });
+
+  it("stops matching a provider that keeps failing, until its failures age out", () => {
+    // Price ranks first, so a cheapest provider that failed every job used to
+    // keep winning quotes and only lose ties.
+    vi.useFakeTimers();
+    const cheap = registry.register(registration({ nodeId: "cheap", address: addr(1), capabilities: [capability({ priceUsdMicros: 1_000 })] }));
+    const dear = registry.register(registration({ nodeId: "dear", address: addr(2), capabilities: [capability({ priceUsdMicros: 5_000 })] }));
+    registry.recordFailure(cheap.id);
+    registry.jobStarted(cheap.id);
+    registry.jobFinished(cheap.id, { ok: false, durationMs: 10 });
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(cheap.id);
+    registry.recordFailure(cheap.id);
+    expect(registry.isFailingRecently(cheap.id)).toBe(true);
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(dear.id);
+    // recordFailure never touched the slot count; jobFinished freed its one.
+    expect(registry.get(cheap.id)!.activeJobs).toBe(0);
+    expect(registry.get(cheap.id)!.stats.jobsFailed).toBe(3);
+    vi.advanceTimersByTime(RECENT_OUTCOME_WINDOW_MS + 1_000);
+    registry.heartbeat(cheap.id, { activeJobs: 0, uptimeSeconds: 1, available: {} });
+    registry.heartbeat(dear.id, { activeJobs: 0, uptimeSeconds: 1, available: {} });
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(cheap.id);
+    vi.useRealTimers();
   });
 
   it("breaks a price tie toward the better track record", () => {

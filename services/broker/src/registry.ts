@@ -99,6 +99,17 @@ export interface RegisterOutcome {
   authenticated: boolean;
 }
 
+/**
+ * How far back a provider's recent failures count against it, and how many
+ * it may have in that window (while also failing more than it completes)
+ * before the matcher stops offering it at all. Price ranks first, so without
+ * this a provider that fails every job (or never opens its control channel)
+ * kept winning quotes at the lowest price and only lost ties.
+ */
+export const RECENT_OUTCOME_WINDOW_MS = 30 * 60_000;
+export const RECENT_FAILURE_LIMIT = 3;
+const RECENT_OUTCOMES_KEPT = 50;
+
 function emptyStats(): ProviderStats {
   return { jobsCompleted: 0, jobsFailed: 0, earnedUsdcMicros: 0, avgDurationMs: 0 };
 }
@@ -123,6 +134,10 @@ export class Registry {
    */
   private restoredStats: Map<string, PersistedProviderStats>;
   private trustScore: TrustScorer | null = null;
+  /** Whether a provider can be handed a job right now (its control channel is open); null = anyone live. */
+  private eligible: ((id: string) => boolean) | null = null;
+  /** Recent job outcomes per provider id, newest last (in memory, bounded). */
+  private recentOutcomes = new Map<string, Array<{ at: number; ok: boolean }>>();
 
   constructor(persistence: Persistence = new MemoryPersistence()) {
     this.persistence = persistence;
@@ -132,6 +147,41 @@ export class Registry {
   /** Let the matcher weigh payout-wallet trust (Nansen) when it breaks ties. */
   setTrustScorer(scorer: TrustScorer | null): void {
     this.trustScore = scorer;
+  }
+
+  /**
+   * Only match providers this says can take a job now. The broker wires it
+   * to "holds an open control socket": heartbeats arrive over HTTP, so a node
+   * that never connected its WebSocket still looked online, won quotes, got
+   * paid, and every job then went to someone else for free.
+   */
+  setEligibility(predicate: ((id: string) => boolean) | null): void {
+    this.eligible = predicate;
+  }
+
+  private noteOutcome(id: string, ok: boolean): void {
+    const outcomes = this.recentOutcomes.get(id) ?? [];
+    outcomes.push({ at: Date.now(), ok });
+    if (outcomes.length > RECENT_OUTCOMES_KEPT) outcomes.splice(0, outcomes.length - RECENT_OUTCOMES_KEPT);
+    this.recentOutcomes.set(id, outcomes);
+  }
+
+  /**
+   * True while a provider has failed at least RECENT_FAILURE_LIMIT jobs in
+   * the last RECENT_OUTCOME_WINDOW_MS and more than it completed. It is left
+   * out of matching until those failures age out of the window.
+   */
+  isFailingRecently(id: string, now = Date.now()): boolean {
+    const outcomes = this.recentOutcomes.get(id);
+    if (!outcomes) return false;
+    let failed = 0;
+    let ok = 0;
+    for (const outcome of outcomes) {
+      if (now - outcome.at > RECENT_OUTCOME_WINDOW_MS) continue;
+      if (outcome.ok) ok += 1;
+      else failed += 1;
+    }
+    return failed >= RECENT_FAILURE_LIMIT && failed > ok;
   }
 
   /**
@@ -322,6 +372,8 @@ export class Registry {
 
     for (const provider of this.live()) {
       if (excluded.has(provider.id)) continue;
+      if (this.eligible && !this.eligible(provider.id)) continue;
+      if (this.isFailingRecently(provider.id)) continue;
       for (const capability of provider.capabilities) {
         if (opts.adapter && capability.adapter !== opts.adapter) continue;
         // Never quote a price that is not a whole, positive number of
@@ -360,6 +412,7 @@ export class Registry {
     const provider = this.providers.get(id);
     if (!provider) return;
     provider.activeJobs = Math.max(0, provider.activeJobs - 1);
+    this.noteOutcome(id, outcome.ok);
     if (outcome.ok) {
       const n = provider.stats.jobsCompleted;
       provider.stats.jobsCompleted = n + 1;
@@ -371,6 +424,19 @@ export class Registry {
     } else {
       provider.stats.jobsFailed += 1;
     }
+    this.persistStats(provider);
+  }
+
+  /**
+   * Count a failure against a provider that never started the job — a paid
+   * dispatch its control channel could not take. Unlike `jobFinished` this
+   * leaves `activeJobs` alone: `jobStarted` was never called for it.
+   */
+  recordFailure(id: string): void {
+    const provider = this.providers.get(id);
+    if (!provider) return;
+    provider.stats.jobsFailed += 1;
+    this.noteOutcome(id, false);
     this.persistStats(provider);
   }
 

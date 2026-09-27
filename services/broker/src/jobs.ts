@@ -114,6 +114,12 @@ export interface StoredJob extends Job {
    * verifier feedback is attributed to that identity.
    */
   receiptWithoutAgent?: boolean;
+  /**
+   * The quoted (paid) provider never received this job: its control channel
+   * could not take the dispatch. It is not credited with the earnings when
+   * someone else finishes the job.
+   */
+  quotedUndelivered?: boolean;
 }
 
 /** True once the job's receipt is known to be on XorvLedger. */

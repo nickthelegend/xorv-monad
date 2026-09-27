@@ -184,6 +184,8 @@ export function createApp(deps: AppDeps) {
     deps.trust ?? createNansenTrust(config.nansen, { log: (line) => console.log(`[broker] ${line}`) });
   // The matcher breaks price ties on reliability nudged by wallet trust.
   registry.setTrustScorer((address) => trust.matchScore(address));
+  // And only offers providers that can actually be handed the job.
+  registry.setEligibility((id) => deps.getHub()?.isConnected(id) ?? false);
   const app = new Hono();
   const metrics = deps.metrics ?? new Metrics();
   const net = networkConfig(config.network);
@@ -947,6 +949,14 @@ export function createApp(deps: AppDeps) {
     if (!provider || provider.status === "offline") {
       return c.json({ error: "the quoted provider went offline — request a new quote" }, 409);
     }
+    // Checked before the payment middleware, so the buyer is never charged
+    // for a provider that could not be handed the job.
+    if (!deps.getHub()?.isConnected(provider.id)) {
+      return c.json(
+        { error: "the quoted provider has no control channel open, so it can't take the job — request a new quote" },
+        409,
+      );
+    }
     if (!x402Server) {
       return c.json({ error: settlement.unavailableReason ?? "payments are unavailable" }, 503);
     }
@@ -1657,8 +1667,13 @@ export function createApp(deps: AppDeps) {
     };
 
     if (!hub.send(provider.id, { type: "job.dispatch", job: payload })) {
-      // The node's socket dropped between quote and payment. Try someone else
-      // rather than failing a job that has already been paid for.
+      // The node's socket dropped between quote and payment. It was paid and
+      // did not take the job: that counts against it, and it is not credited
+      // with the earnings if someone else finishes. Try someone else rather
+      // than failing a job that has already been paid for.
+      registry.recordFailure(provider.id);
+      metrics.inc("xorv_jobs_failed_total");
+      jobs.patch(job.id, { quotedUndelivered: true });
       if (!reassign(job)) jobs.fail(job.id, "provider disconnected before the job could start");
       return;
     }
@@ -1754,7 +1769,7 @@ export function createApp(deps: AppDeps) {
     const micros = done.payment ? usdcUnitsToUsdMicros(done.payment.amount) : 0;
     const payee = done.quotedProviderId ?? providerId;
     registry.jobFinished(providerId, { ok: true, durationMs, usdcMicros: payee === providerId ? micros : 0 });
-    if (payee !== providerId) registry.creditEarnings(payee, micros);
+    if (payee !== providerId && !done.quotedUndelivered) registry.creditEarnings(payee, micros);
     metrics.inc("xorv_jobs_completed_total");
     metrics.observe("xorv_job_duration", durationMs);
 
