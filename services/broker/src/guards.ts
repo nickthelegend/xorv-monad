@@ -86,11 +86,24 @@ export function rateLimit(options: RateLimitOptions) {
  * Proxy headers are trusted only when `XORV_TRUST_PROXY` says to. Trusting
  * `X-Forwarded-For` by default would make the limiter useless the moment
  * anyone sets that header themselves — which is to say, immediately.
+ *
+ * Even then, only the entries the operator's own proxies appended are
+ * believed. Proxies append the address they saw to whatever X-Forwarded-For
+ * the client sent, so the leftmost entry is the client's to write: keying on
+ * it gave every request a fresh bucket for the price of a random header.
+ * `XORV_TRUSTED_HOPS` (default 1) is how many proxies sit in front of the
+ * broker; the client address is that many entries from the right.
  */
 export function clientIp(c: Context): string {
   if (process.env.XORV_TRUST_PROXY === "1") {
     const forwarded = c.req.header("x-forwarded-for");
-    if (forwarded) return forwarded.split(",")[0]!.trim();
+    if (forwarded) {
+      const parts = forwarded
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      if (parts.length > 0) return parts[Math.max(0, parts.length - trustedHops())]!;
+    }
     const real = c.req.header("x-real-ip");
     if (real) return real.trim();
   }
@@ -99,6 +112,12 @@ export function clientIp(c: Context): string {
   const info = (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)
     ?.incoming?.socket?.remoteAddress;
   return info ?? "unknown";
+}
+
+/** How many reverse proxies append to X-Forwarded-For in front of the broker (`XORV_TRUSTED_HOPS`, default 1). */
+export function trustedHops(): number {
+  const raw = Number(process.env.XORV_TRUSTED_HOPS ?? "1");
+  return Number.isInteger(raw) && raw >= 1 && raw <= 10 ? raw : 1;
 }
 
 /**

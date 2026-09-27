@@ -78,13 +78,36 @@ describe("clientIp", () => {
     expect(clientIp(c)).toBe("unknown");
   });
 
-  it("uses X-Forwarded-For when the operator opts in", () => {
+  const forwardedFor = (value: string) =>
+    ({ req: { header: (n: string) => (n === "x-forwarded-for" ? value : undefined) }, env: undefined }) as never;
+
+  it("uses the address its proxy appended to X-Forwarded-For when the operator opts in", () => {
     process.env.XORV_TRUST_PROXY = "1";
-    const c = {
-      req: { header: (n: string) => (n === "x-forwarded-for" ? "1.2.3.4, 5.6.7.8" : undefined) },
-      env: undefined,
-    } as never;
-    expect(clientIp(c)).toBe("1.2.3.4");
+    // "1.2.3.4" is what the client sent; the proxy appended the real address.
+    // Keying on the leftmost entry let a random header buy a fresh bucket.
+    expect(clientIp(forwardedFor("1.2.3.4, 5.6.7.8"))).toBe("5.6.7.8");
+    expect(clientIp(forwardedFor("9.9.9.9"))).toBe("9.9.9.9");
+    delete process.env.XORV_TRUST_PROXY;
+  });
+
+  it("can't be moved to a fresh bucket by a forged X-Forwarded-For", async () => {
+    process.env.XORV_TRUST_PROXY = "1";
+    const app = appWith(rateLimit({ limit: 1, windowMs: 60_000 }));
+    const from = (forged: string) => app.request("/", { headers: { "x-forwarded-for": `${forged}, 203.0.113.7` } });
+    expect((await from("10.0.0.1")).status).toBe(200);
+    expect((await from("10.0.0.2")).status).toBe(429);
+    delete process.env.XORV_TRUST_PROXY;
+  });
+
+  it("counts XORV_TRUSTED_HOPS proxies from the right", () => {
+    process.env.XORV_TRUST_PROXY = "1";
+    process.env.XORV_TRUSTED_HOPS = "2";
+    expect(clientIp(forwardedFor("6.6.6.6, 203.0.113.7, 10.0.0.9"))).toBe("203.0.113.7");
+    // Fewer entries than hops: the leftmost is all there is.
+    expect(clientIp(forwardedFor("203.0.113.7"))).toBe("203.0.113.7");
+    process.env.XORV_TRUSTED_HOPS = "junk";
+    expect(clientIp(forwardedFor("6.6.6.6, 203.0.113.7"))).toBe("203.0.113.7");
+    delete process.env.XORV_TRUSTED_HOPS;
     delete process.env.XORV_TRUST_PROXY;
   });
 });

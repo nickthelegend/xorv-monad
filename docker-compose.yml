@@ -38,6 +38,7 @@ services:
       XORV_FEE_BPS: ${XORV_FEE_BPS:-0}
       # Behind a reverse proxy, set this so rate limiting sees real client IPs.
       XORV_TRUST_PROXY: ${XORV_TRUST_PROXY:-0}
+      XORV_TRUSTED_HOPS: ${XORV_TRUSTED_HOPS:-1}
       XORV_STABLECOIN: ${XORV_STABLECOIN:-}
       XORV_STABLECOIN_NAME: ${XORV_STABLECOIN_NAME:-}
       XORV_STABLECOIN_VERSION: ${XORV_STABLECOIN_VERSION:-}
