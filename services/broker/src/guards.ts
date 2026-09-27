@@ -9,6 +9,7 @@
  */
 
 import type { Context, Next } from "hono";
+import { bodyLimit as honoBodyLimit } from "hono/body-limit";
 
 export interface RateLimitOptions {
   /** Requests allowed per window, per key. */
@@ -105,19 +106,16 @@ export function clientIp(c: Context): string {
  *
  * Prompts are capped separately by the quote handler; this is the outer bound
  * that stops someone streaming a gigabyte at an endpoint that was going to
- * reject it anyway.
+ * reject it anyway. A declared Content-Length is checked up front; a body
+ * without one (`Transfer-Encoding: chunked`) is counted as it streams in and
+ * refused the moment it passes the limit. Checking only the header let a
+ * chunked body through at any size, and every handler buffers its body whole.
  */
 export function bodyLimit(maxBytes: number) {
-  return async (c: Context, next: Next): Promise<Response | void> => {
-    const declared = Number(c.req.header("content-length") ?? 0);
-    if (declared > maxBytes) {
-      return c.json(
-        { error: `request body too large (max ${Math.round(maxBytes / 1024)}KB)` },
-        413,
-      );
-    }
-    await next();
-  };
+  return honoBodyLimit({
+    maxSize: maxBytes,
+    onError: (c) => c.json({ error: `request body too large (max ${Math.round(maxBytes / 1024)}KB)` }, 413),
+  });
 }
 
 /**

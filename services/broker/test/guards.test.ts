@@ -100,6 +100,41 @@ describe("bodyLimit", () => {
     expect(res.status).toBe(413);
   });
 
+  it("counts a chunked body with no Content-Length and refuses it past the limit", async () => {
+    // Checking only the declared length let a streamed body through at any
+    // size, and every handler buffers its body whole.
+    const app = appWith(bodyLimit(1_000));
+    let sent = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 64_000) return controller.close();
+        sent += 4_000;
+        controller.enqueue(new Uint8Array(4_000).fill(120));
+      },
+    });
+    const res = await app.request("/", { method: "POST", body, duplex: "half" } as RequestInit);
+    expect(res.status).toBe(413);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining("too large") });
+    // It stopped reading at the limit instead of draining the whole stream.
+    expect(sent).toBeLessThan(64_000);
+  });
+
+  it("lets a small chunked body through, intact", async () => {
+    const app = new Hono();
+    app.use("*", bodyLimit(1_000));
+    app.post("/", async (c) => c.json(await c.req.json()));
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"a":'));
+        controller.enqueue(new TextEncoder().encode("1}"));
+        controller.close();
+      },
+    });
+    const res = await app.request("/", { method: "POST", body, duplex: "half" } as RequestInit);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ a: 1 });
+  });
+
   it("lets a normal request through", async () => {
     const app = appWith(bodyLimit(1_000));
     const res = await app.request("/", {
