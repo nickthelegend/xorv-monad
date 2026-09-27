@@ -236,7 +236,11 @@ function AiRoles({ info }: { info: NetworkInfo }) {
   const state = aiRoles(info);
   const roles: Array<{ name: AiRoleName; label: string; what: string }> = [
     { name: "screener", label: "Screener", what: "checks every prompt for abuse aimed at provider machines, before a quote exists" },
-    { name: "router", label: "Router", what: "reads the prompt and picks the adapter when the buyer chooses Auto" },
+    {
+      name: "router",
+      label: "Router",
+      what: "when the buyer chooses Auto, reads the prompt and each candidate's ERC-8004 reputation, receipts and wallet trust on Monad, then picks the provider",
+    },
     { name: "verifier", label: "Verifier", what: "scores every result and writes it to ERC-8004 as reputation" },
   ];
   return (

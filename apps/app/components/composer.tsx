@@ -91,8 +91,10 @@ export function Composer() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<PayFailure | null>(null);
 
-  // "Auto" hands the choice to the broker: the Qwen router when it runs one,
-  // the cheapest live provider when it doesn't. The hint says which.
+  // "Auto" hands the choice to the broker: the Qwen router (which reads the
+  // candidates' on-chain record and picks a provider) when it runs one, the
+  // cheapest live provider, best-rated on a tie, when it doesn't. The hint
+  // says which.
   const aiRouter = info?.ai.router ?? null;
   const models: ModelOption[] = [
     { id: "", label: "Auto", hint: aiRouter ? `${roleLabel(aiRouter) ?? aiRouter.model} routes` : "cheapest" },
