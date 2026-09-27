@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { explorerAddress, explorerAgent, explorerTx, formatUsdc, shortHex } from "@xorv/protocol/web";
+import { explorerAddress, explorerAgent, explorerTx, formatUsdc, publicClientFor, shortHex } from "@xorv/protocol/web";
 import { EASE, useEntrance } from "@/lib/motion";
 import { BROKER_URL, api, formatDuration, formatUsd, type Job, type JobEvent } from "@/lib/api";
-import { NETWORK, NETWORK_LABEL } from "@/lib/network";
+import { NETWORK, NETWORK_LABEL, PUBLIC_RPC_URL } from "@/lib/network";
 import { useNetworkInfo } from "@/lib/hooks";
 import { Button, Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { ResultMarkdown } from "@/components/result-markdown";
@@ -14,6 +14,7 @@ import { RateJob } from "@/components/rate-job";
 import { PrivateTag } from "@/components/passkey-panel";
 import { PrivatePrompt, SealedResultSection } from "@/components/private-result";
 import { receiptMatchesCiphertext } from "@/lib/private/result";
+import { checkResultAgainstReceipt, type ReceiptCheck, type ReceiptReader } from "@/lib/private/receipt-check";
 import { awaitingOnChain, followUpJob } from "@/lib/job-follow-up";
 import { cn } from "@/lib/utils";
 
@@ -322,11 +323,7 @@ export function JobView({
                 </p>
               ) : null}
               {job.private && job.result && job.resultHash ? (
-                <p className="mt-1.5 text-[11px] leading-relaxed text-fg-4">
-                  {receiptMatchesCiphertext(job.result, job.resultHash)
-                    ? "✓ the sealed envelope hashes to this value — the receipt commits to ciphertext only the buyer can open"
-                    : "✕ the envelope served does not hash to this value"}
-                </p>
+                <ReceiptCommitment job={job} result={job.result} ledger={info?.ledger?.address ?? null} />
               ) : null}
             </>
           ) : paymentTx ? (
@@ -356,6 +353,68 @@ export function JobView({
       </div>
     </div>
   );
+}
+
+/**
+ * Whether a private job's sealed envelope is the one its receipt committed to.
+ *
+ * The broker serves both the envelope and `resultHash`, computed from the same
+ * string, so matching those two only says the broker is self-consistent. The
+ * claim that matters, "the receipt commits to this ciphertext", is checked
+ * against the XorvLedger receipt itself, read from Monad (receipt-check.ts).
+ * Until that read succeeds, the page says only what it actually knows.
+ */
+function ReceiptCommitment({ job, result, ledger }: { job: Job; result: string; ledger: string | null }) {
+  const check = useReceiptCheck(job.id, job.receiptTxHash ?? null, ledger, result);
+  const brokerMatches = receiptMatchesCiphertext(result, job.resultHash);
+
+  let text: string;
+  let bad = false;
+  if (check?.status === "match") {
+    text = "✓ the sealed envelope hashes to the resultHash in this job's XorvLedger receipt on Monad — the receipt commits to ciphertext only the buyer can open";
+  } else if (check?.status === "mismatch") {
+    text = "✕ the envelope served does not match the resultHash in this job's XorvLedger receipt on Monad";
+    bad = true;
+  } else if (!brokerMatches) {
+    text = "✕ the envelope served does not hash to the value the broker reports";
+    bad = true;
+  } else {
+    const onChain =
+      !job.receiptTxHash || !ledger
+        ? "the receipt isn't on-chain yet"
+        : check?.status === "checking"
+          ? "checking it against the on-chain receipt…"
+          : "the on-chain receipt couldn't be read to confirm it";
+    text = `the sealed envelope matches the hash the broker reports; ${onChain}`;
+  }
+  return <p className={cn("mt-1.5 text-[11px] leading-relaxed", bad ? "text-fail" : "text-fg-4")}>{text}</p>;
+}
+
+/**
+ * Read the job's XorvLedger receipt and compare `result` with it:
+ * `{ status: "checking" }` while reading, null when there is nothing to read.
+ */
+function useReceiptCheck(
+  jobId: string,
+  txHash: string | null,
+  ledger: string | null,
+  result: string,
+): ReceiptCheck | { status: "checking" } | null {
+  const [state, setState] = useState<{ key: string; check: ReceiptCheck } | null>(null);
+  const key = txHash && ledger ? [jobId, txHash, ledger, result].join("\n") : null;
+  useEffect(() => {
+    if (!txHash || !ledger || !key) return;
+    let alive = true;
+    const client = publicClientFor(NETWORK, { rpcUrl: PUBLIC_RPC_URL }) as unknown as ReceiptReader;
+    void checkResultAgainstReceipt({ client, txHash, ledger, jobId, result }).then((check) => {
+      if (alive) setState({ key, check });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [key, jobId, txHash, ledger, result]);
+  if (!key) return null;
+  return state?.key === key ? state.check : { status: "checking" };
 }
 
 /**
