@@ -146,11 +146,24 @@ export class RoleClient {
       this.stats.failed += 1;
       if (failure.kind === "timeout") this.stats.timeouts += 1;
       this.stats.lastMs = Date.now() - started;
-      this.stats.lastError = `${failure.kind}: ${failure.message}`;
+      // lastError is served on the public /api/network. The failure message
+      // can carry the model's own words (an "invalid" answer is quoted back,
+      // up to 200 characters, and a validator names the value it got), and a
+      // model that saw a private job's prompt can echo it. So only a fixed
+      // description goes public; the full message stays in the thrown error.
+      this.stats.lastError = this.publicFailure(failure, err);
       throw failure;
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** A failure in words that never include the model's output or the provider's error text. */
+  private publicFailure(failure: AiRoleError, cause: unknown): string {
+    if (failure.kind === "timeout") return `timeout: ${this.preset.label} did not answer within ${this.timeoutMs}ms`;
+    if (failure.kind === "invalid") return `invalid: ${this.preset.label} answered with something other than the expected JSON`;
+    const status = cause instanceof LlmError && cause.status !== null ? ` (HTTP ${cause.status})` : "";
+    return `error: the call to ${this.preset.label} failed${status}`;
   }
 
   /** Scrub the key out of anything that might be shown. */

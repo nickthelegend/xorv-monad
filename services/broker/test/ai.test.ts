@@ -34,6 +34,7 @@ import {
   candidateTable,
   createAiHooks,
   giveFeedbackArgs,
+  invalid,
   verificationFeedback,
   type RouteCandidate,
   type VerificationRecord,
@@ -167,6 +168,23 @@ describe("the shared role client", () => {
     expect(err.message).not.toContain(KEYS.XORV_QWEN_API_KEY);
     expect(leaky.snapshot()).toMatchObject({ calls: 1, ok: 0, failed: 1 });
     expect(leaky.snapshot().lastError).not.toContain(KEYS.XORV_QWEN_API_KEY);
+    expect(leaky.snapshot().lastError).toMatch(/^error: .*HTTP 401/);
+  });
+
+  it("never puts the model's own words in lastError, which /api/network serves", async () => {
+    // An unusable answer is quoted back in the error (up to 200 chars), and a
+    // model that saw a private job's prompt can echo it.
+    const echo = client("qwen", stubLlm({ content: "the secret memo is about marmalade-4412" }).fetch);
+    const err = await echo.json({ system: "s", user: "u", schemaHint: "{}", validate: (v) => v }).catch((e) => e);
+    expect(err.kind).toBe("invalid");
+    expect(echo.snapshot().lastError).toMatch(/^invalid: /);
+    expect(echo.snapshot().lastError).not.toContain("marmalade");
+
+    const picky = client("qwen", stubLlm({ json: { adapter: "marmalade-4412" } }).fetch);
+    await picky
+      .json({ system: "s", user: "u", schemaHint: "{}", validate: (v) => invalid(`unknown adapter ${String(v.adapter)}`) })
+      .catch(() => undefined);
+    expect(picky.snapshot().lastError).not.toContain("marmalade");
   });
 
   it("gives up at its deadline even when fetch ignores the abort signal", async () => {

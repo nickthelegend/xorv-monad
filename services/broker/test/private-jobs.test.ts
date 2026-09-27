@@ -46,7 +46,8 @@ import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { openPersistence } from "../src/store.js";
 import { VaultStore } from "../src/vaults.js";
-import type { VerificationRecord } from "../src/ai/types.js";
+import type { RoutingRecord, ScreeningRecord, VerificationRecord } from "../src/ai/types.js";
+import type { AiHooks } from "../src/ai-hooks.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -171,7 +172,7 @@ interface Harness {
   stop(): Promise<void>;
 }
 
-async function boot(opts: { vaults?: VaultStore } = {}): Promise<Harness> {
+async function boot(opts: { vaults?: VaultStore; ai?: Omit<AiHooks, "verifier"> } = {}): Promise<Harness> {
   const chain = new StubChain();
   const registry = new Registry();
   const jobs = new JobStore();
@@ -198,6 +199,7 @@ async function boot(opts: { vaults?: VaultStore } = {}): Promise<Harness> {
     ledgerReader: new StubReader(),
     agentWallet: async () => null,
     ai: {
+      ...opts.ai,
       verifier: {
         info: { by: "kimi", model: "kimi-k3", enabled: true, provider: "kimi", label: "Kimi K3", timeoutMs: 20_000 },
         timeoutMs: 20_000,
@@ -230,7 +232,7 @@ async function boot(opts: { vaults?: VaultStore } = {}): Promise<Harness> {
 }
 
 /** A provider node that answers the way it is told to. */
-async function provider(h: Harness, label = "node-a") {
+async function provider(h: Harness, label = "node-a", adapter = "echo") {
   const res = await fetch(`${h.base}/api/providers/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -238,7 +240,7 @@ async function provider(h: Harness, label = "node-a") {
       label,
       address: PAYEE,
       endpoint: "http://localhost:1",
-      capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo", model: null, priceUsdMicros: 1_000, maxConcurrency: 4 }],
+      capabilities: [{ id: adapter, adapter, displayName: adapter, model: null, priceUsdMicros: 1_000, maxConcurrency: 4 }],
       version: "0.2.0",
       region: null,
       nodeId: `node-${label}`,
@@ -380,6 +382,64 @@ describe("a private job", () => {
     // The one who holds the passkey still gets the answer, from the public route.
     expect(openResult(INBOX.secretKey, one.job.result, paid.jobId)).toBe(ANSWER);
     node.close();
+  });
+
+  it("serves the router's and screener's reasons as withheld, since the models paraphrase the prompt", async () => {
+    // Asked why an adapter "suits this job", a model describes the job. Those
+    // sentences sat next to prompt: "" on every public read of a private job.
+    await h.stop();
+    const role = { by: "qwen", model: "stub-1", enabled: true, provider: "qwen", label: "Stub", timeoutMs: 1_000 } as const;
+    h = await boot({
+      ai: {
+        screener: {
+          info: role,
+          timeoutMs: 1_000,
+          failMode: "open",
+          screen: async (): Promise<ScreeningRecord> => ({
+            by: "stub",
+            model: "stub-1",
+            verdict: "allow",
+            category: "none",
+            reason: `A memo about ${SECRET}, harmless.`,
+            ms: 1,
+          }),
+        },
+        router: {
+          info: role,
+          timeoutMs: 1_000,
+          route: async (): Promise<RoutingRecord> => ({
+            by: "stub",
+            model: "stub-1",
+            adapter: "codex",
+            reason: `Codex writes the confidential ${SECRET} memo best.`,
+            difficulty: "hard",
+            ms: 1,
+            candidates: 2,
+          }),
+        },
+      },
+    });
+    const a = await provider(h, "node-a", "echo");
+    const b = await provider(h, "node-b", "codex");
+    const q = await quote(h, { encryptTo: INBOX.encryptTo });
+    expect(q.status).toBe(200);
+    // The buyer's own quote still explains itself.
+    expect(q.body.routing.reason).toContain(SECRET);
+    const res = await h.paidFetch(q.body.payUrl.replace("http://broker.test", h.base), { method: "POST" });
+    const paid = (await res.json()) as Json;
+    // Routed to the codex node; finish the job so the stream closes.
+    const job = await waitFor(() => b.dispatched[0]);
+    b.send({ type: "job.result", jobId: job.jobId, result: sealResult(INBOX.encryptTo, ANSWER, job.jobId), durationMs: 50 });
+    await waitFor(() => (h.jobs.get(paid.jobId)?.status === "completed" ? true : null));
+
+    const one = (await (await fetch(`${h.base}/api/jobs/${paid.jobId}`)).json()) as Json;
+    expect(one.job.routing).toMatchObject({ adapter: "codex", reason: "withheld for a private job", difficulty: null });
+    expect(one.job.screening).toMatchObject({ verdict: "allow", category: "none", reason: "withheld for a private job" });
+    const list = await (await fetch(`${h.base}/api/jobs`)).text();
+    const snapshot = await (await fetch(`${h.base}/api/jobs/${paid.jobId}/stream`)).text();
+    for (const body of [JSON.stringify(one), list, snapshot]) expect(body).not.toContain(SECRET);
+    a.close();
+    b.close();
   });
 
   it("skips the AI verifier, which would need the plaintext", async () => {

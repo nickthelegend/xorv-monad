@@ -23,6 +23,7 @@ import {
   type PublicProvider,
 } from "@xorv/protocol";
 import type { StoredJob } from "./jobs.js";
+import type { RoutingRecord, ScreeningRecord } from "./ai/types.js";
 import { publicRelatedCheck, type PublicRelatedCheck, type PublicTrustSignal } from "./trust/index.js";
 import type { ProviderRecord } from "./registry.js";
 import { toBigIntString, toNumber, type IndexerLeaderboardRow } from "./indexer.js";
@@ -71,8 +72,8 @@ export function publicJob(
     resultHash: job.resultHash ?? null,
     error: job.error ?? null,
     receiptTxHash: job.receiptTxHash ?? null,
-    routing: job.routing ?? null,
-    screening: job.screening ?? null,
+    routing: sealed ? sealedRouting(job.routing) : (job.routing ?? null),
+    screening: sealed ? sealedScreening(job.screening) : (job.screening ?? null),
     verification: job.verification ?? null,
     rating: job.rating
       ? { value: job.rating.value, txHash: job.rating.txHash, feedbackURI: job.rating.feedbackURI }
@@ -82,6 +83,33 @@ export function publicJob(
     // The Nansen related-wallet check run before relaying the rating, if one ran.
     trustCheck: job.trustCheck ? publicRelatedCheck(job.trustCheck) : null,
   };
+}
+
+/** What a private job's AI records say in place of the model's own words. */
+export const PRIVATE_AI_REASON = "withheld for a private job";
+
+/**
+ * A private job's routing record, minus what the router wrote about the job.
+ * Asked for "one plain sentence … saying why this adapter suits this job",
+ * the model paraphrases the prompt, so its reason (and its difficulty read)
+ * would leak what the redacted prompt hides. A timeout or error fallback
+ * keeps its reason: that sentence is the broker's own template. An invalid
+ * one does not, since it can quote the model's pick.
+ */
+function sealedRouting(routing: StoredJob["routing"]): RoutingRecord | null {
+  if (!routing) return null;
+  const templated = routing.fallback === "timeout" || routing.fallback === "error";
+  return { ...routing, reason: templated ? routing.reason : PRIVATE_AI_REASON, difficulty: null };
+}
+
+/**
+ * A private job's screening record, minus the screener's free-text reason.
+ * The verdict and category are fixed vocabularies and stay; an unscreened
+ * record keeps its reason, which is the broker's fail-open/closed template.
+ */
+function sealedScreening(screening: StoredJob["screening"]): ScreeningRecord | null {
+  if (!screening) return null;
+  return { ...screening, reason: screening.unavailable ? screening.reason : PRIVATE_AI_REASON };
 }
 
 /**
