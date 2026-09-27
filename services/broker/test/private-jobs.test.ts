@@ -599,6 +599,29 @@ describe("vaults", () => {
     // …but the vault it already has can still be written.
     expect((await put(AUTH.vaultId, write(2))).status).toBe(200);
   });
+
+  it("caps new vaults per client address, but not writes to a vault it already has", async () => {
+    // Anyone can mint a vault key and vaults are never evicted, so creating
+    // one is limited far below writing one.
+    const expected = [];
+    for (let i = 0; i < 11; i += 1) {
+      const auth = deriveVaultAuth(Uint8Array.from({ length: 32 }, (_, j) => (j * 29 + i + 7) & 0xff));
+      expected.push((await put(auth.vaultId, write(1, "{}", auth, auth.vaultId))).status);
+    }
+    expect(expected.slice(0, 10)).toEqual(Array(10).fill(200));
+    expect(expected[10]).toBe(429);
+    const first = deriveVaultAuth(Uint8Array.from({ length: 32 }, (_, j) => (j * 29 + 7) & 0xff));
+    expect((await put(first.vaultId, write(2, "{}", first, first.vaultId))).status).toBe(200);
+  });
+
+  it("answers 507 for a new vault once the byte cap is reached, and still takes rewrites", async () => {
+    await h.stop();
+    const one = write(1).ciphertext.length;
+    h = await boot({ vaults: new VaultStore(undefined, 100, one + 10) });
+    expect((await put(AUTH.vaultId, write(1))).status).toBe(200);
+    expect((await put(INTRUDER.vaultId, write(1, "{}", INTRUDER, INTRUDER.vaultId))).status).toBe(507);
+    expect((await put(AUTH.vaultId, write(2, `{"v":1,"entries":[{"prompt":"a much longer entry than before"}]}`))).status).toBe(200);
+  });
 });
 
 describe("vault persistence", () => {
@@ -621,6 +644,35 @@ describe("vault persistence", () => {
     const restored = new VaultStore(second);
     expect(restored.get(AUTH.vaultId)).toMatchObject({ ciphertext: w.ciphertext, iv: w.iv, version: 1, publicKey: w.publicKey });
     expect(restored.nextVersion(AUTH.vaultId)).toBe(2);
+    second.close();
+  });
+
+  it("keeps only metadata in memory and reads ciphertext from disk on demand", () => {
+    // Every vault's ciphertext used to live in the heap (up to 10,000 × 176
+    // KiB), and a boot parsed them all.
+    const file = path.join(dir, "broker.db");
+    const first = openPersistence(file);
+    const store = new VaultStore(first);
+    const w = write(1, `{"v":1,"entries":[{"prompt":"${SECRET}"}]}`);
+    expect(store.put(AUTH.vaultId, w).ok).toBe(true);
+    first.close();
+
+    const second = openPersistence(file);
+    const disk = second as typeof second & { loadVaults(): unknown; loadVault(id: string): unknown };
+    const loadAll = vi.spyOn(disk, "loadVaults");
+    const loadOne = vi.spyOn(disk, "loadVault");
+    const restored = new VaultStore(second);
+    expect(loadAll).not.toHaveBeenCalled();
+    expect(restored.size).toBe(1);
+    expect(restored.bytes).toBe(w.ciphertext.length);
+    expect(loadOne).not.toHaveBeenCalled();
+    expect(restored.get(AUTH.vaultId)?.ciphertext).toBe(w.ciphertext);
+    expect(loadOne).toHaveBeenCalledWith(AUTH.vaultId);
+    // A write goes to disk, not the heap: the next read comes from disk again.
+    expect(restored.put(AUTH.vaultId, write(2)).ok).toBe(true);
+    loadOne.mockClear();
+    expect(restored.get(AUTH.vaultId)?.version).toBe(2);
+    expect(loadOne).toHaveBeenCalledTimes(1);
     second.close();
   });
 });

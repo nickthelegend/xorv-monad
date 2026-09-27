@@ -14,8 +14,12 @@
  *  - only ciphertext, nonce, version and the (public) key are kept. There is
  *    no plaintext to keep: the broker never had it.
  *
- * Vaults are few and small, so they live in memory and write through to the
- * same durable store as jobs, like everything else the broker must not lose.
+ * Only each vault's metadata (id, version, key, size) lives in memory. The
+ * ciphertext is read from the durable store when a vault is fetched, so the
+ * worst case, MAX_VAULTS vaults at the full ciphertext cap (gigabytes), sits
+ * on disk rather than in the heap, and a boot doesn't parse every blob. A
+ * store that can't serve a vault back (the memory store) keeps the bodies in
+ * memory instead, under a much smaller byte cap.
  */
 
 import { MemoryPersistence, type Persistence } from "./store.js";
@@ -35,6 +39,17 @@ export interface VaultRecord {
   updatedAt: number;
 }
 
+/** What the store keeps in memory for each vault. */
+export interface VaultMeta {
+  id: string;
+  version: number;
+  publicKey: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Length of the base64url ciphertext, in characters (what counts toward the byte caps). */
+  bytes: number;
+}
+
 export type VaultPutResult =
   | { ok: true; record: VaultRecord }
   | { ok: false; reason: "conflict"; current: number }
@@ -47,27 +62,76 @@ export type VaultPutResult =
  */
 export const MAX_VAULTS = 10_000;
 
+/**
+ * How many ciphertext characters, across all vaults, a broker takes before it
+ * refuses *new* vaults (existing ones can always be rewritten). On disk when
+ * the store can serve vaults back; a store that can't keeps them in memory,
+ * so its cap is far lower.
+ */
+export const MAX_VAULT_BYTES_ON_DISK = 1024 * 1024 * 1024;
+export const MAX_VAULT_BYTES_IN_MEMORY = 128 * 1024 * 1024;
+
 export class VaultStore {
-  private readonly vaults = new Map<string, VaultRecord>();
+  private readonly meta = new Map<string, VaultMeta>();
+  /** Bodies held in memory: all of them when the store can't serve them, else only writes it failed to take. */
+  private readonly bodies = new Map<string, VaultRecord>();
+  /** The durable store serves ciphertext on demand (`loadVault`). */
+  private readonly lazy: boolean;
+  private readonly maxBytes: number;
+  private totalBytes = 0;
 
   constructor(
     private readonly persistence: Persistence = new MemoryPersistence(),
     private readonly maxVaults = MAX_VAULTS,
+    maxBytes?: number,
   ) {
-    for (const record of persistence.loadVaults?.() ?? []) this.vaults.set(record.id, record);
+    const index = persistence.loadVaultIndex?.() ?? null;
+    this.lazy = index !== null && typeof persistence.loadVault === "function";
+    if (this.lazy && index) {
+      for (const meta of index) this.remember(meta);
+    } else {
+      for (const record of persistence.loadVaults?.() ?? []) {
+        this.remember(metaOf(record));
+        this.bodies.set(record.id, record);
+      }
+    }
+    this.maxBytes = maxBytes ?? (this.lazy ? MAX_VAULT_BYTES_ON_DISK : MAX_VAULT_BYTES_IN_MEMORY);
+  }
+
+  private remember(meta: VaultMeta): void {
+    this.totalBytes += meta.bytes - (this.meta.get(meta.id)?.bytes ?? 0);
+    this.meta.set(meta.id, meta);
   }
 
   get size(): number {
-    return this.vaults.size;
+    return this.meta.size;
+  }
+
+  /** Ciphertext characters held across all vaults. */
+  get bytes(): number {
+    return this.totalBytes;
+  }
+
+  has(id: string): boolean {
+    return this.meta.has(id);
   }
 
   get(id: string): VaultRecord | undefined {
-    return this.vaults.get(id);
+    if (!this.meta.has(id)) return undefined;
+    const held = this.bodies.get(id);
+    if (held) return held;
+    if (!this.lazy) return undefined;
+    try {
+      return this.persistence.loadVault?.(id) ?? undefined;
+    } catch (err) {
+      console.error("[broker] failed to read vault:", err instanceof Error ? err.message : err);
+      return undefined;
+    }
   }
 
   /** The version a write must carry next: 1 for a vault that doesn't exist yet. */
   nextVersion(id: string): number {
-    return (this.vaults.get(id)?.version ?? 0) + 1;
+    return (this.meta.get(id)?.version ?? 0) + 1;
   }
 
   /**
@@ -80,10 +144,11 @@ export class VaultStore {
    * re-reads, merges and tries again.
    */
   put(id: string, write: { ciphertext: string; iv: string; version: number; publicKey: string }): VaultPutResult {
-    const existing = this.vaults.get(id);
+    const existing = this.meta.get(id);
     const current = existing?.version ?? 0;
     if (write.version !== current + 1) return { ok: false, reason: "conflict", current };
-    if (!existing && this.vaults.size >= this.maxVaults) return { ok: false, reason: "full" };
+    if (!existing && this.meta.size >= this.maxVaults) return { ok: false, reason: "full" };
+    if (!existing && this.totalBytes + write.ciphertext.length > this.maxBytes) return { ok: false, reason: "full" };
 
     const now = Date.now();
     const record: VaultRecord = {
@@ -95,14 +160,29 @@ export class VaultStore {
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
-    this.vaults.set(id, record);
+    this.remember(metaOf(record));
+    let saved = false;
     try {
       this.persistence.saveVault?.(record);
+      saved = true;
     } catch (err) {
-      // Held in memory either way; a disk problem must not turn an accepted,
+      // Held in memory then; a disk problem must not turn an accepted,
       // signed write into an error the client would retry against itself.
       console.error("[broker] failed to persist vault:", err instanceof Error ? err.message : err);
     }
+    if (this.lazy && saved) this.bodies.delete(id);
+    else this.bodies.set(id, record);
     return { ok: true, record };
   }
+}
+
+function metaOf(record: VaultRecord): VaultMeta {
+  return {
+    id: record.id,
+    version: record.version,
+    publicKey: record.publicKey,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    bytes: record.ciphertext.length,
+  };
 }

@@ -25,7 +25,7 @@
  */
 
 import type { Job, ProviderStats } from "@xorv/protocol";
-import type { VaultRecord } from "./vaults.js";
+import type { VaultMeta, VaultRecord } from "./vaults.js";
 import {
   MemoryPersistence,
   upgradeJob,
@@ -204,6 +204,16 @@ export class LayeredPersistence implements Persistence {
   loadVaults(): VaultRecord[] {
     if (this.restoredVaults && this.restoredVaults.length > 0) return this.restoredVaults;
     return this.local.loadVaults?.() ?? [];
+  }
+
+  /** Null while Mongo's restored vaults are the source (they are held whole, from `loadVaults`). */
+  loadVaultIndex(): VaultMeta[] | null {
+    if (this.restoredVaults && this.restoredVaults.length > 0) return null;
+    return this.local.loadVaultIndex?.() ?? null;
+  }
+
+  loadVault(id: string): VaultRecord | null {
+    return this.local.loadVault?.(id) ?? null;
   }
 
   saveVault(record: VaultRecord): void {

@@ -129,6 +129,8 @@ import {
 const REGISTRATION_WAIT_MS = 2_500;
 /** How long registration waits on the Identity Registry to verify a claimed agent id. */
 const AGENT_CHECK_TIMEOUT_MS = 4_000;
+/** New vaults one client address may create per hour. */
+const NEW_VAULTS_PER_HOUR = 10;
 /** How long an `isAuthorizedOrOwner` answer is reused. */
 const AUTHORIZATION_CACHE_MS = 60_000;
 /** A paid job is handed to at most this many providers in total. */
@@ -431,7 +433,17 @@ export function createApp(deps: AppDeps) {
   // Anyone can mint a vault key, so vault writes are storage anyone can ask
   // for; reads are free.
   const vaultWriteLimit = rateLimit({ limit: 20, windowMs: 60_000 });
-  app.use("/api/vaults/:id", (c, next) => (c.req.method === "PUT" ? vaultWriteLimit(c, next) : next()));
+  // Creating a vault is what fills the store for good (vaults are never
+  // evicted), so a caller gets far fewer new vaults than writes.
+  const newVaultLimit = rateLimit({ limit: NEW_VAULTS_PER_HOUR, windowMs: 3_600_000 });
+  app.use("/api/vaults/:id", async (c, next) => {
+    if (c.req.method !== "PUT") return next();
+    if (!vaults.has(c.req.param("id") ?? "")) {
+      const refused = await newVaultLimit(c, async () => {});
+      if (refused) return refused;
+    }
+    return vaultWriteLimit(c, next);
+  });
 
   app.get("/metrics", (c) =>
     c.text(

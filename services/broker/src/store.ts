@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { Job, ProviderStats } from "@xorv/protocol";
-import type { VaultRecord } from "./vaults.js";
+import type { VaultMeta, VaultRecord } from "./vaults.js";
 
 export interface PersistedProviderStats extends ProviderStats {
   nodeId: string;
@@ -93,6 +93,14 @@ export interface Persistence {
    */
   loadVaults?(): VaultRecord[];
   saveVault?(record: VaultRecord): void;
+  /**
+   * Every vault's metadata without its ciphertext, or null when this store
+   * can't serve vaults back one at a time (then `loadVaults` is used and the
+   * bodies stay in memory).
+   */
+  loadVaultIndex?(): VaultMeta[] | null;
+  /** One vault, ciphertext included, read on demand. */
+  loadVault?(id: string): VaultRecord | null;
   close(): void;
 }
 
@@ -224,6 +232,47 @@ class SqlitePersistence implements Persistence {
       }
     }
     return out;
+  }
+
+  loadVaultIndex(): VaultMeta[] {
+    // The metadata only, so a boot never pulls every ciphertext into memory.
+    const rows = this.db
+      .prepare(
+        `SELECT id, version, updated_at,
+                json_extract(body, '$.publicKey') AS public_key,
+                json_extract(body, '$.createdAt') AS created_at,
+                length(json_extract(body, '$.ciphertext')) AS bytes
+         FROM vaults`,
+      )
+      .all() as unknown as Array<{
+      id: string;
+      version: number;
+      updated_at: number;
+      public_key: string | null;
+      created_at: number | null;
+      bytes: number | null;
+    }>;
+    return rows
+      .filter((row) => typeof row.public_key === "string" && typeof row.bytes === "number")
+      .map((row) => ({
+        id: row.id,
+        version: Number(row.version),
+        publicKey: row.public_key as string,
+        createdAt: Number(row.created_at ?? row.updated_at),
+        updatedAt: Number(row.updated_at),
+        bytes: Number(row.bytes),
+      }));
+  }
+
+  loadVault(id: string): VaultRecord | null {
+    const row = this.db.prepare("SELECT body FROM vaults WHERE id = ?").get(id) as unknown as VaultRow | undefined;
+    if (!row) return null;
+    try {
+      const record = JSON.parse(row.body) as VaultRecord;
+      return typeof record.id === "string" && typeof record.version === "number" ? record : null;
+    } catch {
+      return null;
+    }
   }
 
   saveVault(record: VaultRecord): void {
