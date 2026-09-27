@@ -33,7 +33,9 @@ curl -s $BROKER/api/network | jq '{network, ledger, indexer, ai}'
 # A null role means its key is missing: fix it now, not on camera.
 
 xorv doctor          # every line ✔ for the adapters you sell; the identity line shows your agent
-xorv identity show   # agent #<id>, and its agent wallet "· matches payout"
+xorv identity show   # agent #<id>, and its agent wallet "· matches payout". If it warns that the agent
+                     # URI publishes the node id (an identity from an older CLI), give the node a new
+                     # nodeId in config.json and run `xorv identity register --force`.
 xorv start           # leave it running; it must show "ERC-8004 agent #<id>"
 ```
 
