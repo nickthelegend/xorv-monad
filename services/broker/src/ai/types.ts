@@ -58,6 +58,45 @@ export interface ScreeningRecord extends JobScreening {
 export const DIFFICULTIES = ["easy", "medium", "hard"] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];
 
+/** The router's tools: five reads of live state, and the terminal pick. */
+export const ROUTER_TOOLS = [
+  "list_candidates",
+  "erc8004_reputation",
+  "recent_receipts",
+  "indexer_provider_stats",
+  "nansen_trust",
+  "select_provider",
+] as const;
+export type RouterToolName = (typeof ROUTER_TOOLS)[number];
+
+/** An explorer link a trace step points at (an agent, a transaction, a wallet). */
+export interface TraceLink {
+  label: string;
+  url: string;
+}
+
+/**
+ * One tool call in the router's trace. Everything here is the broker's own
+ * words about public data — the arguments are the validated ids, never the
+ * model's raw text, and the summary is a template filled from the tool's
+ * result — so the trace can be shown next to a private job without saying
+ * anything about its prompt.
+ */
+export interface RoutingStep {
+  tool: RouterToolName;
+  /** Validated arguments: a candidate's providerId / agentId, or "(not a candidate)". */
+  args: Record<string, string | null>;
+  /** What the tool found, in one line the buyer can read. */
+  summary: string;
+  /** Wall time of the tool call, ms. */
+  ms: number;
+  /** False when the tool couldn't answer (timeout, source down, unknown id). */
+  ok: boolean;
+  /** Where the data came from. */
+  source?: "registry" | "chain" | "indexer" | "rpc" | "memory" | "nansen" | "none";
+  links?: TraceLink[];
+}
+
 export interface RoutingRecord extends JobRouting {
   /** The router's read of the task; null when it didn't answer. */
   difficulty: Difficulty | null;
@@ -71,6 +110,19 @@ export interface RoutingRecord extends JobRouting {
   fallback?: "timeout" | "error" | "invalid";
   /** How many live capabilities the router chose between. */
   candidates: number;
+  /** The provider the router picked; null when it fell back (the matcher chose). */
+  providerId?: string | null;
+  providerLabel?: string | null;
+  /** The picked provider's ERC-8004 agent, when it has one. */
+  agentId?: string | null;
+  /** The agent trace: every tool call, in order, with what it found. */
+  steps?: RoutingStep[];
+  /** Model turns used. */
+  turns?: number;
+  /** Tool calls made (reads; the terminal select_provider not counted). */
+  toolCalls?: number;
+  /** Whether the model thought before answering (Qwen `enable_thinking`). */
+  thinking?: boolean;
 }
 
 export interface VerificationRecord extends JobVerification {
@@ -90,15 +142,29 @@ export interface VerificationRecord extends JobVerification {
 }
 
 /**
- * One live capability as the router sees it: everything it may weigh, and
- * nothing that identifies a provider (it picks an adapter; the matcher then
- * picks the node).
+ * One live capability as the router sees it: the provider that offers it,
+ * what it costs, and the track record the broker already holds. The router
+ * picks a provider (and with it the adapter); the richer evidence — on-chain
+ * reputation, receipts, indexer aggregates, Nansen trust — it fetches with
+ * its tools.
  */
 export interface RouteCandidate {
+  providerId: string;
+  /** The provider's own label (provider-chosen text: shown, never trusted). */
+  label: string;
+  /** Payout address (x402 payTo). */
+  address: string;
+  /** ERC-8004 agent id, verified at registration; null without an identity. */
+  agentId: string | null;
+  capabilityId: string;
   adapter: AdapterKind;
   displayName: string;
   model: string | null;
   priceUsdMicros: number;
+  /** Heartbeat status: "online" has a free slot now, "busy" is at capacity on some adapter. */
+  liveness: "online" | "busy";
+  /** Seconds since the last heartbeat. */
+  heartbeatAgeS: number;
   /** Completed / (completed + failed); null for a provider with no history yet. */
   successRate: number | null;
   jobs: number;
@@ -155,6 +221,10 @@ export interface AiRoleReport {
   stats: RoleStats | null;
   /** Screener only. */
   failMode?: ScreenFailMode;
+  /** Screener only: the TokenHub reasoning_effort it asks for ("provider" sends none). */
+  reasoning?: "low" | "high" | "provider";
+  /** Router only: the agent loop's bounds. */
+  agent?: { maxTurns: number; maxToolCalls: number; thinking: boolean; thinkingBudget: number | null };
   /** Verifier only: where its scores go on-chain. */
   feedback?: VerifierFeedbackReport;
 }

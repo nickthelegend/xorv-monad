@@ -60,6 +60,19 @@ export type TrustScorer = (address: string) => number | null;
  */
 export const TRUST_TIEBREAK_WEIGHT = 0.1;
 
+/** A provider's reputation, 0–100 (buyer ratings and verifier scores), or null for no evidence. */
+export type ReputationScorer = (provider: ProviderRecord) => number | null;
+
+/**
+ * How far reputation can move a provider's rank: at most ±0.2 on the 0–1
+ * success scale, at a (shrunk) reputation of 100 or 0. It only ever orders
+ * equally priced nodes — price sorts first — and it is worth more than the
+ * wallet-trust nudge because it is what buyers and the verifier said about
+ * delivered work. The broker feeds it from the Envio indexer when one is
+ * configured and from its own job records otherwise (ai/reputation-book.ts).
+ */
+export const REPUTATION_TIEBREAK_WEIGHT = 0.2;
+
 /**
  * The public provider id for a node: stable across broker restarts, and not
  * reversible to the node id. It lives in @xorv/protocol because the CLI
@@ -134,6 +147,7 @@ export class Registry {
    */
   private restoredStats: Map<string, PersistedProviderStats>;
   private trustScore: TrustScorer | null = null;
+  private reputationScore: ReputationScorer | null = null;
   /** Whether a provider can be handed a job right now (its control channel is open); null = anyone live. */
   private eligible: ((id: string) => boolean) | null = null;
   /** Recent job outcomes per provider id, newest last (in memory, bounded). */
@@ -147,6 +161,11 @@ export class Registry {
   /** Let the matcher weigh payout-wallet trust (Nansen) when it breaks ties. */
   setTrustScorer(scorer: TrustScorer | null): void {
     this.trustScore = scorer;
+  }
+
+  /** Let the matcher weigh indexed reputation (buyer ratings, verifier scores) when it breaks price ties. */
+  setReputationScorer(scorer: ReputationScorer | null): void {
+    this.reputationScore = scorer;
   }
 
   /**
@@ -185,15 +204,16 @@ export class Registry {
   }
 
   /**
-   * The rank ties are broken on: reliability, nudged by wallet trust. A
-   * provider the scorer knows nothing about is neutral, not penalised.
+   * The rank ties are broken on: reliability, nudged by reputation (buyer
+   * ratings and verifier scores) and by wallet trust. A provider a scorer
+   * knows nothing about is neutral, not penalised.
    */
   private rankScore(provider: ProviderRecord): number {
-    const reliability = successScore(provider);
-    const trust = this.trustScore?.(provider.address);
-    if (trust === null || trust === undefined || !Number.isFinite(trust)) return reliability;
-    const clamped = Math.max(0, Math.min(100, trust));
-    return reliability + (TRUST_TIEBREAK_WEIGHT * (clamped - 50)) / 50;
+    return (
+      successScore(provider) +
+      nudge(this.reputationScore?.(provider), REPUTATION_TIEBREAK_WEIGHT) +
+      nudge(this.trustScore?.(provider.address), TRUST_TIEBREAK_WEIGHT)
+    );
   }
 
   /** How many providers' lifetime stats came back from disk. */
@@ -349,10 +369,11 @@ export class Registry {
    *
    * Cheapest-first, because the poster set a ceiling and any provider under it
    * is acceptable — competing on price is the point of a capacity market. Ties
-   * break toward the node with the better track record — nudged by its payout
-   * wallet's Nansen trust score when one is known (`TRUST_TIEBREAK_WEIGHT`) —
-   * then the emptier one, so a reliable provider is rewarded and load still
-   * spreads.
+   * break toward the node with the better track record — nudged by its
+   * reputation (`REPUTATION_TIEBREAK_WEIGHT`: indexed buyer ratings and
+   * verifier scores) and its payout wallet's Nansen trust score when one is
+   * known (`TRUST_TIEBREAK_WEIGHT`) — then the emptier one, so a reliable,
+   * well-rated provider is rewarded and load still spreads.
    *
    * `exclude` is for reassignment: a job never goes back to a provider that
    * already had it.
@@ -488,6 +509,13 @@ export class Registry {
     }
     return removed;
   }
+}
+
+/** A 0–100 score as a ±weight move around a neutral 50; nothing for no opinion. */
+function nudge(score: number | null | undefined, weight: number): number {
+  if (score === null || score === undefined || !Number.isFinite(score)) return 0;
+  const clamped = Math.max(0, Math.min(100, score));
+  return (weight * (clamped - 50)) / 50;
 }
 
 /** Constant-time token comparison: the token is a bearer credential. */

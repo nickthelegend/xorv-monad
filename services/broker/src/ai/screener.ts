@@ -25,8 +25,30 @@ import type { JobRequest } from "@xorv/protocol";
 import { AiRoleError, RoleClient, clip, fenced, invalid } from "./client.js";
 import { SCREEN_CATEGORIES, type ScreenCategory, type ScreenFailMode, type ScreeningRecord } from "./types.js";
 
-/** A screen slower than this is dropping quotes on the floor; fail mode takes over. */
-export const SCREEN_TIMEOUT_MS = 5_000;
+/**
+ * A screen slower than this is dropping quotes on the floor; fail mode takes
+ * over. XORV_SCREENER_TIMEOUT_MS overrides it. 8 s rather than the old fixed
+ * 5 s: hy4-preview reasons before it answers, and a screen that times out
+ * is a prompt that went unscreened (fail open) or a refused quote (closed).
+ */
+export const SCREEN_TIMEOUT_MS = 8_000;
+
+/**
+ * How hard hy4 reasons over a prompt. TokenHub's OpenAI-compatible endpoint
+ * takes a top-level `reasoning_effort` for hy4-preview (default "high"; "low"
+ * is accepted), so the screen asks for "low" by default: a classification
+ * over one prompt doesn't need deep chain-of-thought, and latency here is
+ * quote latency. "provider" sends no field and leaves the provider's default
+ * (XORV_SCREENER_REASONING). The self-hosted model's `chat_template_kwargs`
+ * "no_think" switch is a vLLM/SGLang option, not a TokenHub one.
+ */
+export type ScreenReasoning = "low" | "high" | "provider";
+export const SCREEN_REASONING: ScreenReasoning = "low";
+
+/** The screen's extra body fields for a reasoning setting. */
+export function screenerBody(reasoning: ScreenReasoning): Record<string, unknown> {
+  return reasoning === "provider" ? {} : { reasoning_effort: reasoning };
+}
 
 const SYSTEM = `You are the safety screen for Xorv, a marketplace that runs buyers' prompts on other people's computers. Each job is executed by an AI coding agent (Claude Code, Codex, Qwen Code and similar) with shell and file access on the provider's own machine. Your only job is to protect those provider machines.
 

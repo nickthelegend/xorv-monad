@@ -27,16 +27,15 @@ import {
   AiRoleError,
   HunyuanScreener,
   KimiVerifier,
-  QwenRouter,
   ReputationWriter,
   RoleClient,
   VERIFIED_TAG1,
-  candidateTable,
   createAiHooks,
   giveFeedbackArgs,
   invalid,
   verificationFeedback,
-  type RouteCandidate,
+  routerSettings,
+  screenerSettings,
   type VerificationRecord,
 } from "../src/ai/index.js";
 import type { StoredJob } from "../src/jobs.js";
@@ -199,6 +198,28 @@ describe("the shared role client", () => {
     }
   });
 
+  it("runs a tool-calling turn under the caller's budget, and a spent budget is a timeout", async () => {
+    const llm = stubLlm({ content: "hello" });
+    const c = client("qwen", llm.fetch);
+    const turn = await c.turn({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ type: "function", function: { name: "t", description: "d", parameters: { type: "object" } } }],
+      body: { enable_thinking: true },
+    });
+    expect(turn).toMatchObject({ content: "hello", toolCalls: [], model: "qwen3.8-max" });
+    expect(llm.calls[0]!.body).toMatchObject({ tool_choice: "auto", enable_thinking: true, stream: false });
+    expect(llm.calls[0]!.body.response_format).toBeUndefined();
+
+    const controller = new AbortController();
+    const hanging = client("qwen", stubLlm({ hang: "ignore-abort" }).fetch);
+    const pending = hanging.turn({ messages: [{ role: "user", content: "hi" }], signal: controller.signal }).catch((e) => e);
+    controller.abort();
+    const err = await pending;
+    expect(err).toBeInstanceOf(AiRoleError);
+    expect(err.kind).toBe("timeout");
+    expect(hanging.snapshot()).toMatchObject({ calls: 1, failed: 1, timeouts: 1 });
+  });
+
   it("records latency for successful calls", async () => {
     const c = client("kimi", stubLlm({ json: { a: 1 } }).fetch);
     const result = await c.json({ system: "s", user: "u", schemaHint: "{}", validate: (v) => v });
@@ -272,83 +293,6 @@ describe("the Hunyuan screener", () => {
     const llm = stubLlm({ json: { verdict: "block", category: "malware" } });
     const screener = new HunyuanScreener({ client: client("hunyuan", llm.fetch), failMode: "open", log: quiet });
     expect((await screener.screen({ prompt: "x", maxPriceUsdMicros: 1 })).unavailable).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-
-const CANDIDATES: RouteCandidate[] = [
-  { adapter: "echo", displayName: "Echo (test)", model: null, priceUsdMicros: 1_000, successRate: null, jobs: 0, avgRating: null, avgVerified: null, hasAgent: false },
-  { adapter: "kimi", displayName: "Kimi K3", model: "kimi-k3", priceUsdMicros: 5_000, successRate: 0.9, jobs: 10, avgRating: 88, avgVerified: 91.4, hasAgent: true },
-  { adapter: "claude-code", displayName: "Claude Code", model: "opus", priceUsdMicros: 90_000, successRate: 1, jobs: 3, avgRating: null, avgVerified: null, hasAgent: false },
-];
-
-describe("the Qwen router", () => {
-  it("routes to a live candidate and records why, how hard, and how fast", async () => {
-    const llm = stubLlm({ json: { adapter: "kimi", reason: "A short writing task suits a direct model.", difficulty: "easy" } });
-    const router = new QwenRouter({ client: client("qwen", llm.fetch) });
-    const routing = await router.route({ prompt: "Write a haiku", maxPriceUsdMicros: 50_000 }, CANDIDATES);
-    expect(routing).toMatchObject({
-      by: "qwen",
-      model: "qwen3.8-max",
-      adapter: "kimi",
-      reason: "A short writing task suits a direct model.",
-      difficulty: "easy",
-      candidates: 2,
-    });
-    expect(routing.fallback).toBeUndefined();
-
-    // The table it read: only what is under the ceiling, with the track record.
-    const user = (llm.calls[0]!.body.messages as Array<{ content: string }>)[1]!.content;
-    expect(user).toContain("kimi | Kimi K3 | kimi-k3 | $0.0050 | 90% | 10 | 88 | 91 | yes");
-    expect(user).not.toContain("claude-code");
-    expect(user).toContain("$0.0500");
-  });
-
-  it("falls back to price when the pick is not a live candidate", async () => {
-    const llm = stubLlm({ json: { adapter: "claude-code", reason: "Big job.", difficulty: "hard" } });
-    const routing = await new QwenRouter({ client: client("qwen", llm.fetch) }).route(
-      { prompt: "Build a compiler", maxPriceUsdMicros: 50_000 },
-      CANDIDATES,
-    );
-    expect(routing).toMatchObject({ adapter: null, fallback: "invalid", difficulty: null });
-    expect(routing.reason).toMatch(/picked "claude-code".*matched on price instead/);
-  });
-
-  it("falls back on malformed output and on a timeout", async () => {
-    const bad = await new QwenRouter({
-      client: client("qwen", stubLlm({ json: { adapter: "kimi", reason: "x", difficulty: "galaxy-brain" } }).fetch),
-    }).route({ prompt: "p", maxPriceUsdMicros: 50_000 }, CANDIDATES);
-    expect(bad).toMatchObject({ adapter: null, fallback: "invalid" });
-
-    const slow = await new QwenRouter({ client: client("qwen", stubLlm({ hang: "honour-abort" }).fetch, 50) }).route(
-      { prompt: "p", maxPriceUsdMicros: 50_000 },
-      CANDIDATES,
-    );
-    expect(slow).toMatchObject({ adapter: null, fallback: "timeout" });
-    expect(slow.reason).toMatch(/timed out after 50ms/);
-
-    const down = await new QwenRouter({ client: client("qwen", stubLlm({ status: 503, text: "overloaded" }).fetch) }).route(
-      { prompt: "p", maxPriceUsdMicros: 50_000 },
-      CANDIDATES,
-    );
-    expect(down).toMatchObject({ adapter: null, fallback: "error" });
-  });
-
-  it("keeps the candidate's own spelling of the adapter", async () => {
-    const llm = stubLlm({ json: { adapter: "KIMI", reason: "ok", difficulty: "Medium" } });
-    const routing = await new QwenRouter({ client: client("qwen", llm.fetch) }).route(
-      { prompt: "p", maxPriceUsdMicros: 50_000 },
-      CANDIDATES,
-    );
-    expect(routing).toMatchObject({ adapter: "kimi", difficulty: "medium" });
-  });
-
-  it("caps the table it sends", () => {
-    const many = Array.from({ length: 40 }, (_, i) => ({ ...CANDIDATES[0]!, displayName: `node ${i}` }));
-    const table = candidateTable(many);
-    expect(table.split("\n")).toHaveLength(1 + 24 + 1);
-    expect(table).toContain("16 more rows omitted");
   });
 });
 
@@ -616,15 +560,19 @@ describe("createAiHooks", () => {
       enabled: true,
       provider: "qwen",
       label: "Qwen 3.8 Max",
-      timeoutMs: 6_000,
+      timeoutMs: 15_000,
     });
-    expect(hooks.screener!.info).toMatchObject({ by: "hunyuan", model: "hy4-preview", timeoutMs: 5_000 });
+    expect(hooks.screener!.info).toMatchObject({ by: "hunyuan", model: "hy4-preview", timeoutMs: 8_000 });
     expect(hooks.screener!.failMode).toBe("closed");
     expect(hooks.verifier!.info).toMatchObject({ by: "kimi", model: "kimi-k3", timeoutMs: 20_000 });
     expect(hooks.verifier!.feedback!.address).toBe(verifierAccount.address);
 
     const report = hooks.report!();
-    expect(report.screener).toMatchObject({ enabled: true, failMode: "closed", reason: null });
+    expect(report.screener).toMatchObject({ enabled: true, failMode: "closed", reason: null, reasoning: "low" });
+    expect(report.router).toMatchObject({
+      timeoutMs: 15_000,
+      agent: { maxTurns: 4, maxToolCalls: 6, thinking: true, thinkingBudget: 256 },
+    });
     expect(report.verifier.feedback).toMatchObject({
       onChain: true,
       address: verifierAccount.address,
@@ -650,6 +598,59 @@ describe("createAiHooks", () => {
     expect(report.router.reason).toMatch(/XORV_ROUTER=off/);
     expect(report.verifier.feedback).toMatchObject({ onChain: false, address: null });
     expect(report.verifier.feedback!.reason).toMatch(/XORV_VERIFIER_KEY/);
+  });
+
+  it("reads the screen's deadline and reasoning effort from the environment (finding #51)", async () => {
+    const llm = stubLlm({ json: { verdict: "allow", category: "none", reason: "ok" } });
+    const hooks = createAiHooks({
+      ...base,
+      ai: { router: "off", screener: "auto", verifier: "off" },
+      env: { TOKENHUB_API_KEY: "k-000000", XORV_SCREENER_TIMEOUT_MS: "12000", XORV_SCREENER_REASONING: "high" },
+      fetch: llm.fetch,
+      log: quiet,
+    });
+    expect(hooks.screener!.timeoutMs).toBe(12_000);
+    await hooks.screener!.screen({ prompt: "p", maxPriceUsdMicros: 1 });
+    expect(llm.calls[0]!.body).toMatchObject({ model: "hy4-preview", reasoning_effort: "high", response_format: { type: "json_object" } });
+
+    // The default asks TokenHub for low effort; "provider" sends no field at all.
+    const low = stubLlm({ json: { verdict: "allow", category: "none", reason: "ok" } });
+    await createAiHooks({ ...base, ai: { router: "off", screener: "auto", verifier: "off" }, env: { TOKENHUB_API_KEY: "k-000000" }, fetch: low.fetch, log: quiet })
+      .screener!.screen({ prompt: "p", maxPriceUsdMicros: 1 });
+    expect(low.calls[0]!.body.reasoning_effort).toBe("low");
+    const plain = stubLlm({ json: { verdict: "allow", category: "none", reason: "ok" } });
+    await createAiHooks({
+      ...base,
+      ai: { router: "off", screener: "auto", verifier: "off" },
+      env: { TOKENHUB_API_KEY: "k-000000", XORV_SCREENER_REASONING: "provider" },
+      fetch: plain.fetch,
+      log: quiet,
+    }).screener!.screen({ prompt: "p", maxPriceUsdMicros: 1 });
+    expect(plain.calls[0]!.body).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("reads the router's budget, caps and thinking switch, and keeps defaults for bad values", () => {
+    expect(routerSettings({})).toEqual({ budgetMs: 15_000, maxTurns: 4, maxToolCalls: 6, thinking: true, thinkingBudget: 256 });
+    expect(
+      routerSettings({
+        XORV_ROUTER_TIMEOUT_MS: "9000",
+        XORV_ROUTER_MAX_TURNS: "3",
+        XORV_ROUTER_MAX_TOOLS: "4",
+        XORV_ROUTER_THINKING: "off",
+        XORV_ROUTER_THINKING_BUDGET: "512",
+      }),
+    ).toEqual({ budgetMs: 9_000, maxTurns: 3, maxToolCalls: 4, thinking: false, thinkingBudget: 512 });
+    const log = vi.fn();
+    expect(routerSettings({ XORV_ROUTER_TIMEOUT_MS: "fast", XORV_ROUTER_MAX_TURNS: "40", XORV_ROUTER_THINKING: "maybe" }, log)).toMatchObject({
+      budgetMs: 15_000,
+      maxTurns: 4,
+      thinking: true,
+    });
+    expect(log).toHaveBeenCalledTimes(3);
+    expect(screenerSettings({ XORV_SCREENER_TIMEOUT_MS: "10", XORV_SCREENER_REASONING: "max" }, log)).toEqual({
+      timeoutMs: 8_000,
+      reasoning: "low",
+    });
   });
 
   it("honours the preset overrides for endpoint and model", async () => {

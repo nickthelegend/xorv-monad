@@ -84,6 +84,7 @@ import {
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
+  type ReputationSummary,
   type VaultWrite,
 } from "@xorv/protocol";
 import type { BrokerConfig } from "./config.js";
@@ -106,6 +107,8 @@ import { hookDeadline, withHookTimeout, type AiHooks, type JobVerifier } from ".
 import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/feedback.js";
 import { verifiable } from "./ai/verifier.js";
 import type { RouteCandidate, RoutingRecord, ScreeningRecord, VerificationRecord } from "./ai/types.js";
+import { ReputationBook } from "./ai/reputation-book.js";
+import { createRouterData } from "./ai/router-data.js";
 import { VaultStore } from "./vaults.js";
 import { createNansenTrust, publicRelatedCheck, refusalMessage, type NansenTrust } from "./trust/index.js";
 import {
@@ -182,6 +185,11 @@ export interface AppDeps {
   ) => Promise<SettlementStatus>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
+  /**
+   * ERC-8004 Reputation Registry `getSummary(agentId, clients, tag1)`, for the
+   * router's erc8004_reputation tool. Defaults to a read over RPC; tests stub it.
+   */
+  reputationSummary?: (agentId: string, clients: string[], tag1: string) => Promise<ReputationSummary>;
   /** Private-job history vaults; defaults to an in-memory store. */
   vaults?: VaultStore;
   /**
@@ -197,8 +205,16 @@ export function createApp(deps: AppDeps) {
   const vaults = deps.vaults ?? new VaultStore();
   const trust =
     deps.trust ?? createNansenTrust(config.nansen, { log: (line) => console.log(`[broker] ${line}`) });
-  // The matcher breaks price ties on reliability nudged by wallet trust.
+  // The matcher breaks price ties on reliability nudged by wallet trust…
   registry.setTrustScorer((address) => trust.matchScore(address));
+  // …and by reputation: buyer ratings and verifier scores from the Envio
+  // indexer when one is configured, from this broker's own jobs otherwise.
+  const reputation = new ReputationBook({
+    indexer: config.indexerUrl ? { url: config.indexerUrl } : null,
+    jobs: () => jobs.list({ limit: 2_000 }),
+    log: (line) => console.warn(line),
+  });
+  registry.setReputationScorer((provider) => reputation.score(provider.id));
   // And only offers providers that can actually be handed the job.
   registry.setEligibility((id) => deps.getHub()?.isConnected(id) ?? false);
   const app = new Hono();
@@ -236,6 +252,22 @@ export function createApp(deps: AppDeps) {
 
   const lookupAgentWallet =
     deps.agentWallet ?? ((agentId: string) => getAgentWallet(config.network, agentId));
+
+  /**
+   * What the router's tools read: ERC-8004 on Monad, XorvLedger receipts
+   * (indexer first, RPC fallback), Envio provider aggregates and the public
+   * Nansen trust view. Built once; its reads are cached for a few seconds.
+   */
+  const routerData = createRouterData({
+    network: config.network,
+    ledgerAddress: chain.ledgerAddress,
+    verifierAddress: () => deps.ai?.verifier?.feedback?.address ?? null,
+    reader,
+    indexer: config.indexerUrl ? { url: config.indexerUrl } : null,
+    trust,
+    agentWallet: lookupAgentWallet,
+    reputationSummary: deps.reputationSummary,
+  });
 
   const lookupAuthorizes =
     deps.agentAuthorizes ??
@@ -874,19 +906,41 @@ export function createApp(deps: AppDeps) {
     }
 
     // 3. The router, when the buyer left the adapter open and there is a real
-    //    choice to make. Its pick is checked against the live candidates (all
-    //    under the ceiling); the matcher then picks the node for that adapter.
+    //    choice to make: Qwen reads the candidates' on-chain reputation,
+    //    receipts, indexer stats and wallet trust with its tools and picks a
+    //    provider. The pick is checked against the live candidates (all under
+    //    the ceiling) here too; without one the matcher chooses — cheapest,
+    //    then reputation and reliability.
     const router = deps.ai?.router;
     let routing: RoutingRecord | null = null;
-    if (router && !request.adapter && new Set(candidates.map((m) => m.capability.adapter)).size > 1) {
+    if (router && !request.adapter && candidates.length > 1) {
       routing = await withHookTimeout(
         "job router",
-        () => router.route(request, routeCandidates(candidates)),
+        () => router.route(request, routeCandidates(candidates), routerData),
         hookDeadline(router),
       );
     }
     let match: Match = candidates[0]!;
-    if (routing?.adapter) {
+    if (routing?.providerId) {
+      const { providerId, adapter } = routing;
+      const routed = candidates.find(
+        (m) => m.provider.id === providerId && (!adapter || m.capability.adapter === adapter),
+      );
+      if (routed) {
+        match = routed;
+      } else {
+        routing = {
+          ...routing,
+          providerId: null,
+          providerLabel: null,
+          agentId: null,
+          adapter: null,
+          difficulty: null,
+          fallback: "invalid",
+          reason: "the router's pick is no longer a live option within the ceiling — matched on price instead",
+        };
+      }
+    } else if (routing?.adapter) {
       const picked = routing.adapter;
       const routed = candidates.find((m) => m.capability.adapter === picked);
       if (routed) {
@@ -2019,34 +2073,33 @@ export function createApp(deps: AppDeps) {
   // -------------------------------------------------------------------------
 
   /**
-   * The live candidates as the router sees them: price and model, plus the
-   * provider's track record — success rate, mean buyer rating, mean Kimi
-   * score — and whether it holds an ERC-8004 identity.
+   * The live candidates as the router's list_candidates tool shows them, in
+   * matcher order: the provider and its offer, liveness, and the track record
+   * the broker already holds — success rate, and mean buyer rating and Kimi
+   * score (indexed when the Envio indexer is configured, else from memory).
    */
   function routeCandidates(matches: Match[]): RouteCandidate[] {
-    const quality = new Map<string, { rating: number[]; verified: number[] }>();
-    const ids = new Set(matches.map((m) => m.provider.id));
-    for (const job of jobs.list({ limit: 2_000 })) {
-      if (!job.providerId || !ids.has(job.providerId)) continue;
-      const q = quality.get(job.providerId) ?? { rating: [], verified: [] };
-      if (job.rating) q.rating.push(job.rating.value);
-      if (job.verification) q.verified.push(job.verification.score);
-      quality.set(job.providerId, q);
-    }
-    const mean = (xs: number[] | undefined) => (xs && xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+    const now = Date.now();
     return matches.map(({ provider, capability }) => {
       const { jobsCompleted, jobsFailed } = provider.stats;
       const total = jobsCompleted + jobsFailed;
-      const q = quality.get(provider.id);
+      const rep = reputation.entry(provider.id);
       return {
+        providerId: provider.id,
+        label: provider.label,
+        address: provider.address,
+        agentId: provider.agentId,
+        capabilityId: capability.id,
         adapter: capability.adapter,
         displayName: capability.displayName,
         model: capability.model ?? null,
         priceUsdMicros: capability.priceUsdMicros,
+        liveness: provider.status === "busy" ? "busy" : "online",
+        heartbeatAgeS: Math.max(0, Math.round((now - provider.lastHeartbeatAt) / 1000)),
         successRate: total === 0 ? null : jobsCompleted / total,
         jobs: total,
-        avgRating: mean(q?.rating),
-        avgVerified: mean(q?.verified),
+        avgRating: rep?.avgRating ?? null,
+        avgVerified: rep?.avgVerified ?? null,
         hasAgent: provider.agentId !== null,
       };
     });

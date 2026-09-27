@@ -32,6 +32,7 @@ import {
   openResult,
   sealResult,
   signVaultWrite,
+  resolvePreset,
   textHash,
   toBase64Url,
   type LedgerEventKind,
@@ -48,6 +49,7 @@ import { openPersistence } from "../src/store.js";
 import { VaultStore } from "../src/vaults.js";
 import type { RoutingRecord, ScreeningRecord, VerificationRecord } from "../src/ai/types.js";
 import type { AiHooks } from "../src/ai-hooks.js";
+import { QwenRouter, RoleClient } from "../src/ai/index.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any;
@@ -436,6 +438,77 @@ describe("a private job", () => {
     const one = (await (await fetch(`${h.base}/api/jobs/${paid.jobId}`)).json()) as Json;
     expect(one.job.routing).toMatchObject({ adapter: "codex", reason: "withheld for a private job", difficulty: null });
     expect(one.job.screening).toMatchObject({ verdict: "allow", category: "none", reason: "withheld for a private job" });
+    const list = await (await fetch(`${h.base}/api/jobs`)).text();
+    const snapshot = await (await fetch(`${h.base}/api/jobs/${paid.jobId}/stream`)).text();
+    for (const body of [JSON.stringify(one), list, snapshot]) expect(body).not.toContain(SECRET);
+    a.close();
+    b.close();
+  });
+
+  it("serves the agent router's trace on a private job, but never what the model wrote about the prompt", async () => {
+    // The real tool-using router, with a Qwen that tries to smuggle the prompt
+    // into its tool arguments and its reason.
+    await h.stop();
+    let n = 0;
+    const call = (name: string, args: Json) => ({ id: `c${++n}`, type: "function", function: { name, arguments: JSON.stringify(args) } });
+    const bodies: Json[] = [];
+    const qwenFetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Json;
+      bodies.push(body);
+      const results = (body.messages as Json[]).filter((m) => m.role === "tool");
+      let message: Json;
+      if (results.length === 0) message = { role: "assistant", content: null, tool_calls: [call("list_candidates", {})] };
+      else {
+        const rows = JSON.parse(results[0].content).candidates as Json[];
+        const codex = rows.find((r) => r.adapter === "codex");
+        message =
+          results.length === 1
+            ? {
+                role: "assistant",
+                content: null,
+                tool_calls: [call("recent_receipts", { providerId: `the ${SECRET} memo` }), call("nansen_trust", { providerId: codex.providerId })],
+              }
+            : {
+                role: "assistant",
+                content: null,
+                tool_calls: [call("select_provider", { providerId: codex.providerId, reason: `Codex writes the ${SECRET} memo best.`, difficulty: "hard" })],
+              };
+      }
+      return new Response(JSON.stringify({ model: "qwen3.8-max", choices: [{ message }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    const client = new RoleClient({
+      role: "router",
+      preset: resolvePreset("qwen", { XORV_QWEN_API_KEY: "sk-test-qwen-000000" }),
+      timeoutMs: 5_000,
+      fetch: qwenFetch,
+    });
+    h = await boot({ ai: { router: new QwenRouter({ client, log: () => undefined }) } });
+    const a = await provider(h, "node-a", "echo");
+    const b = await provider(h, "node-b", "codex");
+    const q = await quote(h, { encryptTo: INBOX.encryptTo });
+    expect(q.status).toBe(200);
+    // The router read the prompt (routing needs it) and the buyer's quote explains itself…
+    expect(bodies[0].messages[1].content).toContain(SECRET);
+    expect(q.body.routing).toMatchObject({ adapter: "codex", difficulty: "hard" });
+    expect(q.body.routing.reason).toContain(SECRET);
+    // …but the trace never carried the model's words, even in the buyer's own copy.
+    expect(q.body.routing.steps.map((st: Json) => st.tool)).toEqual(["list_candidates", "recent_receipts", "nansen_trust", "select_provider"]);
+    expect(JSON.stringify(q.body.routing.steps)).not.toContain(SECRET);
+    expect(q.body.routing.steps[1]).toMatchObject({ args: { providerId: "(not a candidate)" }, ok: false });
+
+    const res = await h.paidFetch(q.body.payUrl.replace("http://broker.test", h.base), { method: "POST" });
+    const paid = (await res.json()) as Json;
+    const job = await waitFor(() => b.dispatched[0]);
+    b.send({ type: "job.result", jobId: job.jobId, result: sealResult(INBOX.encryptTo, ANSWER, job.jobId), durationMs: 50 });
+    await waitFor(() => (h.jobs.get(paid.jobId)?.status === "completed" ? true : null));
+
+    const one = (await (await fetch(`${h.base}/api/jobs/${paid.jobId}`)).json()) as Json;
+    // Public reads keep the trace — what the router looked at is public data — and withhold the reason.
+    expect(one.job.routing).toMatchObject({ adapter: "codex", reason: "withheld for a private job", difficulty: null, turns: 3 });
+    expect(one.job.routing.steps).toHaveLength(4);
     const list = await (await fetch(`${h.base}/api/jobs`)).text();
     const snapshot = await (await fetch(`${h.base}/api/jobs/${paid.jobId}/stream`)).text();
     for (const body of [JSON.stringify(one), list, snapshot]) expect(body).not.toContain(SECRET);

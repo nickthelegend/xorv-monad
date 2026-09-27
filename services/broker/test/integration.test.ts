@@ -323,6 +323,11 @@ async function boot(
     settlementStatus: async () => settle.status,
     ai: opts.ai,
     trust: opts.trust,
+    // The router's erc8004_reputation tool: buyer ratings via the ledger, verifier scores via its EOA.
+    reputationSummary: async (_agentId, _clients, tag1) =>
+      tag1 === "starred"
+        ? { count: 5, summaryValue: "92", summaryValueDecimals: 0, average: 92 }
+        : { count: 3, summaryValue: "88", summaryValueDecimals: 0, average: 88 },
   });
 
   const server = serve({ fetch: app.fetch, port: 0 }) as unknown as Server;
@@ -1840,7 +1845,8 @@ describe("with no facilitator key", () => {
 /** A scripted answer per role: an object (sent as the JSON reply) or raw text (malformed on purpose). */
 interface AiScript {
   screen?: unknown;
-  route?: unknown;
+  /** The router answers per turn: a function of the request body, returning an assistant message. */
+  route?: (body: Json) => Json;
   verify?: unknown;
 }
 
@@ -1873,8 +1879,11 @@ function scriptedAi(script: AiScript, opts: { failMode?: "open" | "closed" } = {
     const role = url.includes("tokenhub") ? "screen" : url.includes("dashscope") ? "route" : "verify";
     calls[role].push(body);
     const answer = script[role];
-    const content = typeof answer === "string" ? answer : JSON.stringify(answer ?? {});
-    return new Response(JSON.stringify({ model: body.model, choices: [{ message: { role: "assistant", content } }] }), {
+    const message =
+      typeof answer === "function"
+        ? { role: "assistant", ...(answer as (b: Json) => Json)(body) }
+        : { role: "assistant", content: typeof answer === "string" ? answer : JSON.stringify(answer ?? {}) };
+    return new Response(JSON.stringify({ model: body.model, choices: [{ message }] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -1893,6 +1902,28 @@ function scriptedAi(script: AiScript, opts: { failMode?: "open" | "closed" } = {
 }
 
 const ALLOW = { verdict: "allow", category: "none", reason: "An ordinary writing task." };
+
+/**
+ * A scripted Qwen agent: lists the candidates, reads the chosen one's
+ * ERC-8004 reputation and receipts, then selects it. `pick` chooses from the
+ * list_candidates rows; returning an id that isn't there exercises the checks.
+ */
+function qwenAgent(pick: (rows: Json[]) => { providerId: string; agentId?: string | null }, reason = "A short writing task suits a direct model.") {
+  let n = 0;
+  const call = (name: string, args: Json) => ({ id: `call_${++n}`, type: "function", function: { name, arguments: JSON.stringify(args) } });
+  return (body: Json): Json => {
+    const results = (body.messages as Json[]).filter((m) => m.role === "tool");
+    if (results.length === 0) return { content: null, reasoning_content: "Listing first.", tool_calls: [call("list_candidates", {})] };
+    const chosen = pick(JSON.parse(results[0].content).candidates as Json[]);
+    if (results.length === 1 && chosen.agentId) {
+      return {
+        content: null,
+        tool_calls: [call("erc8004_reputation", { agentId: chosen.agentId }), call("recent_receipts", { providerId: chosen.providerId })],
+      };
+    }
+    return { content: null, tool_calls: [call("select_provider", { providerId: chosen.providerId, reason, difficulty: "easy" })] };
+  };
+}
 
 async function quoteWith(target: Harness, body: Record<string, unknown>) {
   const res = await fetch(`${target.base}/api/quotes`, {
@@ -1951,7 +1982,7 @@ describe("AI roles", () => {
   it("routes an Auto request with Qwen, then verifies the result with Kimi and writes it to ERC-8004", async () => {
     const s = scriptedAi({
       screen: ALLOW,
-      route: { adapter: "kimi", reason: "A short writing task suits a direct model.", difficulty: "easy" },
+      route: qwenAgent((rows) => rows.find((r) => r.adapter === "kimi")),
       verify: { score: 88, pass: true, rationale: "A correct haiku on topic.", flags: [] },
     });
     ai = await boot({ ai: s.ai });
@@ -1973,18 +2004,39 @@ describe("AI roles", () => {
     expect(q.routing).toMatchObject({
       by: "qwen",
       model: "qwen3.8-max",
+      providerId: kimi.providerId,
+      agentId: "7",
       adapter: "kimi",
       reason: "A short writing task suits a direct model.",
       difficulty: "easy",
       candidates: 2,
+      turns: 3,
+      toolCalls: 3,
+      thinking: true,
     });
     expect(typeof q.routing.ms).toBe("number");
     expect(q.screening).toMatchObject({ by: "hunyuan", verdict: "allow", category: "none" });
-    // The router saw both live options, with their prices, under the ceiling.
-    const table = s.calls.route[0].messages[1].content as string;
-    expect(table).toContain("echo | Echo (test) | - | $0.0010");
-    expect(table).toContain("kimi | kimi (test) | kimi-k3 | $0.0050");
-    expect(s.calls.route[0]).toMatchObject({ model: "qwen3.8-max", enable_thinking: false, response_format: { type: "json_object" } });
+    // The agent trace: what it read on Monad before it chose.
+    expect(q.routing.steps.map((st: Json) => st.tool)).toEqual([
+      "list_candidates",
+      "erc8004_reputation",
+      "recent_receipts",
+      "select_provider",
+    ]);
+    expect(q.routing.steps[0].summary).toBe("listed 2 live options from 2 providers under $0.0500 (echo, kimi)");
+    expect(q.routing.steps[1].summary).toMatch(
+      /^read agent #7's ERC-8004 reputation on Monad \(avg 92 from 5 buyer ratings; Kimi verifier 88 over 3 scores; agent wallet is the payout address\)$/,
+    );
+    expect(q.routing.steps[1].links[0].url).toMatch(/\/nft\/0x8004[0-9a-fA-F]+\/7$/);
+    expect(q.routing.steps[2].summary).toMatch(/no receipts on XorvLedger yet/);
+    // The router saw both live options, with their prices, under the ceiling, as a tool result.
+    const listed = JSON.parse(s.calls.route[1].messages.find((m: Json) => m.role === "tool").content);
+    expect(listed.candidates).toEqual([
+      expect.objectContaining({ providerId: cheap.providerId, adapter: "echo", price: "$0.0010" }),
+      expect.objectContaining({ providerId: kimi.providerId, adapter: "kimi", model: "kimi-k3", price: "$0.0050", agentId: "7" }),
+    ]);
+    expect(s.calls.route[0]).toMatchObject({ model: "qwen3.8-max", enable_thinking: true, thinking_budget: 256, tool_choice: "auto" });
+    expect(s.calls.route[0].response_format).toBeUndefined();
 
     const { body: paid } = await pay(ai, q.quoteId);
     await kimi.completeNextJob("Blocks every half second");
@@ -2048,21 +2100,23 @@ describe("AI roles", () => {
   }, 20_000);
 
   it("falls back to the price matcher when Qwen picks something that isn't live", async () => {
-    const s = scriptedAi({ screen: ALLOW, route: { adapter: "claude-code", reason: "Big job.", difficulty: "hard" } });
+    const s = scriptedAi({ screen: ALLOW, route: qwenAgent(() => ({ providerId: "prv_not_live" }), "Big job.") });
     ai = await boot({ ai: s.ai });
     const cheap = await connectProvider(ai, { label: "cheap", address: PAYEE_A, price: 1_000 });
     const kimi = await connectProvider(ai, { label: "kimi-node", address: PAYEE_B, price: 5_000, adapter: "kimi" });
     const { status, body: q } = await quoteWith(ai, { prompt: "Build me a compiler" });
     expect(status).toBe(200);
     expect(q.provider).toMatchObject({ id: cheap.providerId, adapter: "echo" });
-    expect(q.routing).toMatchObject({ by: "qwen", adapter: null, fallback: "invalid", difficulty: null });
+    expect(q.routing).toMatchObject({ by: "qwen", adapter: null, providerId: null, fallback: "invalid", difficulty: null, turns: 4 });
     expect(q.routing.reason).toMatch(/matched on price instead/);
+    // Retried: the made-up pick is on the trace, as "(not a candidate)", every time.
+    expect(q.routing.steps.filter((st: Json) => st.tool === "select_provider" && !st.ok)).toHaveLength(3);
     cheap.close();
     kimi.close();
   });
 
   it("leaves the choice to the buyer when they named an adapter", async () => {
-    const s = scriptedAi({ screen: ALLOW, route: { adapter: "kimi", reason: "x", difficulty: "easy" } });
+    const s = scriptedAi({ screen: ALLOW, route: qwenAgent((rows) => rows[0]) });
     ai = await boot({ ai: s.ai });
     const cheap = await connectProvider(ai, { label: "cheap", address: PAYEE_A, price: 1_000 });
     const kimi = await connectProvider(ai, { label: "kimi-node", address: PAYEE_B, price: 5_000, adapter: "kimi" });
@@ -2158,8 +2212,8 @@ describe("AI roles", () => {
     ai = await boot({ ai: s.ai });
     const net = (await (await fetch(`${ai.base}/api/network`)).json()) as Json;
     expect(net.ai).toEqual({
-      router: { by: "qwen", model: "qwen3.8-max", enabled: true, provider: "qwen", label: "Qwen 3.8 Max", timeoutMs: 6_000 },
-      screener: { by: "hunyuan", model: "hy4-preview", enabled: true, provider: "hunyuan", label: "Hunyuan hy4", timeoutMs: 5_000 },
+      router: { by: "qwen", model: "qwen3.8-max", enabled: true, provider: "qwen", label: "Qwen 3.8 Max", timeoutMs: 15_000 },
+      screener: { by: "hunyuan", model: "hy4-preview", enabled: true, provider: "hunyuan", label: "Hunyuan hy4", timeoutMs: 8_000 },
       verifier: { by: "kimi", model: "kimi-k3", enabled: true, provider: "kimi", label: "Kimi K3", timeoutMs: 20_000 },
     });
     expect(net.aiRoles.screener).toMatchObject({ enabled: true, failMode: "open", stats: { calls: 0 } });

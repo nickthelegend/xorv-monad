@@ -2,8 +2,8 @@
  * Where the AI roles plug into the job loop.
  *
  * Three sponsor models take a turn on every job — Hunyuan screens the prompt
- * before any provider sees it, Qwen picks an adapter when the buyer chose
- * "Auto", Kimi scores the result and writes it to ERC-8004 as reputation
+ * before any provider sees it, Qwen reads Monad with its tools and picks the
+ * provider when the buyer chose "Auto", Kimi scores the result and writes it to ERC-8004 as reputation
  * feedback. The implementations live in src/ai/ (switched on per role with
  * XORV_SCREENER / XORV_ROUTER / XORV_VERIFIER and the provider's key); the
  * broker only knows these shapes and calls them at fixed points:
@@ -22,6 +22,7 @@
 import type { JobRequest } from "@xorv/protocol";
 import type { StoredJob } from "./jobs.js";
 import type { FeedbackSink } from "./ai/feedback.js";
+import type { RouterData } from "./ai/router-tools.js";
 import type {
   AiRoleName,
   AiRoleReport,
@@ -51,11 +52,14 @@ export interface JobScreener extends Role {
 
 export interface JobRouter extends Role {
   /**
-   * Suggest an adapter for a request that didn't name one, from the live
-   * candidates under the buyer's ceiling. A record with `adapter: null` (a
-   * fallback), a null, or a throw all leave the choice to price.
+   * Pick the provider (and with it the adapter) for a request that didn't
+   * name one, from the live candidates under the buyer's ceiling, reading
+   * `data` with its tools. A record with `providerId` and `adapter` null (a
+   * fallback), a null, or a throw all leave the choice to the matcher. A
+   * record with only `adapter` set (an older router) picks the adapter and
+   * leaves the node to the matcher.
    */
-  route(request: JobRequest, candidates: RouteCandidate[]): Promise<RoutingRecord | null>;
+  route(request: JobRequest, candidates: RouteCandidate[], data?: RouterData | null): Promise<RoutingRecord | null>;
 }
 
 export interface JobVerifier extends Role {
