@@ -6,7 +6,7 @@ origin). Doing them out of order means redeploying.
 
 | Piece | Runs on | Needs from earlier steps |
 |---|---|---|
-| XorvLedger contract | Monad testnet (Hardhat, `packages/contracts`) | funded operator key |
+| XorvLedger contract | Monad testnet (Hardhat, `packages/contracts`) | a funded deployer key, the operator's address, a cold owner address |
 | Broker | any host with Docker, or Node ≥ 22.13, behind public HTTPS | ledger address + deploy block |
 | Indexer | Envio Cloud (`services/indexer`) | ledger address + deploy block |
 | App + landing | Vercel, two projects (`apps/app`, `apps/landing`) | broker URL, ledger address |
@@ -38,16 +38,28 @@ pnpm setup:monad --new-keys   # prints fresh operator + facilitator keys; paste 
 
 ## 2. Deploy XorvLedger
 
-Set `XORV_BROKER_ADDRESS` in `.env` to the operator's address (the only EOA the
-ledger accepts writes from), then:
+Set two addresses in `.env`:
+
+- `XORV_BROKER_ADDRESS`: the operator's address, the only EOA the ledger
+  accepts writes from.
+- `XORV_LEDGER_OWNER`: an address the broker's host does **not** hold (a
+  hardware or multisig wallet). The owner is the only account that can rotate
+  the broker (`setBroker`) or hand over ownership, so it is how a leaked
+  operator key gets rotated out. It defaults to the deployer, and on Monad
+  testnet and mainnet the script refuses an owner that is the broker or the
+  operator key's address, so a plain operator-key deploy stops here until
+  you name one.
+
+Then:
 
 ```bash
 pnpm deploy:ledger
 ```
 
-It deploys with `XORV_DEPLOYER_KEY`, or the operator key when that's unset,
-prints the address and deploy block, and writes
-`packages/contracts/deployments/monadTestnet.json`. Paste the two values into
+It pays with `XORV_DEPLOYER_KEY` (environment, then the Hardhat keystore),
+or the operator key when neither has one; the deployer holds no role. It
+prints the deployer, broker and owner, the address and deploy block, and
+writes `packages/contracts/deployments/monadTestnet.json`. Paste the two values into
 `.env` as `XORV_LEDGER_ADDRESS` and `XORV_LEDGER_FROM_BLOCK`, and commit the
 deployments file (the script refuses to overwrite it later without
 `XORV_REDEPLOY=1`, because a new address orphans everything indexed under the
@@ -66,6 +78,7 @@ XORV_PUBLIC_URL=https://broker.example.com
 XORV_APP_URL=https://<app>.vercel.app          # step 5; the "web" service in agent files
 XORV_CORS_ORIGINS=https://<app>.vercel.app,https://<landing>.vercel.app
 XORV_TRUST_PROXY=1                             # behind a TLS-terminating proxy
+XORV_TRUSTED_HOPS=1                            # proxies in front; the client IP is read this many X-Forwarded-For entries from the right
 ```
 
 Then either:
@@ -132,7 +145,12 @@ after changing one). The `.env.example` in each app says what each one does.
 - App: `NEXT_PUBLIC_XORV_BROKER_URL`, `NEXT_PUBLIC_XORV_NETWORK=eip155:10143`,
   `NEXT_PUBLIC_PRIVY_APP_ID` (plus `NEXT_PUBLIC_PRIVY_CLIENT_ID` if the Privy
   app uses one); server-only `XORV_DEMO_PAYER_KEY` for "Pay from demo
-  account" (testnet only).
+  account" (testnet only). The demo routes are bounded without further
+  settings: per-IP and deployment-wide rate limits, one payment attempt per
+  quote, a per-job cap (`XORV_DEMO_MAX_USDC_UNITS`), a rolling 24 h cap
+  (`XORV_DEMO_DAILY_USDC_UNITS`, default 5000000 = $5), and ratings only
+  from the browser that paid (an HttpOnly receipt, HMAC-keyed from the demo
+  key unless `XORV_DEMO_RECEIPT_SECRET` is set).
 - Landing: `NEXT_PUBLIC_XORV_BROKER_URL`, `NEXT_PUBLIC_XORV_APP_URL`,
   `NEXT_PUBLIC_XORV_LEDGER_ADDRESS`, `NEXT_PUBLIC_XORV_NETWORK`.
 
@@ -166,10 +184,17 @@ On the machine that will sell capacity (install the CLI as in
 xorv init --broker https://broker.example.com
 xorv wallet                  # the payout address, with faucet links
 # send it a little MON: registering is the one transaction a provider pays for
-xorv identity register       # ERC-8004 agent, agentURI = <broker>/agents/<node>.json
+xorv identity register       # ERC-8004 agent, agentURI = <broker>/agents/<providerId>.json
 xorv identity show
 xorv start
 ```
+
+The agent URI names the provider id, never the node id: the node id is what
+the node registers with, so it stays off-chain. `xorv start` saves the
+session's bearer token to the node's config and presents it when it
+re-registers; a live session cannot be taken over without it (409
+`node_live`). A node restarted without its token waits out the old session
+once, then registers with a fresh one.
 
 ## 8. One paid job, and the hashes the submission needs
 
@@ -183,13 +208,16 @@ Then pay for one from the deployed app with a Privy login, and rate it.
 
 | Evidence | Where it comes from |
 |---|---|
-| XorvLedger deployment | `txHash` in `packages/contracts/deployments/monadTestnet.json` |
-| Provider ERC-8004 registration | `xorv identity register` output |
+| XorvLedger address and deployment | `address` and `txHash` in `packages/contracts/deployments/monadTestnet.json` (`pnpm deploy:ledger`) |
+| Provider ERC-8004 registration | `xorv identity register` output; `xorv identity show` prints the agent id |
 | x402 USDC settlement (buyer pays no gas) | `xorv run` output; `payment.txHash` on the job |
 | On-chain receipt (`recordJobs`) | `receiptTxHash` on the job, a few seconds after it finishes |
 | Buyer rating relayed to ERC-8004 (`rateJob`) | `rating.txHash` on the job |
 | Kimi verifier feedback | `verification.feedbackTxHash` (with `MOONSHOT_API_KEY` set) |
 | Privy embedded-wallet payment | the app job's `payment.txHash` |
+| Privy server-wallet payment (MCP agent) | `xorv_run_job`'s "Paid" explorer link, or `payment.txHash` on that job |
+| Nansen x402 payment (Monad **mainnet**) | `curl -s <broker>/api/network \| jq .nansen.lastPaidTx` with `XORV_NANSEN_MODE=live` and `XORV_NANSEN_PAYER_KEY` set, after a provider connects |
+| Envio GraphQL endpoint | the Envio Cloud dashboard, or `envio-cloud deployment endpoint <indexer> <commit>` (step 4) |
 
 The ledger's own history is at `https://testnet.monadscan.com/address/<XORV_LEDGER_ADDRESS>`
 and, through the broker, at `/api/ledger?kind=receipts` (or `ratings`,
