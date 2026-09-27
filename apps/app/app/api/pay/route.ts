@@ -9,9 +9,14 @@
  *
  * The flow is the same code the wallet path runs (`payQuote`), with a local
  * viem account as the signer: the same frozen-quote policy, the same refusal
- * decoding, a real EIP-3009 transfer settled on Monad. Two extra guards,
- * because this route is unauthenticated: it is testnet-only, and it will not
- * pay more than `XORV_DEMO_MAX_USDC_UNITS` for any one job.
+ * decoding, a real EIP-3009 transfer settled on Monad. Because this route is
+ * unauthenticated it is testnet-only, will not pay more than
+ * `XORV_DEMO_MAX_USDC_UNITS` for any one job, and is bounded by
+ * lib/server/demo-guard.ts: per-IP and deployment-wide rate limits, a rolling
+ * 24 h spend cap (`XORV_DEMO_DAILY_USDC_UNITS`), and one attempt per quote.
+ *
+ * A successful payment sets an HttpOnly demo receipt for the job (scoped to
+ * `/api/rate`), so only this browser can then rate it as the demo account.
  *
  * `GET` reports whether the demo account exists (and its address), so the
  * composer only offers the button when pressing it can work.
@@ -19,6 +24,15 @@
 
 import { NextResponse } from "next/server";
 import { loadDemoPayer } from "@/lib/server/demo-payer";
+import {
+  DEMO_RATING_WINDOW_MS,
+  clientIp,
+  dailyCapUnits,
+  demoGuards,
+  demoReceiptCookie,
+  isCookieSafeJobId,
+  mintDemoReceipt,
+} from "@/lib/server/demo-guard";
 import { PaymentError, classifyPaymentError, payQuote } from "@/lib/x402-pay";
 import { errorMessage } from "@/lib/errors";
 
@@ -53,10 +67,28 @@ function statusFor(err: PaymentError): number {
   }
 }
 
+function tooMany(retryAfterMs: number, message: string): NextResponse {
+  return NextResponse.json(
+    { error: message, kind: "rate_limited" },
+    { status: 429, headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) } },
+  );
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   const loaded = loadDemoPayer();
   if (!loaded.ok) return NextResponse.json({ error: loaded.error }, { status: loaded.status });
   const { account, network, brokerUrl, maxUsdcUnits } = loaded.payer;
+  const cap = dailyCapUnits();
+  if (cap === null) {
+    return NextResponse.json({ error: "XORV_DEMO_DAILY_USDC_UNITS must be a positive integer of USDC units." }, { status: 500 });
+  }
+  const guards = demoGuards(cap);
+
+  // Rate limits first: they cost nothing and don't depend on the body.
+  const perIp = guards.payPerIp.take(clientIp(request));
+  if (!perIp.ok) return tooMany(perIp.retryAfterMs, "Too many demo payments from this address — wait a few minutes, or log in and pay from your own wallet.");
+  const global = guards.payGlobal.take("*");
+  if (!global.ok) return tooMany(global.retryAfterMs, "The demo account is busy — try again in a few minutes, or log in and pay from your own wallet.");
 
   let body: { quoteId?: unknown; payTo?: unknown; usdcAmount?: unknown; network?: unknown };
   try {
@@ -83,6 +115,25 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
+  // One attempt per quote: a replay (or a burst of parallel requests) for the
+  // same quote never reaches the signer twice.
+  if (!guards.quotes.claim(quoteId)) {
+    return NextResponse.json(
+      { error: "The demo account has already tried to pay this quote. Request a new quote.", kind: "already_paid" },
+      { status: 409 },
+    );
+  }
+  const reserved = guards.spend.reserve(BigInt(usdcAmount));
+  if (!reserved.ok) {
+    return NextResponse.json(
+      {
+        error: "The demo account has reached its spending limit for today. Log in and pay from your own wallet.",
+        kind: "daily_cap",
+      },
+      { status: 429 },
+    );
+  }
+
   try {
     const result = await payQuote({
       quote: { quoteId, usdcAmount, payTo, network: typeof body.network === "string" ? body.network : null },
@@ -91,9 +142,24 @@ export async function POST(request: Request): Promise<NextResponse> {
       brokerUrl,
       maxUsdcUnits,
     });
-    return NextResponse.json({ ...result, demo: true });
+    const response = NextResponse.json({ ...result, demo: true });
+    // The demo receipt: proof, for /api/rate only, that this browser is the one
+    // the demo account just paid for. HttpOnly, so page scripts can't lift it.
+    if (isCookieSafeJobId(result.jobId)) {
+      response.cookies.set(demoReceiptCookie(result.jobId), mintDemoReceipt(loaded.payer.receiptSecret, result.jobId, Date.now()), {
+        httpOnly: true,
+        sameSite: "strict",
+        secure: process.env.NODE_ENV === "production",
+        path: "/api/rate",
+        maxAge: Math.floor(DEMO_RATING_WINDOW_MS / 1000),
+      });
+    }
+    return response;
   } catch (err) {
     const failure = err instanceof PaymentError ? err : classifyPaymentError(err);
+    // A classified refusal moved no money, so it doesn't count against the
+    // day's cap. "unknown" might have settled — keep it counted.
+    if (failure.kind !== "unknown") reserved.release();
     // "Your wallet has no USDC" is the wrong advice here — the visitor can't
     // top up the deployment's account — so say whose balance ran out.
     const message =

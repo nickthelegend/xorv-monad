@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { explorerAgent, explorerTx, sameAddress, shortHex } from "@xorv/protocol/web";
 import { asRatingSigner, useWallet } from "@/components/wallet-provider";
 import { BROKER_URL, type Job, type JobRating } from "@/lib/api";
@@ -33,8 +33,10 @@ import { cn } from "@/lib/utils";
  * work.
  *
  * Only the buyer can rate. When the demo account paid, the demo account
- * signs (server-side, /api/rate); when someone else's wallet paid, this says
- * so instead of offering a button that can only fail.
+ * signs (server-side, /api/rate) — but only for the browser that made that
+ * demo payment, within 30 minutes of it, which the route checks with an
+ * HttpOnly receipt and this asks about first; when someone else paid, this
+ * says so instead of offering a button that can only fail.
  *
  * And only an independent buyer: before relaying, the broker asks Nansen
  * whether the buyer's and the provider's wallets are the same party (one
@@ -51,6 +53,10 @@ export function RateJob({ job, onRated }: { job: Job; onRated: (rating: JobRatin
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<RatingReceipt | null>(null);
   const [refusal, setRefusal] = useState<TrustCheck | null>(null);
+  const demoRating = useDemoRating(
+    job.id,
+    Boolean(job.status === "completed" && job.payment && demo?.configured && sameAddress(demo.address, job.payment.payer)),
+  );
 
   const agentId = job.providerAgentId;
   const rated: JobRating | null =
@@ -86,11 +92,17 @@ export function RateJob({ job, onRated }: { job: Job; onRated: (rating: JobRatin
 
   const payer = job.payment.payer;
   const byWallet = Boolean(wallet.address && sameAddress(wallet.address, payer));
-  const byDemo = !byWallet && Boolean(demo?.configured && sameAddress(demo.address, payer));
+  const demoPaid = !byWallet && Boolean(demo?.configured && sameAddress(demo.address, payer));
+  const byDemo = demoPaid && demoRating?.canRate === true;
 
   let blocker: React.ReactNode = null;
   if (!agentId) {
     blocker = "This provider has no ERC-8004 identity yet, so there is no on-chain reputation to rate.";
+  } else if (demoPaid && !byDemo) {
+    blocker =
+      demoRating === null
+        ? "Checking whether this browser can rate as the demo account…"
+        : (demoRating.message ?? "Only the browser that paid for this job with the demo account can rate it.");
   } else if (!byWallet && !byDemo) {
     blocker = wallet.address ? (
       <>
@@ -217,6 +229,33 @@ export function RateJob({ job, onRated }: { job: Job; onRated: (rating: JobRatin
       {error ? <p className="mt-2.5 text-[12px] leading-relaxed text-fail">{error}</p> : null}
     </Panel>
   );
+}
+
+/**
+ * May this browser rate `jobId` as the demo account? Only /api/rate can say:
+ * the proof is an HttpOnly cookie set by the demo payment, invisible to page
+ * scripts. Null while asking (or when not asked).
+ */
+function useDemoRating(jobId: string, ask: boolean): { canRate: boolean; message?: string } | null {
+  const [state, setState] = useState<{ jobId: string; canRate: boolean; message?: string } | null>(null);
+  useEffect(() => {
+    if (!ask) return;
+    let alive = true;
+    fetch(`/api/rate?jobId=${encodeURIComponent(jobId)}`, { cache: "no-store" })
+      .then((res) => res.json() as Promise<{ canRate?: boolean; message?: string }>)
+      .then(
+        (body) => {
+          if (alive) setState({ jobId, canRate: body.canRate === true, message: body.message });
+        },
+        () => {
+          if (alive) setState({ jobId, canRate: false });
+        },
+      );
+    return () => {
+      alive = false;
+    };
+  }, [jobId, ask]);
+  return ask && state?.jobId === jobId ? state : null;
 }
 
 /** A rating that passed the wash-rating guard says so. */

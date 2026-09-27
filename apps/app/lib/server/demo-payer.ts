@@ -16,6 +16,7 @@
 import type { PrivateKeyAccount } from "viem";
 import { DEFAULT_NETWORK, accountFromKey, isSupportedNetwork, networkConfig, type MonadNetwork } from "@xorv/protocol/web";
 import { errorMessage } from "@/lib/errors";
+import { demoReceiptSecret } from "@/lib/server/demo-guard";
 
 /**
  * Default per-payment ceiling: $0.50 in USDC units — the composer's default
@@ -29,6 +30,12 @@ export interface DemoPayer {
   network: MonadNetwork;
   brokerUrl: string;
   maxUsdcUnits: string;
+  /**
+   * HMAC key for demo receipts (lib/server/demo-guard.ts): derived one-way
+   * from the key unless `XORV_DEMO_RECEIPT_SECRET` is set, so the key itself
+   * still never leaves this module.
+   */
+  receiptSecret: Buffer;
 }
 
 export type DemoPayerResult = { ok: true; payer: DemoPayer } | { ok: false; status: number; error: string };
@@ -77,5 +84,8 @@ export function loadDemoPayer(): DemoPayerResult {
     process.env.XORV_BROKER_URL?.trim() || process.env.NEXT_PUBLIC_XORV_BROKER_URL?.trim() || "http://localhost:8402"
   ).replace(/\/+$/, "");
 
-  return { ok: true, payer: { account, network, brokerUrl, maxUsdcUnits: BigInt(cap).toString() } };
+  return {
+    ok: true,
+    payer: { account, network, brokerUrl, maxUsdcUnits: BigInt(cap).toString(), receiptSecret: demoReceiptSecret(key) },
+  };
 }

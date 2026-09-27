@@ -52,6 +52,9 @@ const ADAPTERS: ModelOption[] = [
 
 type Busy = "unlocking" | "quoting" | "signing" | "settling" | "saving" | null;
 
+/** Refusals only the demo route gives: over the per-job cap, rate-limited, out of today's budget, or a quote it already tried. */
+type DemoRefusalKind = "over_cap" | "rate_limited" | "daily_cap" | "already_paid";
+
 /** How long a private job's history write may hold up the redirect to its page. */
 const HISTORY_SAVE_WAIT_MS = 8_000;
 
@@ -62,7 +65,7 @@ function paidAt(): number {
 
 interface PayFailure {
   message: string;
-  kind: PaymentFailureKind | "over_cap" | null;
+  kind: PaymentFailureKind | DemoRefusalKind | null;
   /** The demo account failed, not the visitor's wallet — different advice. */
   demo?: boolean;
 }
@@ -228,7 +231,7 @@ export function Composer() {
         jobId?: string;
         txHash?: string | null;
         error?: string;
-        kind?: PaymentFailureKind | "over_cap";
+        kind?: PaymentFailureKind | DemoRefusalKind;
       };
       if (!res.ok || !body.jobId) {
         setError({ message: body.error ?? `Payment failed (${res.status}).`, kind: body.kind ?? null, demo: true });
