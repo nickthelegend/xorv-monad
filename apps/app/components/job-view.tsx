@@ -14,6 +14,7 @@ import { RateJob } from "@/components/rate-job";
 import { PrivateTag } from "@/components/passkey-panel";
 import { PrivatePrompt, SealedResultSection } from "@/components/private-result";
 import { receiptMatchesCiphertext } from "@/lib/private/result";
+import { awaitingOnChain, followUpJob } from "@/lib/job-follow-up";
 import { cn } from "@/lib/utils";
 
 /**
@@ -64,6 +65,11 @@ function useClock(active: boolean): number | null {
  * `settlementTx` is the hash the payer's own x402 client got back, passed in
  * the URL by the composer, so the transfer is linkable on first paint even
  * before the broker's payment record reaches the stream.
+ *
+ * A finished job still has two things coming — the XorvLedger receipt and the
+ * verifier's ERC-8004 feedback — so a second effect polls for them once the
+ * job is terminal (lib/job-follow-up.ts), whether it finished while streaming
+ * or before the page was even rendered.
  */
 export function JobView({
   jobId,
@@ -82,11 +88,13 @@ export function JobView({
 
   const terminal = job ? TERMINAL.has(job.status) : false;
   const now = useClock(Boolean(job?.startedAt) && !job?.completedAt && !terminal);
+  const info = useNetworkInfo();
+  const verifierOn = Boolean(info?.ai.verifier);
+  const awaiting = job ? awaitingOnChain(job, verifierOn) : false;
 
   useEffect(() => {
     if (terminal) return;
     const source = new EventSource(`${BROKER_URL}/api/jobs/${encodeURIComponent(jobId)}/stream`);
-    let refetch: ReturnType<typeof setTimeout> | null = null;
 
     source.addEventListener("open", () => setStreaming(true));
     source.addEventListener("snapshot", (e) => {
@@ -104,20 +112,27 @@ export function JobView({
       if (next.events) setEvents(next.events);
       source.close();
       setStreaming(false);
-      // The ledger receipt is batched and written a beat after the job ends
-      // (and the verifier's feedback after that), so one delayed refetch turns
-      // "recording…" into real links without polling forever.
-      refetch = setTimeout(() => {
-        void api.job(jobId).then(setJob).catch(() => {});
-      }, 8_000);
     });
     source.addEventListener("error", () => setStreaming(false));
 
-    return () => {
-      source.close();
-      if (refetch) clearTimeout(refetch);
-    };
+    return () => source.close();
   }, [jobId, terminal]);
+
+  // Finished, but the receipt (or the verifier's feedback) isn't in yet: poll
+  // until it is, then stop. Keyed on `awaiting`, so the poll's own updates
+  // don't restart it and the one that fills the gap ends it.
+  useEffect(() => {
+    if (!awaiting) return;
+    return followUpJob({
+      jobId,
+      load: (id) => api.job(id),
+      onJob: (next) => {
+        setJob(next);
+        if (next.events) setEvents(next.events);
+      },
+      needsMore: (next) => awaitingOnChain(next, verifierOn),
+    });
+  }, [jobId, awaiting, verifierOn]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
