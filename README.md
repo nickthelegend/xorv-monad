@@ -29,9 +29,11 @@ facilitator submits and pays gas for. The broker only introduces the two parties
 money. Every paid job is written to the `XorvLedger` contract. The buyer rates it with a free EIP-712
 signature, and that rating becomes ERC-8004 reputation which only a paying buyer can give (and which
 the broker refuses to relay when Nansen links the buyer's wallet to the provider's). Three sponsor
-models sit in the core loop: Hunyuan screens every prompt, Qwen routes "Auto" jobs, and Kimi
-verifies results and writes its score on-chain. The broker itself is a paying agent too: it buys
-Nansen wallet data per call, over x402 on Monad, to score every provider's payout wallet.
+models sit in the core loop: Hunyuan screens every prompt, Qwen runs a tool-using agent that
+reads ERC-8004 reputation, XorvLedger receipts and Envio aggregates on Monad before it picks the
+provider for an "Auto" job, and Kimi verifies results and writes its score on-chain. The broker
+itself is a paying agent too: it buys Nansen wallet data per call, over x402 on Monad, to score
+every provider's payout wallet.
 
 ## Track 04: Trust, Identity & AI Infrastructure
 
@@ -64,7 +66,7 @@ layer, not a consumer app:
 pnpm install && pnpm build && pnpm test
 ```
 
-**1,038 tests pass** (counted on 2026-09-27 by running every workspace suite once, one after another,
+**1,184 tests pass** (counted on 2026-09-27 by running every workspace suite once, one after another,
 on Windows 11 with Node 22.21). A further 14 POSIX-only CLI cases (sandbox tiers and file modes) are
 skipped on Windows. They need **no keys, no RPC and no testnet funds**: the x402 facilitator and the
 XorvLedger writer are stubbed at the chain boundary, the contracts run on Hardhat's in-process chain
@@ -76,15 +78,15 @@ downloads the Solidity compiler through Hardhat. CI runs the same commands on No
 
 | Package | Tests | What they cover |
 |---|---:|---|
-| `packages/protocol` | 236 | Monad chain table, viem helpers and the signer lock, money math, the x402 facilitator and the quote-bound buyer client, the XorvLedger ABI and 100-block feed reader, ERC-8004 helpers, model presets and the SSE reader, private-job crypto (known-answer vectors, `node:crypto` cross-checks) |
-| `packages/contracts` | 47 | `XorvLedger` against the real ERC-8004 v2.0.0 registries, the ABI pin, the gas report, the Monad testnet fork config |
-| `packages/cli` | 245 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal; the earnings ledger |
-| `packages/mcp` | 82 | the real server over stdio against a mock broker that verifies signatures, the Privy signer with a fake client, the session budget, the Privy policy |
-| `packages/mm-plugin` | 71 | every `mm xorv` command on a mocked MetaMask context, the signer, the payment policy, the manifest |
-| `services/broker` | 264 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles, private jobs and vaults, Nansen trust signals over x402 and the wash-rating guard |
-| `apps/app` | 79 | the x402 payment helper, ratings, demo-payer guards, the Mera keyring with a synced authenticator, the Nansen trust panels |
-| `apps/landing` | 14 | the broker feed parsers |
-| **Total** | **1,038** | |
+| `packages/protocol` | 242 | Monad chain table, viem helpers and the signer lock, money math, the x402 facilitator and the quote-bound buyer client, the XorvLedger ABI and 100-block feed reader, ERC-8004 helpers, model presets and the SSE reader, private-job crypto (known-answer vectors, `node:crypto` cross-checks), the tool-calling chat turn |
+| `packages/contracts` | 60 | `XorvLedger` against the real ERC-8004 v2.0.0 registries, self-dealing refusals, EIP-7702 and ERC-1271 rating signatures, the ABI pin, the gas report, the Monad testnet fork config |
+| `packages/cli` | 253 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal; the earnings ledger |
+| `packages/mcp` | 83 | the real server over stdio against a mock broker that verifies signatures, the Privy signer with a fake client, the session budget, the Privy policy |
+| `packages/mm-plugin` | 74 | every `mm xorv` command on a mocked MetaMask context, the signer, the payment policy, the manifest |
+| `services/broker` | 343 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles including the agentic Qwen router's tool loop, private jobs and vaults, Nansen trust signals over x402 and the wash-rating guard, the review's security fixes (session-token re-registration, frame validation, streamed body limits, self-payment refusal) |
+| `apps/app` | 114 | the x402 payment helper, JSON-safe typed data for Privy, ratings, bounded demo routes, the Mera keyring with a synced authenticator, the Nansen trust panels, the router trace |
+| `apps/landing` | 15 | the broker feed parsers |
+| **Total** | **1,184** | |
 
 The Envio indexer (`services/indexer`) is outside the pnpm workspace because Envio ships no Windows
 binary. Its 52 tests run in a Linux container with the one command in
@@ -147,7 +149,7 @@ Service topics. None of that code remains on the payment path.
 | Privy | Embedded wallet created at login pays per job and signs gasless ratings. MCP agent buyer on a Privy server wallet bound to a signing policy. | `apps/app/components/{providers,wallet-provider}.tsx`, `packages/mcp/src/{signer,privy-policy}.ts` |
 | Nansen wallet trust | The broker pays Nansen per call over x402 on Monad mainnet; provider trust score, wash-rating guard, matching tie-breaker. | `services/broker/src/trust/`, `apps/app/components/trust.tsx`, [`docs/NANSEN.md`](docs/NANSEN.md) |
 | MetaMask Agent Wallet | `@xorv/mm-plugin`: `mm xorv providers/quote/run/job/rate`, signing only through `ctx.walletExecutor`, plus a companion agent skill. | `packages/mm-plugin/` |
-| Qwen 3.8 Max, Kimi K3, Hunyuan hy4 | Provider adapters (`qwen`, `kimi`, `hunyuan`, `qwen-code`) and the broker's core-loop roles: Hunyuan screens, Qwen routes, Kimi verifies and writes ERC-8004 feedback. | `packages/cli/src/adapters/{hosted,qwen-code}.ts`, `services/broker/src/ai/`, `packages/protocol/src/llm.ts` |
+| Qwen 3.8 Max, Kimi K3, Hunyuan hy4 | Provider adapters (`qwen`, `kimi`, `hunyuan`, `qwen-code`) and the broker's core-loop roles: Hunyuan screens, Qwen runs a tool loop over Monad data and picks the provider, Kimi verifies and writes ERC-8004 feedback. | `packages/cli/src/adapters/{hosted,qwen-code}.ts`, `services/broker/src/ai/`, `packages/protocol/src/llm.ts` |
 | Mera private jobs | Passkey-PRF keys in three namespaces. Results sealed on the provider to the buyer's inbox key. An encrypted history vault that decrypts on a second device. | `packages/protocol/src/{sealed,vault}.ts`, `apps/app/lib/private/`, [`docs/PRIVATE_JOBS.md`](docs/PRIVATE_JOBS.md) |
 | Bug fixes found during the port | Settlement used to run *after* dispatch, so a provider could work on a payment that never settled. A settlement was matched to "the latest unpaid job for this payee" and could swap two buyers' records; it is now matched by quote id. Reassignment kept stale timestamps, credited the wrong provider, and could resurrect a finished job. A double-click could settle one quote twice. Anyone who knew a public job id could cancel it; cancelling now needs a one-time token. Provider ids changed on every broker restart. The sandbox's deny rules missed a relocated `XORV_HOME`. | commits `fb7f041`, `b6e8ba6`, `2b3bdeb` |
 | Fixes from an adversarial review (52 confirmed findings) | Re-registering a live node needs its session token, and node ids stay off-chain (agent URIs use the provider id). The broker refuses self-payment, and `XorvLedger` refuses self-paid receipts and ratings from the agent's own wallets. The ledger owner is named at deploy (`XORV_LEDGER_OWNER`), never the broker key. EIP-7702 buyers can rate. The demo routes (`/api/pay`, `/api/rate`) are rate-limited, capped per day and receipt-gated. Vaults are disk-backed with byte caps. Plus Privy's sign modal, WebSocket frame validation, private-job redaction, the Nansen budget and more, listed in the [CHANGELOG](CHANGELOG.md#fixed-after-an-adversarial-review-52-confirmed-findings). | commits `7b6f014`…`c4f6d14` |
@@ -197,8 +199,10 @@ job. Monad does both, and it is EVM, so the standards already exist.
  buyer: web app + Privy · xorv run · MCP + Privy server wallet · mm xorv (MetaMask)
    │
    │ 1  POST /api/quotes ───────────► broker: Hunyuan screens the prompt (422 on block)
-   │                                          Qwen routes "Auto" among live adapters under the ceiling
-   │                                          matcher picks the node → frozen quote:
+   │                                          Qwen tool loop for "Auto": reads ERC-8004 reputation,
+   │                                          XorvLedger receipts, Envio stats, Nansen trust → picks
+   │                                          the provider (else the matcher, reputation tie-break)
+   │                                          → frozen quote:
    │ ◄── quote {provider 0x…, agentId, usdcAmount, accepts[]}, single-use, 5-min TTL
    │
    │ 2  POST /api/jobs/:quoteId ────► 402 PAYMENT-REQUIRED
@@ -307,7 +311,12 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
   `config.yaml`, `schema.graphql`, the handlers, and 52 handler/ABI/query tests.
 - **Code.** `services/indexer/` ([README](services/indexer/README.md)): `config.yaml`,
   `schema.graphql`, `src/handlers/*.ts`, `src/lib/{aggregates,trust,entities}.ts`, `src/queries.ts`.
-- **Not yet.** Quoting, matching and routing read the broker's own stats, not the indexer.
+- **It drives matching and routing too.** The Qwen router's `indexer_provider_stats` and
+  `recent_receipts` tools read the indexer while choosing a provider. When no router runs, the
+  deterministic matcher breaks price ties on reputation from the indexer: buyer ratings and Kimi
+  verifier scores, shrunk toward a neutral prior (`services/broker/src/ai/reputation-book.ts`, one
+  batched GraphQL query a minute at most). It falls back to the broker's own jobs when there is no
+  indexer.
 - **Deployment.** **TODO(deploy)**: the Envio Cloud GraphQL endpoint (`envio-cloud deployment endpoint
   <indexer> <commit>`). Envio Cloud's free plan keeps a deployment for 30 days, so it is deployed
   between Oct 10 and 13.
@@ -409,26 +418,46 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
 - **In the demo.** The private toggle, the passkey prompts, the sealed result decrypting in the tab,
   then the same fingerprints and history on a second device.
 
-### Qwen 3.8 Max: the job router, and two adapters
+### Qwen 3.8 Max: an agent that reads Monad before it routes a job
 
 > **Bounty card** (Alibaba Cloud · Trust, Identity & AI Infrastructure · $5,000 in credits): "Push
 > Qwen 3.8 Max into genuinely agentic territory on Monad."
 
-*Section finalized after the agentic router lands.* What follows is the router in this build.
-
-- **What it does.** When a buyer picks **Auto** and at least two adapters are live under the ceiling,
-  the broker asks `qwen3.8-max` (thinking off, JSON mode) to choose the adapter. It sees the prompt
-  and a table of live candidates: price, success rate, mean rating, mean Kimi score, ERC-8004
-  identity. The pick must be one of those candidates, and the price matcher still chooses the node,
-  so the router cannot steer a job to a particular provider or above the ceiling. If Qwen times out,
-  errors, returns bad JSON or picks something off the table, the deterministic matcher takes over
-  and the job records `routing.fallback`. Providers can also **sell** Qwen through the `qwen`
-  adapter (streams reasoning and token cost) or the `qwen-code` adapter (drives the Qwen Code CLI
-  with tools).
-- **Code.** `services/broker/src/ai/router.ts`, `packages/protocol/src/llm.ts` (`LLM_PRESETS.qwen`),
-  `packages/cli/src/adapters/hosted.ts`, `packages/cli/src/adapters/qwen-code.ts`.
-- **In the demo.** The quote card reads "Routed by Qwen 3.8 Max to kimi (easy): …", and the job page's
-  *Network checks* panel repeats it.
+- **What it does.** When a buyer picks **Auto** and more than one live option fits under the ceiling,
+  `qwen3.8-max` runs a bounded tool loop and chooses the **provider** that runs the job, not just the
+  adapter. Its tools read Monad state:
+  - `list_candidates`: the live, matchable providers under the buyer's ceiling (adapter, model,
+    price, liveness, success stats, ERC-8004 agent id).
+  - `erc8004_reputation(agentId)`: `getSummary` on the ERC-8004 **Reputation registry** for the
+    XorvLedger client (payment-backed buyer ratings) and the verifier client (Kimi scores), plus the
+    **Identity registry**'s agent-wallet check.
+  - `recent_receipts(providerId)`: the provider's `JobRecorded` / `JobRated` events on **XorvLedger**,
+    through the broker's ledger reader (Envio first, RPC fallback).
+  - `indexer_provider_stats(providerId)`: the **Envio** indexer's `Provider` and `Agent` aggregates
+    (success rate, average rating, earnings, verified score). It says so when no indexer is set.
+  - `nansen_trust(providerId)`: the public view of the payout wallet's **Nansen** trust signal.
+  - `select_provider({providerId, reason})`: the terminal pick.
+- **Bounded and checked.** At most 4 model turns and 6 reads inside a 15 s budget
+  (`XORV_ROUTER_TIMEOUT_MS`). Every read has its own timeout and a short cache. Thinking is on, with a
+  256-token budget (`XORV_ROUTER_THINKING_BUDGET`). Model Studio documents non-streaming thinking for
+  the commercial `qwen3.8-max`, and `tool_choice` stays `auto` because Qwen refuses `required` while
+  thinking. The pick must be a live candidate under the ceiling, and a made-up one gets one retry. A
+  timeout, provider error or invalid pick records `routing.fallback`, and the deterministic matcher
+  takes over.
+- **Visible.** `routing.steps` records every tool call with validated ids, a templated summary and
+  explorer links (for example, "read agent #12's ERC-8004 reputation on Monad (avg 92 from 5 buyer
+  ratings)"). The quote card and the job page render it as an agent trace. Nothing the model writes
+  reaches the trace, and a private job's public record withholds the model's reason.
+- **Also sold as capacity.** Providers can sell Qwen through the `qwen` adapter (streams reasoning and
+  token cost) or the `qwen-code` adapter (drives the Qwen Code CLI with tools).
+- **Code.** `services/broker/src/ai/router.ts`, `router-tools.ts`, `router-data.ts`,
+  `apps/app/components/routing-trace.tsx`, `apps/app/lib/ai.ts`, `packages/protocol/src/llm.ts`
+  (`LLM_PRESETS.qwen`, the tool-calling chat turn), `packages/cli/src/adapters/{hosted,qwen-code}.ts`.
+  Tests: `services/broker/test/ai.test.ts` (multi-turn tool loop, each tool's data mapping, invalid
+  pick, timeout and turn caps, private jobs), `apps/app/test/ai.test.ts`, and the e2e harness's mock
+  Qwen driving the tool loop against the Monad fork.
+- **In the demo.** An Auto quote shows the trace: Qwen listing candidates, reading ERC-8004
+  reputation and XorvLedger receipts on Monad, then picking a provider.
 
 ### Also built (not entered: track-locked to other tracks)
 
