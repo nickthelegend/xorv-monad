@@ -10,7 +10,14 @@ import { describe, expect, it, vi } from "vitest";
 import { ContractFunctionRevertedError, encodeErrorResult, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { NO_AGENT, XORV_LEDGER_ABI, jobIdHash, providerIdHash, type JobReceiptStruct } from "@xorv/protocol";
-import { LedgerWriter, revertName, type PublishResult, type ReceiptInput } from "../src/chain.js";
+import {
+  LedgerWriter,
+  UnconfirmedWrite,
+  revertName,
+  type LedgerReads,
+  type PublishResult,
+  type ReceiptInput,
+} from "../src/chain.js";
 
 const LEDGER = "0x00000000000000000000000000000000000000Aa" as const;
 const PAYEE = "0x1111111111111111111111111111111111111111";
@@ -24,6 +31,7 @@ function writer(opts: {
   submit?: (fn: string, args: readonly unknown[]) => Promise<PublishResult>;
   ledger?: boolean;
   account?: boolean;
+  reads?: LedgerReads;
 }) {
   const calls: Call[] = [];
   let n = 0;
@@ -44,6 +52,7 @@ function writer(opts: {
       calls.push({ fn, args });
       return submit(fn, args);
     },
+    reads: opts.reads,
     log: (line) => logs.push(line),
   });
   return { w, calls, logs };
@@ -162,6 +171,81 @@ describe("receipt batching", () => {
     expect(w.lastPublishError()).toMatch(/DuplicateJob/);
     // The honest receipts still went out, in fewer calls than one-per-receipt.
     expect(calls.length).toBeGreaterThan(1);
+  });
+
+  describe("a receipt that already landed", () => {
+    const ORIGINAL = `0x${"33".repeat(32)}` as Hex;
+    const dupSubmit = (dup: Hex) => async (_fn: string, args: readonly unknown[]): Promise<PublishResult> => {
+      const batch = args[0] as JobReceiptStruct[];
+      if (batch.some((r) => r.jobId === dup)) throw revert("DuplicateJob", [dup]);
+      return { contract: LEDGER, txHash: `0x${"11".repeat(32)}`, explorerUrl: "x", blockNumber: "1" };
+    };
+    const reads = (over: Partial<LedgerReads> = {}): LedgerReads => ({
+      txStatus: async () => ({ status: "unknown" }),
+      recordedJob: async () => ({ buyer: BUYER, agentId: 0n }),
+      findRecorded: async () => ({ txHash: ORIGINAL, blockNumber: 5n }),
+      ...over,
+    });
+
+    it("is a success carrying the original transaction, not a failure", async () => {
+      // A retry after a restart or a timed-out wait: the ledger already holds
+      // this broker's receipt. Treating DuplicateJob as failure left the job
+      // without receiptTxHash forever, so it could never be rated.
+      const dup = jobIdHash("job_dup");
+      const { w } = writer({ submit: dupSubmit(dup), reads: reads() });
+      const [a, again] = await Promise.all([w.recordJob(receipt("job_a")), w.recordJob(receipt("job_dup"))]);
+      expect(a?.txHash).toBe(`0x${"11".repeat(32)}`);
+      expect(again).toMatchObject({ txHash: ORIGINAL, alreadyRecorded: true, blockNumber: "5" });
+    });
+
+    it("still counts as recorded when the original transaction is out of the search window", async () => {
+      const dup = jobIdHash("job_dup");
+      const { w } = writer({ submit: dupSubmit(dup), reads: reads({ findRecorded: async () => null }) });
+      expect(await w.recordJob(receipt("job_dup"))).toMatchObject({ txHash: "", alreadyRecorded: true });
+    });
+
+    it("stays a failure when the recorded receipt names another buyer", async () => {
+      const dup = jobIdHash("job_dup");
+      const other = "0x3333333333333333333333333333333333333333";
+      const { w } = writer({ submit: dupSubmit(dup), reads: reads({ recordedJob: async () => ({ buyer: other, agentId: 0n }) }) });
+      expect(await w.recordJob(receipt("job_dup"))).toBeNull();
+      expect(w.lastPublishError()).toMatch(/DuplicateJob/);
+    });
+  });
+
+  it("checks an unconfirmed batch before sending its receipts again", async () => {
+    const SENT = `0x${"44".repeat(32)}` as Hex;
+    let status: "pending" | "success" | "unknown" = "pending";
+    let failNext = true;
+    const { w, calls } = writer({
+      submit: async () => {
+        if (failNext) {
+          failNext = false;
+          throw new UnconfirmedWrite(SENT, new Error("timed out waiting for the receipt"));
+        }
+        return { contract: LEDGER, txHash: `0x${"55".repeat(32)}`, explorerUrl: "x", blockNumber: "9" };
+      },
+      reads: {
+        txStatus: async () => (status === "success" ? { status, blockNumber: 7n } : { status }),
+        recordedJob: async () => ({ buyer: BUYER, agentId: 0n }),
+        findRecorded: async () => null,
+      },
+    });
+    expect(await w.recordJob(receipt("job_a"))).toBeNull();
+    expect(calls).toHaveLength(1);
+    // Still pending: no second transaction on top of the first.
+    expect(await w.recordJob(receipt("job_a"))).toBeNull();
+    expect(calls).toHaveLength(1);
+    // It landed: that is the receipt.
+    status = "success";
+    expect(await w.recordJob(receipt("job_a"))).toMatchObject({ txHash: SENT, blockNumber: "7" });
+    expect(calls).toHaveLength(1);
+    // Dropped for good: send it again.
+    failNext = true;
+    expect(await w.recordJob(receipt("job_b"))).toBeNull();
+    status = "unknown";
+    expect(await w.recordJob(receipt("job_b"))).toMatchObject({ txHash: `0x${"55".repeat(32)}` });
+    expect(calls).toHaveLength(3);
   });
 
   it("records a receipt without its agent when the agent wallet no longer matches the payee", async () => {

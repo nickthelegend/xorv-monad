@@ -35,17 +35,21 @@
 import {
   BaseError,
   ContractFunctionRevertedError,
+  TransactionNotFoundError,
+  TransactionReceiptNotFoundError,
   type Address,
   type Hex,
   type PrivateKeyAccount,
   type Transport,
 } from "viem";
 import {
+  MAX_LOG_BLOCK_RANGE,
   NO_AGENT,
   XORV_LEDGER_ABI,
   explorerAddress,
   explorerTx,
   jobReceipt,
+  ledgerEventAbi,
   providerIdHash,
   registerProviderArgs,
   walletClientFor,
@@ -60,13 +64,53 @@ import {
 
 /** How long a write may wait for its receipt before it counts as failed. */
 const RECEIPT_TIMEOUT_MS = 30_000;
+/**
+ * How far back a receipt that reverted as a duplicate is looked for, in
+ * blocks (≈10 minutes of Monad). Duplicates come from this broker retrying
+ * its own receipt, so the original is recent; past this the receipt is still
+ * known to be recorded (`jobs(jobId)` says so), just without its tx hash.
+ */
+const DUPLICATE_SCAN_BLOCKS = 2_000;
 
 export interface PublishResult {
   /** The XorvLedger address the write went to. */
   contract: string;
+  /** Empty only for `alreadyRecorded` when the original transaction could not be found. */
   txHash: string;
   explorerUrl: string;
   blockNumber: string | null;
+  /**
+   * The receipt was recorded by an earlier transaction (a retry after a
+   * timeout or a restart reverted as `DuplicateJob`). `txHash` is that earlier
+   * transaction when it could be found.
+   */
+  alreadyRecorded?: boolean;
+}
+
+/**
+ * A write that was broadcast but whose inclusion could not be confirmed (the
+ * wait timed out, or the RPC failed mid-wait). It may still land, so its hash
+ * is kept: re-sending blindly would revert as a duplicate, at the full gas
+ * limit Monad bills, and sink any honest receipts batched with it.
+ */
+export class UnconfirmedWrite extends Error {
+  constructor(
+    readonly hash: Hex,
+    cause: unknown,
+  ) {
+    super(`transaction ${hash} was sent but not confirmed: ${describe(cause)}`);
+    this.name = "UnconfirmedWrite";
+  }
+}
+
+/** The chain reads that tell "already recorded" apart from "failed". Tests stub them. */
+export interface LedgerReads {
+  /** Where a sent transaction stands. `unknown` means the node has never heard of it (dropped). */
+  txStatus(hash: Hex): Promise<{ status: "success"; blockNumber: bigint } | { status: "reverted" | "pending" | "unknown" }>;
+  /** `XorvLedger.jobs(jobId)`: the recorded buyer (zero when no receipt landed) and agent. */
+  recordedJob(jobId: Hex): Promise<{ buyer: string; agentId: bigint }>;
+  /** The `JobRecorded` log for this job id among recent blocks, newest first, or null. */
+  findRecorded(jobId: Hex): Promise<{ txHash: Hex; blockNumber: bigint } | null>;
 }
 
 /** A liveness sample, in the units the contract takes. */
@@ -144,6 +188,10 @@ export interface LedgerWriterOptions {
    * splitting and fallbacks without an RPC; production leaves it unset.
    */
   submit?: (functionName: WriteFunction, args: readonly unknown[]) => Promise<PublishResult>;
+  /** Replace the chain reads (see `LedgerReads`); defaults to reads over the wallet's RPC. */
+  reads?: LedgerReads;
+  /** The ledger's deploy block: the duplicate-receipt search never looks below it. */
+  fromBlock?: bigint | null;
   log?: (line: string) => void;
 }
 
@@ -183,6 +231,10 @@ export class LedgerWriter implements ChainLike {
     ratings: 0,
   };
   private queue: QueuedReceipt[] = [];
+  private readonly reads: LedgerReads | null;
+  private readonly fromBlock: bigint | null;
+  /** Receipt batches that were sent but not confirmed, by receipt job id (bytes32). */
+  private readonly unconfirmed = new Map<string, Hex>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private flushing: Promise<void> | null = null;
   private closed = false;
@@ -200,6 +252,8 @@ export class LedgerWriter implements ChainLike {
       this.account && !opts.submit
         ? walletClientFor(opts.network, this.account, { rpcUrl: opts.rpcUrl, transport: opts.transport })
         : null;
+    this.fromBlock = opts.fromBlock ?? null;
+    this.reads = opts.reads ?? (this.wallet && this.ledgerAddress ? this.rpcReads(this.wallet, this.ledgerAddress) : null);
   }
 
   mode(): LedgerMode {
@@ -280,6 +334,14 @@ export class LedgerWriter implements ChainLike {
       this.recordError("recordJobs", err);
       return Promise.resolve(null);
     }
+    // An earlier batch carrying this receipt was sent but never confirmed.
+    // Find out what happened to it before sending the receipt again.
+    const sent = this.unconfirmed.get(struct.jobId.toLowerCase());
+    if (sent) return this.settleUnconfirmed(struct, sent);
+    return this.enqueue(struct);
+  }
+
+  private enqueue(struct: JobReceiptStruct): Promise<PublishResult | null> {
     return new Promise((resolve) => {
       this.queue.push({ struct, resolve });
       if (this.queue.length >= this.batchMax) {
@@ -292,6 +354,135 @@ export class LedgerWriter implements ChainLike {
         this.timer.unref?.();
       }
     });
+  }
+
+  /**
+   * A retry for a receipt whose earlier transaction was never confirmed:
+   * landed → answer with it; still pending → don't pile a second transaction
+   * on top (null, retried later); reverted or dropped → send it again.
+   */
+  private async settleUnconfirmed(struct: JobReceiptStruct, hash: Hex): Promise<PublishResult | null> {
+    const key = struct.jobId.toLowerCase();
+    let state: Awaited<ReturnType<LedgerReads["txStatus"]>>;
+    try {
+      if (!this.reads) throw new Error("no RPC to ask");
+      state = await this.reads.txStatus(hash);
+    } catch (err) {
+      this.recordError(`recordJobs (checking ${hash})`, err);
+      return null;
+    }
+    if (state.status === "success") {
+      this.unconfirmed.delete(key);
+      this.published.receipts += 1;
+      return this.resultFor(hash, state.blockNumber);
+    }
+    if (state.status === "pending") return null;
+    this.unconfirmed.delete(key);
+    return this.enqueue(struct);
+  }
+
+  /**
+   * A single receipt reverted as `DuplicateJob`: XorvLedger already holds a
+   * receipt for this job id. That is this broker's own earlier receipt — sent
+   * before a restart, or confirmed after the wait gave up — as long as the
+   * recorded buyer is this receipt's buyer, and then it is a success, not a
+   * failure: treating it as one left the job without a receipt forever, and
+   * so unratable, although the ledger had it.
+   */
+  private async alreadyRecorded(struct: JobReceiptStruct): Promise<PublishResult | null> {
+    if (!this.reads || !this.ledgerAddress) return null;
+    try {
+      const recorded = await this.reads.recordedJob(struct.jobId);
+      if (/^0x0{40}$/i.test(recorded.buyer) || recorded.buyer.toLowerCase() !== struct.buyer.toLowerCase()) return null;
+      const sent = this.unconfirmed.get(struct.jobId.toLowerCase());
+      if (sent) {
+        const state = await this.reads.txStatus(sent).catch(() => null);
+        if (state?.status === "success") {
+          this.unconfirmed.delete(struct.jobId.toLowerCase());
+          return { ...this.resultFor(sent, state.blockNumber), alreadyRecorded: true };
+        }
+      }
+      this.unconfirmed.delete(struct.jobId.toLowerCase());
+      const found = await this.reads.findRecorded(struct.jobId).catch(() => null);
+      if (found) return { ...this.resultFor(found.txHash, found.blockNumber), alreadyRecorded: true };
+      return { contract: this.ledgerAddress, txHash: "", explorerUrl: "", blockNumber: null, alreadyRecorded: true };
+    } catch (err) {
+      this.recordError(`recordJobs (checking ${struct.jobId})`, err);
+      return null;
+    }
+  }
+
+  private resultFor(hash: string, blockNumber: bigint | null): PublishResult {
+    return {
+      contract: this.ledgerAddress ?? "",
+      txHash: hash,
+      explorerUrl: explorerTx(this.network, hash),
+      blockNumber: blockNumber === null ? null : blockNumber.toString(),
+    };
+  }
+
+  /** The default `LedgerReads`, over the writer's own RPC. */
+  private rpcReads(wallet: XorvWalletClient, ledger: Address): LedgerReads {
+    const event = ledgerEventAbi("receipts");
+    return {
+      txStatus: async (hash) => {
+        const receipt = await wallet.getTransactionReceipt({ hash }).catch((err: unknown) => {
+          if (err instanceof TransactionReceiptNotFoundError) return null;
+          throw err;
+        });
+        if (receipt) {
+          return receipt.status === "success"
+            ? { status: "success", blockNumber: receipt.blockNumber }
+            : { status: "reverted" };
+        }
+        const tx = await wallet.getTransaction({ hash }).catch((err: unknown) => {
+          if (err instanceof TransactionNotFoundError) return null;
+          throw err;
+        });
+        return { status: tx ? "pending" : "unknown" };
+      },
+      recordedJob: async (jobId) => {
+        const [buyer, agentId] = (await wallet.readContract({
+          address: ledger,
+          abi: XORV_LEDGER_ABI,
+          functionName: "jobs",
+          args: [jobId],
+        })) as readonly [string, bigint, boolean];
+        return { buyer, agentId };
+      },
+      findRecorded: async (jobId) => {
+        // Public Monad RPCs cap eth_getLogs at 100 blocks, so walk back in
+        // windows, a few at a time, newest first.
+        const latest = await wallet.getBlockNumber();
+        const floor = [latest - BigInt(DUPLICATE_SCAN_BLOCKS) + 1n, this.fromBlock ?? 0n, 0n].reduce((a, b) =>
+          a > b ? a : b,
+        );
+        const windows: Array<[bigint, bigint]> = [];
+        for (let to = latest; to >= floor; ) {
+          const from = to - BigInt(MAX_LOG_BLOCK_RANGE) + 1n > floor ? to - BigInt(MAX_LOG_BLOCK_RANGE) + 1n : floor;
+          windows.push([from, to]);
+          to = from - 1n;
+        }
+        for (let i = 0; i < windows.length; i += 4) {
+          const results = await Promise.all(
+            windows
+              .slice(i, i + 4)
+              .map(([fromBlock, toBlock]) =>
+                wallet.getLogs({ address: ledger, event, args: { jobId }, fromBlock, toBlock } as never),
+              ),
+          );
+          for (const logs of results) {
+            const log = (logs as Array<{ transactionHash: Hex | null; blockNumber: bigint | null; removed?: boolean }>).find(
+              (l) => !l.removed && l.transactionHash && l.blockNumber !== null,
+            );
+            if (log?.transactionHash && log.blockNumber !== null) {
+              return { txHash: log.transactionHash, blockNumber: log.blockNumber };
+            }
+          }
+        }
+        return null;
+      },
+    };
   }
 
   flush(): Promise<void> {
@@ -349,6 +540,19 @@ export class LedgerWriter implements ChainLike {
         only.struct = { ...only.struct, agentId: NO_AGENT };
         await this.sendBatch([only]);
         return;
+      }
+      if (batch.length === 1 && only && reverted === "DuplicateJob") {
+        const landed = await this.alreadyRecorded(only.struct);
+        if (landed) {
+          this.log(`[ledger] receipt ${only.struct.jobId} was already recorded${landed.txHash ? ` in ${landed.txHash}` : ""}`);
+          only.resolve(landed);
+          return;
+        }
+      }
+      // Sent but not confirmed: it may still land, so remember the hash and
+      // check it before this receipt is ever sent again.
+      if (err instanceof UnconfirmedWrite) {
+        for (const item of batch) this.unconfirmed.set(item.struct.jobId.toLowerCase(), err.hash);
       }
       this.recordError(`recordJobs (${batch.length} receipt${batch.length === 1 ? "" : "s"})`, err);
       for (const item of batch) item.resolve(null);
@@ -441,7 +645,12 @@ export class LedgerWriter implements ChainLike {
       throw err;
     }
 
-    const receipt = await wallet.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
+    let receipt: Awaited<ReturnType<typeof wallet.waitForTransactionReceipt>>;
+    try {
+      receipt = await wallet.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
+    } catch (err) {
+      throw new UnconfirmedWrite(hash, err);
+    }
     if (receipt.status !== "success") {
       throw new Error(`${functionName} reverted on-chain (${hash})`);
     }

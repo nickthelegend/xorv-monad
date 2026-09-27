@@ -102,6 +102,17 @@ export interface StoredJob extends Job {
   verification?: VerificationRecord | null;
   /** The Nansen related-wallet check run before relaying the buyer's rating (src/trust/). */
   trustCheck?: RelatedCheck | null;
+  /**
+   * XorvLedger holds this job's receipt. Normally `receiptTxHash` says so;
+   * this also covers a receipt found already recorded (a retry reverted as
+   * `DuplicateJob`) whose original transaction could not be looked up.
+   */
+  receiptRecorded?: boolean;
+}
+
+/** True once the job's receipt is known to be on XorvLedger. */
+export function receiptLanded(job: StoredJob): boolean {
+  return Boolean(job.receiptTxHash) || job.receiptRecorded === true;
 }
 
 type Listener = (job: StoredJob, event: JobEvent | null) => void;

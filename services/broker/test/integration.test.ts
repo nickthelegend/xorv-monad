@@ -76,6 +76,11 @@ class StubChain implements ChainLike {
   readonly ratings: Array<{ rating: RatingMessage; signature: Hex }> = [];
   /** Fail this many receipt writes before letting them land (an RPC outage). */
   failReceipts = 0;
+  /**
+   * Answer receipts the way the writer does for a retry that reverted as
+   * DuplicateJob when the original transaction is out of its search window.
+   */
+  alreadyRecordedNoTx = false;
   private tx = 0;
 
   mode(): LedgerMode {
@@ -114,6 +119,9 @@ class StubChain implements ChainLike {
       return null;
     }
     this.receipts.push(input);
+    if (this.alreadyRecordedNoTx) {
+      return { contract: LEDGER, txHash: "", explorerUrl: "", blockNumber: null, alreadyRecorded: true };
+    }
     return this.result();
   }
   async rateJob(rating: RatingMessage, signature: Hex) {
@@ -1328,6 +1336,31 @@ describe("ratings", () => {
     });
     expect(mismatch.status).toBe(401);
     expect(h.chain.ratings).toHaveLength(0);
+    provider.close();
+  }, 20_000);
+
+  it("lets the buyer rate a job whose receipt was found already recorded, even without its tx", async () => {
+    // A receipt retry that reverted as DuplicateJob used to leave the job
+    // without a receipt forever: every rating answered 409 "not on-chain yet".
+    h.chain.alreadyRecordedNoTx = true;
+    h.agentWallets.set("7", PAYEE_A);
+    const provider = await connectProvider(h, { agentId: "7" });
+    const { body: q } = await quote(h, "rate me");
+    const { body: paid } = await pay(h, q.quoteId);
+    await provider.completeNextJob("rated answer");
+    await waitFor(() => (h.jobs.get(paid.jobId)?.receiptRecorded ? true : undefined));
+    expect(h.jobs.get(paid.jobId)!.receiptTxHash ?? null).toBeNull();
+
+    const { body } = await typedDataFor(paid.jobId, 70);
+    const res = await fetch(`${h.base}/api/jobs/${paid.jobId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: 70, deadline: body.deadline, signature: await sign(h.buyer, body.typedData) }),
+    });
+    expect(res.status).toBe(200);
+    expect(h.chain.ratings).toHaveLength(1);
+    // Nothing more was sent: the receipt was already there.
+    expect(h.chain.receipts).toHaveLength(1);
     provider.close();
   }, 20_000);
 

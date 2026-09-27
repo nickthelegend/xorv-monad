@@ -86,7 +86,7 @@ import {
 import type { BrokerConfig } from "./config.js";
 import { describeLedger, type ChainLike, type PublishResult } from "./chain.js";
 import type { Hub } from "./hub.js";
-import { JobStore, isTerminal, type Quote, type StoredJob } from "./jobs.js";
+import { JobStore, isTerminal, receiptLanded, type Quote, type StoredJob } from "./jobs.js";
 import {
   Registry,
   RegistrationRefused,
@@ -1243,8 +1243,9 @@ export function createApp(deps: AppDeps) {
         }
       }
       // XorvLedger only accepts a rating for a job it has a receipt for.
-      if (!job.receiptTxHash) await ensureReceipt(job);
-      if (!jobs.get(job.id)?.receiptTxHash) {
+      if (!receiptLanded(job)) await ensureReceipt(job);
+      const landed = jobs.get(job.id);
+      if (!landed || !receiptLanded(landed)) {
         return c.json({ error: "the job's receipt is not on-chain yet — retry in a few seconds" }, 409);
       }
       const result = await chain.rateJob(ratingMessage(parts.rating), signature as Hex);
@@ -1817,7 +1818,7 @@ export function createApp(deps: AppDeps) {
    * lands here without having to remember to.
    */
   function enqueueReceipt(job: StoredJob): Promise<PublishResult | null> | null {
-    if (chain.mode() !== "write" || job.receiptTxHash || !job.payment || !isTerminal(job.status)) return null;
+    if (chain.mode() !== "write" || receiptLanded(job) || !job.payment || !isTerminal(job.status)) return null;
     const state = receipts.get(job.id) ?? { attempts: 0, pending: null };
     if (state.pending) return state.pending;
     if (state.attempts >= MAX_RECEIPT_ATTEMPTS) return null;
@@ -1841,7 +1842,9 @@ export function createApp(deps: AppDeps) {
       })
       .then((result) => {
         state.pending = null;
-        if (result) jobs.patch(job.id, { receiptTxHash: result.txHash });
+        // A receipt found already recorded (a retry that reverted as a
+        // duplicate) counts too, with its original tx when it was found.
+        if (result) jobs.patch(job.id, { ...(result.txHash ? { receiptTxHash: result.txHash } : {}), receiptRecorded: true });
         return result;
       });
     state.pending = pending;
@@ -1849,8 +1852,15 @@ export function createApp(deps: AppDeps) {
     return pending;
   }
 
-  /** Make sure a job's receipt is on its way, push it out now, and wait (bounded). */
+  /**
+   * Make sure a job's receipt is on its way, push it out now, and wait
+   * (bounded). A buyer asking to rate earns the receipt one more attempt past
+   * the sweep's cap: the attempt that finds it already recorded on-chain is
+   * what makes an old job ratable again.
+   */
   async function ensureReceipt(job: StoredJob): Promise<void> {
+    const state = receipts.get(job.id);
+    if (state && !state.pending && state.attempts >= MAX_RECEIPT_ATTEMPTS) state.attempts = MAX_RECEIPT_ATTEMPTS - 1;
     const pending = enqueueReceipt(job) ?? receipts.get(job.id)?.pending ?? null;
     if (!pending) return;
     void chain.flush();
@@ -1858,7 +1868,7 @@ export function createApp(deps: AppDeps) {
   }
 
   jobs.subscribe((job) => {
-    if (isTerminal(job.status) && job.payment && !job.receiptTxHash) enqueueReceipt(job);
+    if (isTerminal(job.status) && job.payment && !receiptLanded(job)) enqueueReceipt(job);
   });
 
   // -------------------------------------------------------------------------
@@ -1930,7 +1940,7 @@ export function createApp(deps: AppDeps) {
       // their batch landed) get another go, a bounded number of times.
       if (chain.mode() === "write") {
         for (const job of jobs.list({ limit: 1_000 })) {
-          if (isTerminal(job.status) && job.payment && !job.receiptTxHash) enqueueReceipt(job);
+          if (isTerminal(job.status) && job.payment && !receiptLanded(job)) enqueueReceipt(job);
         }
       }
       // A settlement whose request never reached the handler is not coming back for.

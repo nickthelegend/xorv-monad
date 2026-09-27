@@ -24,6 +24,7 @@ const chain = new LedgerWriter({
   account: config.operator,
   batchMs: config.receiptBatchMs,
   batchMax: config.receiptBatchMax,
+  fromBlock: config.ledgerFromBlock,
   log: (line) => console.error(`[broker] ${line}`),
 });
 
