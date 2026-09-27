@@ -40,7 +40,7 @@ import {
   type RatingMessage,
 } from "@xorv/protocol";
 
-import { createApp } from "../src/app.js";
+import { createApp, type SettlementStatus } from "../src/app.js";
 import type { BrokerConfig } from "../src/config.js";
 import type { ChainLike, HeartbeatSample, LedgerMode, PublishResult, ReceiptInput } from "../src/chain.js";
 import type { LedgerReader } from "../src/ledger-reader.js";
@@ -158,6 +158,11 @@ interface FacilitatorControl {
   onSettle?: (requirements: PaymentRequirements) => void | Promise<void>;
   /** Fail the next settlement the way an unfunded buyer does. */
   failNext?: boolean;
+  /**
+   * Answer settlements with x402 "settlement_pending" for this broadcast tx,
+   * the way the facilitator does when its wait for the receipt runs out.
+   */
+  pending?: string;
 }
 
 /**
@@ -200,6 +205,9 @@ function stubFacilitator(control: FacilitatorControl): FacilitatorClient {
     async settle(payload: PaymentPayload, requirements: PaymentRequirements) {
       await control.onSettle?.(requirements);
       const from = (payload.payload as { authorization: { from: string } }).authorization.from;
+      if (control.pending) {
+        return { success: false, errorReason: "settlement_pending", transaction: control.pending, network: requirements.network, payer: from };
+      }
       const problem = control.failNext ? "invalid_exact_evm_insufficient_balance" : await check(payload, requirements);
       control.failNext = false;
       if (problem) {
@@ -271,6 +279,8 @@ interface Harness {
   payAs(account: PrivateKeyAccount): typeof fetch;
   agentWallets: Map<string, string>;
   hub(): Hub | null;
+  /** What the broker's settlement check answers for a broadcast-but-unconfirmed tx. */
+  settle: { status: SettlementStatus };
   /** `${agentId}:${spender lowercase}` pairs the Identity Registry reports as authorized. */
   authorized: Set<string>;
   sweep(): void;
@@ -294,6 +304,7 @@ async function boot(
   const control: FacilitatorControl = { settled: [] };
   const agentWallets = new Map<string, string>();
   const authorized = new Set<string>();
+  const settle = { status: "pending" as SettlementStatus };
 
   let hub: Hub | null = null;
   const { app, hubHandlers, sweep } = createApp({
@@ -309,6 +320,7 @@ async function boot(
       return agentWallets.get(agentId) ?? null;
     },
     agentAuthorizes: async (agentId, spender) => authorized.has(`${agentId}:${spender.toLowerCase()}`),
+    settlementStatus: async () => settle.status,
     ai: opts.ai,
     trust: opts.trust,
   });
@@ -341,6 +353,7 @@ async function boot(
     payAs,
     agentWallets,
     hub: () => hub,
+    settle,
     authorized,
     sweep,
     async stop() {
@@ -908,6 +921,65 @@ describe("the paid path", () => {
     expect((await pay(h, q.quoteId, h.payAs(other))).res.status).toBe(200);
     expect(h.control.settled).toHaveLength(1);
     provider.close();
+  });
+
+  describe("a settlement broadcast but not confirmed in time", () => {
+    // The facilitator gives up waiting for the receipt (a slow or rate-limited
+    // RPC) and answers "settlement_pending" with the tx. That used to count as
+    // failed: the quote went back on sale and clients told the buyer nothing
+    // was charged, although the transfer could still land.
+    const PENDING_TX = `0x${"77".repeat(32)}`;
+
+    it("keeps the quote locked, says so, and runs the job once the transfer lands", async () => {
+      const provider = await connectProvider(h);
+      const { body: q } = await quote(h);
+      h.control.pending = PENDING_TX;
+      const { res, body } = await pay(h, q.quoteId);
+      expect(res.status).toBe(402);
+      expect(body).toMatchObject({ code: "settlement_pending", pending: true, txHash: PENDING_TX, quoteId: q.quoteId });
+      // Paying again is refused before a second transfer can settle.
+      h.control.pending = undefined;
+      expect((await pay(h, q.quoteId, h.payAs(privateKeyToAccount(generatePrivateKey())))).res.status).toBe(409);
+      expect(h.control.settled).toHaveLength(0);
+      const settling = (await (await fetch(`${h.base}/api/quotes/${q.quoteId}`)).json()) as Json;
+      expect(settling).toMatchObject({ status: "settling", txHash: PENDING_TX, jobId: null });
+
+      h.settle.status = "confirmed";
+      h.sweep();
+      const job = await waitFor(() => provider.dispatched[0]);
+      expect(h.jobs.get(job.jobId)!.payment).toMatchObject({ txHash: PENDING_TX, payer: h.buyer.address });
+      const paid = (await (await fetch(`${h.base}/api/quotes/${q.quoteId}`)).json()) as Json;
+      expect(paid).toMatchObject({ status: "paid", jobId: job.jobId });
+      provider.close();
+    });
+
+    it("recovers at once when the transfer has landed by the time the broker looks", async () => {
+      const provider = await connectProvider(h);
+      const { body: q } = await quote(h);
+      h.control.pending = PENDING_TX;
+      h.settle.status = "confirmed";
+      const { res, body } = await pay(h, q.quoteId);
+      expect(res.status).toBe(200);
+      expect(body.payment).toMatchObject({ txHash: PENDING_TX });
+      await waitFor(() => provider.dispatched[0]);
+      provider.close();
+    });
+
+    it("puts the quote back on sale once the pending transfer fails", async () => {
+      const provider = await connectProvider(h);
+      const { body: q } = await quote(h);
+      h.control.pending = PENDING_TX;
+      expect((await pay(h, q.quoteId)).res.status).toBe(402);
+      h.settle.status = "failed";
+      h.sweep();
+      await waitFor(async () => {
+        const state = (await (await fetch(`${h.base}/api/quotes/${q.quoteId}`)).json()) as Json;
+        return state.status === "open" ? true : undefined;
+      });
+      h.control.pending = undefined;
+      expect((await pay(h, q.quoteId)).res.status).toBe(200);
+      provider.close();
+    });
   });
 
   it("404s an unknown or expired quote instead of quoting a price nobody can pay", async () => {

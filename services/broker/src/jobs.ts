@@ -68,6 +68,12 @@ export interface Quote {
    * from expiring mid-settlement: money that moved must always find its quote.
    */
   paying?: boolean;
+  /**
+   * A settlement for this quote was broadcast but not confirmed before the
+   * facilitator stopped waiting. It may still land, so the quote stays locked
+   * (`paying`) and the broker keeps checking; see `pendingSettlements` in app.ts.
+   */
+  pendingSettlement?: { txHash: string; since: number };
 }
 
 /** A buyer's rating as stored: the public fields plus what rebuilds its feedback file. */

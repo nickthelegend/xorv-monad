@@ -41,7 +41,7 @@ import type {
 } from "@x402/core/server";
 import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { isHex, verifyTypedData, type Hex } from "viem";
+import { erc20Abi, isHex, parseEventLogs, verifyTypedData, type Hex } from "viem";
 import {
   HEARTBEAT_INTERVAL_MS,
   JOB_TIMEOUT_MS,
@@ -129,6 +129,10 @@ import {
 const REGISTRATION_WAIT_MS = 2_500;
 /** How long registration waits on the Identity Registry to verify a claimed agent id. */
 const AGENT_CHECK_TIMEOUT_MS = 4_000;
+/** Where a settlement the facilitator gave up waiting on stands. */
+export type SettlementStatus = "confirmed" | "failed" | "pending";
+/** How long a broadcast settlement may stay unconfirmed before the quote is released. */
+const PENDING_SETTLEMENT_GIVE_UP_MS = 15 * 60_000;
 /** New vaults one client address may create per hour. */
 const NEW_VAULTS_PER_HOUR = 10;
 /** How long an `isAuthorizedOrOwner` answer is reused. */
@@ -167,6 +171,15 @@ export interface AppDeps {
    * Defaults to a read over RPC; tests stub it.
    */
   agentAuthorizes?: (agentId: string, spender: string) => Promise<boolean>;
+  /**
+   * Where a broadcast-but-unconfirmed settlement stands: its USDC transfer
+   * landed as expected, it failed (reverted, or moved something else), or it
+   * is still pending. Defaults to reading the receipt over RPC; tests stub it.
+   */
+  settlementStatus?: (
+    txHash: string,
+    expect: { asset: string; from: string; to: string; amount: string },
+  ) => Promise<SettlementStatus>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
   /** Private-job history vaults; defaults to an in-memory store. */
@@ -197,6 +210,13 @@ export function createApp(deps: AppDeps) {
   const publishedRegistrations = new Map<string, string>();
   /** Settlements that landed before their job existed (the upfront flow), keyed by quote id. */
   const settlements = new Map<string, { record: PaymentRecord; at: number }>();
+  /**
+   * Settlements broadcast but not confirmed when the facilitator stopped
+   * waiting (x402 "settlement_pending"), keyed by quote id. The transfer can
+   * still land, so the quote stays locked and the sweep keeps checking: once
+   * it lands the job is created and dispatched under that quote.
+   */
+  const pendingSettlements = new Map<string, { record: PaymentRecord; since: number; checking: boolean }>();
   /** Receipt write state per job: in flight, and how many attempts it has had. */
   const receipts = new Map<string, { attempts: number; pending: Promise<PublishResult | null> | null }>();
   /** Rating relays in flight, so a double-submit can't burn a second transaction. */
@@ -317,6 +337,49 @@ export function createApp(deps: AppDeps) {
       if (from && sameAddress(from, ctx.requirements.payTo)) {
         return { abort: true, reason: "self_payment", message: "the payer is the provider being paid" };
       }
+    });
+
+    /**
+     * A settlement the facilitator broadcast but could not confirm in time
+     * (a slow or rate-limited RPC). It used to count as failed: the quote went
+     * back on sale and clients told the buyer nothing was charged, while the
+     * transfer went on to land. Now the broker looks once more: landed means
+     * the payment recovers and the job runs; still pending means the quote
+     * stays locked and the sweep keeps watching (see `settlePending`).
+     */
+    x402Server.onSettleFailure(async (ctx) => {
+      const failure = ctx.error as { errorReason?: string; transaction?: string; payer?: string };
+      if (failure.errorReason !== "settlement_pending" || !failure.transaction) return;
+      const quoteId = quoteIdFromTransport(ctx.transportContext);
+      const quote = quoteId ? jobs.getQuote(quoteId) : undefined;
+      if (!quote || quote.jobId) return;
+      const record = paymentRecord(
+        ctx.requirements as PaymentRequirements,
+        {
+          success: true,
+          transaction: failure.transaction,
+          network: ctx.requirements.network,
+          payer: failure.payer,
+        } as SettleResponse,
+        ctx.paymentPayload as PaymentPayload,
+      );
+      const status = await checkSettlement(record);
+      if (status === "confirmed") {
+        settlements.set(quote.id, { record, at: Date.now() });
+        const result: SettleResponse = {
+          success: true,
+          transaction: record.txHash,
+          network: record.network as Network,
+          payer: record.payer,
+        };
+        return { recovered: true as const, result };
+      }
+      if (status === "pending") {
+        quote.pendingSettlement = { txHash: record.txHash, since: Date.now() };
+        pendingSettlements.set(quote.id, { record, since: Date.now(), checking: false });
+        console.warn(`[broker] quote ${quote.id}: settlement ${record.txHash} broadcast but unconfirmed — watching it`);
+      }
+      return;
     });
 
     x402Server.onAfterSettle(async (ctx) => {
@@ -925,6 +988,31 @@ export function createApp(deps: AppDeps) {
         // Settle before the handler runs — see the note at the top of the file.
         extra: { paymentFlow: "upfront" },
       },
+      // A failed settlement answers 402. When the transfer was broadcast and
+      // may still land, say so plainly: "nothing was charged" would be wrong,
+      // and paying again would pay twice.
+      settlementFailedResponseBody: (ctx, result) => {
+        const quote = quoteFromContext(ctx);
+        if (result.errorReason === "settlement_pending" && result.transaction && quote?.pendingSettlement) {
+          return {
+            contentType: "application/json",
+            body: {
+              error:
+                "the payment was broadcast but is not confirmed yet, and it may still land — do not pay again. " +
+                "The job starts by itself once it confirms; follow the quote to find it.",
+              code: "settlement_pending",
+              pending: true,
+              txHash: result.transaction,
+              quoteId: quote.id,
+              quoteUrl: `${config.publicUrl}/api/quotes/${quote.id}`,
+            },
+          };
+        }
+        return {
+          contentType: "application/json",
+          body: { error: `the payment did not settle: ${result.errorReason ?? "unknown reason"}`, code: result.errorReason ?? null },
+        };
+      },
       unpaidResponseBody: (ctx) => {
         const quote = quoteFromContext(ctx);
         return {
@@ -972,6 +1060,17 @@ export function createApp(deps: AppDeps) {
     if (!x402Server) {
       return c.json({ error: settlement.unavailableReason ?? "payments are unavailable" }, 503);
     }
+    if (quote.pendingSettlement) {
+      return c.json(
+        {
+          error: "a payment for this quote was broadcast and is still confirming — do not pay again",
+          code: "settlement_pending",
+          txHash: quote.pendingSettlement.txHash,
+          quoteUrl: `${config.publicUrl}/api/quotes/${quote.id}`,
+        },
+        409,
+      );
+    }
     if (!hasPaymentHeader(c)) return next();
     // Refused before anything settles: see onBeforeSettle.
     if (sameAddress(payerFromHeader(c), quote.providerAddress)) {
@@ -987,7 +1086,8 @@ export function createApp(deps: AppDeps) {
       await next();
     } finally {
       // Settlement failed (or never happened): the quote is still for sale.
-      if (!quote.jobId) {
+      // Unless it was broadcast and is still confirming: then it stays locked.
+      if (!quote.jobId && !quote.pendingSettlement) {
         quote.paying = false;
         settlements.delete(quote.id);
       }
@@ -1017,10 +1117,7 @@ export function createApp(deps: AppDeps) {
 
     // Handed only to the buyer, in this response: the capability to cancel.
     const cancelToken = randomBytes(24).toString("base64url");
-    const job = jobs.createJob(quote, { payment: settled?.record ?? null, cancelTokenHash: sha256(cancelToken) });
-    jobIdByHash.set(jobIdHash(job.id), job.id);
-    metrics.inc("xorv_payments_total");
-    dispatch(job);
+    const job = openJob(quote, settled?.record ?? null, sha256(cancelToken));
 
     return c.json({
       jobId: job.id,
@@ -1036,6 +1133,104 @@ export function createApp(deps: AppDeps) {
       jobUrl: `${config.publicUrl}/api/jobs/${job.id}`,
     });
   });
+
+  /** Turn a paid quote into a job and hand it to its provider. */
+  function openJob(quote: Quote, payment: PaymentRecord | null, cancelTokenHash: string | null): StoredJob {
+    const job = jobs.createJob(quote, { payment, cancelTokenHash });
+    jobIdByHash.set(jobIdHash(job.id), job.id);
+    metrics.inc("xorv_payments_total");
+    dispatch(job);
+    return job;
+  }
+
+  /**
+   * Where a quote stands, for a buyer whose payment answered
+   * "settlement_pending": still confirming, paid (with its job), or open.
+   * Only the buyer holds a quote id, and nothing here names the prompt.
+   */
+  app.get("/api/quotes/:id", (c) => {
+    const quote = jobs.getQuote(c.req.param("id"));
+    if (!quote) return c.json({ error: "quote not found or expired" }, 404);
+    const status = quote.jobId ? "paid" : quote.pendingSettlement ? "settling" : "open";
+    return c.json({
+      quoteId: quote.id,
+      status,
+      jobId: quote.jobId ?? null,
+      jobUrl: quote.jobId ? `${config.publicUrl}/api/jobs/${quote.jobId}` : null,
+      txHash: quote.pendingSettlement?.txHash ?? null,
+      expiresAt: quote.expiresAt,
+    });
+  });
+
+  /** Whether a settlement's USDC transfer landed, failed, or is still pending. */
+  async function checkSettlement(record: PaymentRecord): Promise<SettlementStatus> {
+    try {
+      return await (deps.settlementStatus ?? readSettlementStatus)(record.txHash, {
+        asset: record.assetAddress,
+        from: record.payer,
+        to: record.payTo,
+        amount: record.amount,
+      });
+    } catch (err) {
+      console.warn(`[broker] settlement ${record.txHash}: ${err instanceof Error ? err.message : err}`);
+      return "pending";
+    }
+  }
+
+  /** The default `settlementStatus`: the receipt, and the USDC Transfer in it. */
+  async function readSettlementStatus(
+    txHash: string,
+    expect: { asset: string; from: string; to: string; amount: string },
+  ): Promise<SettlementStatus> {
+    const client = publicClientFor(config.network);
+    const receipt = await client.getTransactionReceipt({ hash: txHash as Hex }).catch(() => null);
+    if (!receipt) return "pending";
+    if (receipt.status !== "success") return "failed";
+    const transfers = parseEventLogs({ abi: erc20Abi, eventName: "Transfer", logs: receipt.logs });
+    const paid = transfers.some(
+      (log) =>
+        sameAddress(log.address, expect.asset) &&
+        sameAddress(log.args.from, expect.from) &&
+        sameAddress(log.args.to, expect.to) &&
+        log.args.value === BigInt(expect.amount),
+    );
+    return paid ? "confirmed" : "failed";
+  }
+
+  /**
+   * The sweep's pass over settlements still confirming: landed → the job is
+   * created and dispatched under its quote; failed → the quote is for sale
+   * again (nothing moved); unconfirmed for too long → released, loudly.
+   */
+  async function settlePending(): Promise<void> {
+    for (const [quoteId, entry] of pendingSettlements) {
+      if (entry.checking) continue;
+      entry.checking = true;
+      const status = await checkSettlement(entry.record);
+      entry.checking = false;
+      const quote = jobs.getQuote(quoteId);
+      if (!quote || quote.jobId) {
+        pendingSettlements.delete(quoteId);
+        continue;
+      }
+      if (status === "confirmed") {
+        pendingSettlements.delete(quoteId);
+        quote.pendingSettlement = undefined;
+        const job = openJob(quote, entry.record, null);
+        console.log(`[broker] quote ${quoteId}: settlement ${entry.record.txHash} confirmed late — job ${job.id} dispatched`);
+        continue;
+      }
+      const stale = Date.now() - entry.since > PENDING_SETTLEMENT_GIVE_UP_MS;
+      if (status === "failed" || stale) {
+        pendingSettlements.delete(quoteId);
+        quote.pendingSettlement = undefined;
+        quote.paying = false;
+        console.warn(
+          `[broker] quote ${quoteId}: settlement ${entry.record.txHash} ${status === "failed" ? "failed" : "never confirmed"} — quote released`,
+        );
+      }
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Job reads
@@ -2134,6 +2329,8 @@ export function createApp(deps: AppDeps) {
           if (isTerminal(job.status) && job.payment && !receiptLanded(job)) enqueueReceipt(job);
         }
       }
+      // Settlements broadcast but not confirmed when the facilitator gave up.
+      void settlePending();
       // Quotes nobody paid for, past their TTL.
       jobs.pruneQuotes();
       // A settlement whose request never reached the handler is not coming back for.
