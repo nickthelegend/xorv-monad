@@ -84,6 +84,14 @@ A quote also carries a `paying` flag. Two signed payments for one quote (a doubl
 tabs) cannot both settle: the second gets 409. The flag also keeps a quote resolvable if its TTL
 runs out between settlement landing and the job being created.
 
+A settlement can also outlast the in-process facilitator's 30-second wait for its receipt (a slow
+or rate-limited RPC). The broker then checks the transfer once more; if it is still unconfirmed, the
+402 says so (`code: "settlement_pending"`, with the transaction hash), the quote stays locked and
+out of the TTL prune, a second payment for it gets 409, and the sweep keeps checking. When the
+transfer lands, the job is created and dispatched under that quote; if it fails, or stays
+unconfirmed for 15 minutes, the quote is released. `GET /api/quotes/:id` reports `open`,
+`settling` or `paid`, with the job id once there is one.
+
 ### Payment settles before the job runs
 
 The paid route uses x402's **upfront** payment flow (`extra: { paymentFlow: "upfront" }`, supported
@@ -123,19 +131,30 @@ The node opens a WebSocket **to** the broker, and the broker never calls in. Som
 laptop is behind NAT, on hotel wifi, on a machine that sleeps. Outbound works from all of those with
 no port forwarding and no inbound attack surface. Results and events also have authenticated HTTP
 fallbacks (`POST /api/jobs/:id/result`, `/events`), because the work is already paid for and a
-dropped socket must not be the reason a buyer never gets an answer. If a node's socket drops between
-quote and payment, the paid job is reassigned instead of failed.
+dropped socket must not be the reason a buyer never gets an answer.
+
+The socket is also what makes a provider sellable. Quotes and reassignments only consider providers
+that hold an open control socket, and the paid route answers 409 before any payment when the quoted
+provider has lost it, so the buyer is never charged for a node that can't be reached. If the socket
+drops after payment, the paid dispatch counts as a failure against the quoted provider (which is
+then not credited the earnings) and the job is reassigned.
 
 ### Liveness is not a database row
 
 The registry is in memory on purpose: a provider is only real while heartbeats keep arriving (every
 15 s, offline after 45 s, reaped after 10 minutes). `registry.get()` re-derives status on every call,
 because status is a function of the clock and the guard that decides whether a quoted provider is
-still alive enough to be paid reads it.
+still alive enough to be paid reads it. A provider with at least three failures in the last 30
+minutes, and more failures than completions in that window, is left out of matching until they age
+out.
 
-Provider ids are derived from the node's stable id, not minted per broker process. They are hashed
-into XorvLedger events (`providerId = keccak256(id)`) and written into ERC-8004 agent URIs, so a new
-id per restart would split one node into many on-chain.
+Provider ids are derived from the node's stable id (`providerIdFor` in `@xorv/protocol`: `prv_` and
+a truncated SHA-256 of the node id), not minted per broker process. They are hashed into XorvLedger
+events (`providerId = keccak256(id)`) and written into ERC-8004 agent URIs, so a new id per restart
+would split one node into many on-chain. The node id itself never goes on-chain, because it is what
+a node registers with. Re-registering a node id whose session is still live needs that session's
+bearer token (409 `node_live` otherwise). The node id alone reclaims only a slot nobody holds (after
+a broker restart, or once the old session went offline), and always gets a freshly minted token.
 
 What does survive a restart goes to SQLite or MongoDB (jobs, payments, earnings, vaults) and to
 Monad (registrations, sampled heartbeats, receipts, ratings). The chain is the part nobody has to
@@ -158,9 +177,9 @@ interface is fixed, because the protocol ABI and the indexer depend on it
 - **Receipts are batched.** The broker queues receipts and sends one `recordJobs` call after
   `XORV_RECEIPT_BATCH_MS` (4 s) or as soon as `XORV_RECEIPT_BATCH_MAX` (20) are waiting. The fixed
   cost of a transaction (21k intrinsic gas, cold account accesses at 10,100 each on Monad, one
-  signature, one round trip) is paid once. Measured on live Monad: 105,967 gas for one receipt
-  alone, 40,952 per receipt in a batch of 20. Within a batch, the contract checks each
-  (agent, payTo) pair against the Identity Registry only once.
+  signature, one round trip) is paid once. Measured on live Monad testnet (2026-09-27): 106,056
+  gas for one receipt alone, 41,040 per receipt in a batch of 20. Within a batch, the contract
+  checks each (agent, payTo) pair against the Identity Registry only once.
 - **One storage slot per job.** A new slot costs about 27.9k gas on Monad, and log data is cheap. So
   a job stores exactly what `rateJob` has to check, packed into one slot (`buyer`, `agentId`,
   `rated`), and everything else is in the `JobRecorded` event. Registrations and heartbeats store
@@ -175,13 +194,22 @@ broker splits the batch in half and retries each half, down to single receipts
 fail the batch as a whole, because splitting would only repeat the same error. If a single receipt
 reverts with `PayToNotAgentWallet` (the agent NFT moved or its wallet was re-pointed after the
 quote), it is recorded once more under `NO_AGENT`. The payment still happened; it just can no longer
-be attributed to that identity.
+be attributed to that identity, and the job stops being offered for rating. A single receipt that
+reverts with `DuplicateJob` is checked against `jobs(jobId)`: when the recorded buyer matches, it
+already landed (an earlier batch the broker stopped waiting for) and counts as recorded. A batch
+that was broadcast but not confirmed is looked up before any of its receipts is sent again, so a
+pending transaction is waited for rather than paid for twice at the full gas limit.
+
+`recordJobs` also refuses (`SelfDealing`) a receipt whose buyer is its `payTo`. A provider paying
+itself buys nothing (the USDC comes straight back), so the broker refuses that payment before it
+settles (403 `self_payment`) and the ledger refuses the receipt whoever writes it.
 
 **A receipt is written only when there is something to attest to**: the job is terminal *and* its
 payment is recorded. A fast job often finishes before its settlement is attached, and a receipt
 without a settlement transaction proves nothing. Receipts are queued from a job-store subscription,
 so every path that finishes a job (result, failure, timeout, cancel) triggers one without having to
-remember to. A failed write is retried by the 15-second sweep up to three times. Each receipt binds
+remember to. A failed write is retried by the 15-second sweep up to three times, and a buyer asking
+to rate earns the receipt one more attempt. Each receipt binds
 the settlement tx to `requestHash = keccak256(prompt)`, `resultHash = keccak256(result)`, the
 duration, the outcome, the buyer, the payee and the agent. The payload stays off-chain, and the
 record stays checkable.
@@ -206,25 +234,32 @@ A reassigned job's receipt is recorded **without an agent**. The ledger requires
 to be the address that was paid, and the address that was paid (the quoted provider) did not do the
 work. Crediting either identity with the outcome would misattribute it.
 
-The broker serves the agent's registration file at `GET /agents/<id>.json` (`x402Support: true`,
-`supportedTrust: ["reputation"]`, the jobs endpoint and the web app). The URI stays stable, so it
+The broker serves the agent's registration file at `GET /agents/<providerId>.json` (`x402Support:
+true`, `supportedTrust: ["reputation"]`, the jobs endpoint and the web app). `xorv identity register`
+builds that URI locally from the provider id, so the node id never reaches the Identity Registry,
+and `xorv identity show` warns when an older URI still publishes one. The URI stays stable, so it
 never needs a follow-up `setAgentURI` write.
 
 ### Ratings: EIP-712, gasless, one per job
 
 ```
 GET  /api/jobs/:id/rating?value=87 → EIP-712 typed data + the feedback file's hash
+     (409 instead when the job was paid by its own provider, has no agent to rate, or the
+      agent made the ledger its operator: code ledger_authorized)
 buyer signs it (Privy embedded wallet, MetaMask, a CLI or MCP key); no gas
 POST /api/jobs/:id/rate {value, deadline, signature}
      → broker verifies the signer is the job's payer (ECDSA, then ERC-1271/6492 over RPC)
+     → waits up to 15 s for the job's receipt to land (the ledger rates only recorded jobs),
+       then re-checks the job against the landed receipt and re-reads the agent's operators
      → Nansen: are buyer and provider one party? yes → 403 related_wallets, nothing relayed
-     → waits up to 15 s for the job's receipt to land (the ledger rates only recorded jobs)
+       (today's budget spent → 503 trust_budget_spent, retry after 00:00 UTC)
      → XorvLedger.rateJob(rating, sig) → ReputationRegistry.giveFeedback(agentId, value, 0, "starred", …)
 ```
 
 - **The domain is `{name: "XorvLedger", version: "1", chainId, verifyingContract: ledger}`.** The
-  signature check happens in the broker *and* in the contract (OpenZeppelin `SignatureChecker`, so
-  smart accounts work). The broker checks first so it never spends gas relaying a rating the
+  signature check happens in the broker *and* in the contract, in the same order: ECDSA against the
+  buyer first, then ERC-1271. EOAs, EIP-7702 accounts (which have code, but whose key still signs)
+  and smart accounts all work. The broker checks first so it never spends gas relaying a rating the
   contract would refuse.
 - **One rating per job** is enforced on-chain (`AlreadyRated`). An in-flight set in the broker stops
   a double-submit from burning a second transaction.
@@ -237,14 +272,22 @@ POST /api/jobs/:id/rate {value, deadline, signature}
   Its `createdAt` is derived from the deadline for the same reason.
 - **Every rating reaches ERC-8004 with `clientAddress == XorvLedger`.** Filtering a summary by that
   client gives a provider score made only of paid jobs, each rated by the wallet that paid.
-- **The payer must not be the provider's own second wallet.** A provider can pay for its own job
-  from another wallet and rate itself. Before relaying, the broker asks Nansen whether the two
-  wallets are linked and refuses the rating if they are (next section but one).
+- **The payer must not be the provider.** The Reputation Registry's own self-feedback rule only
+  ever sees the ledger as the client, so the ledger applies it to the real rater: `rateJob` reverts
+  `SelfDealing` when the buyer is the agent's current wallet, owner or an approved operator (read
+  from the Identity Registry at rating time), on the direct and the relayed path alike. The broker
+  refuses self-payment before it settles and never offers such a job for rating.
+- **The payer should not be the provider's second wallet either.** A contract cannot see that two
+  wallets belong to one party. Before relaying, the broker asks Nansen whether they are linked and
+  refuses the rating if they are (next section but one). `rateJob` stays open to the buyer directly
+  and to any relayer, so that check binds what the broker relays, not what reaches the chain.
 
 The ledger must never own or operate a provider's agent NFT, and neither may the verifier EOA:
-ERC-8004 rejects feedback from an agent's owner and operators. A contract test demonstrates the
-ledger case, and the broker skips verifier feedback when the verifier EOA is the provider's own
-wallet.
+ERC-8004 rejects feedback from an agent's owner and operators, so an agent that approves either
+would block its buyer ratings or its Kimi scores. The broker reads `isAuthorizedOrOwner` before it
+offers or relays a rating (409 `ledger_authorized`, with the reason) and before it writes verifier
+feedback (which then stays off-chain, with the reason in `verification.feedbackError`). A failed
+lookup never blocks: the chain still has the last word.
 
 ---
 
@@ -289,9 +332,13 @@ daily budget whose reservations are released when a payment fails.
 
 | Use | When | When it fails |
 |---|---|---|
-| **Provider trust signal** (0–100) | on registration, in the background; refreshed by the sweep every 6 h (10 min when degraded) | registration never waits for it; a failed call leaves the score where it was; all calls failed = exactly 50, "no opinion" to the matcher |
-| **Wash-rating guard** | `POST /api/jobs/:id/rate`, after the payer's signature verifies, bounded to 12 s | a failed or slow lookup is recorded as `degraded` and the rating is relayed: only a proven link refuses |
+| **Provider trust signal** (0–100) | when the node opens its control socket, in the background (not at registration, which is free and unauthenticated); the sweep refreshes connected providers every 6 h (10 min when degraded) | nothing waits for it; a failed call leaves the score where it was; all calls failed = exactly 50, "no opinion" to the matcher |
+| **Wash-rating guard** | `POST /api/jobs/:id/rate`, after the payer's signature verifies and the receipt has landed, bounded to 12 s | a failed or slow lookup is recorded as `degraded` and the rating is relayed: only a proven link refuses. A lookup that can't run because the daily budget is spent defers the rating (503 `trust_budget_spent`) rather than relaying it unchecked |
 | **Matching tie-breaker** | every quote | an unknown wallet ranks as neutral; the nudge is at most ±0.1 on the 0–1 reliability scale, after price |
+
+Provider signals stop short of the last 30% of the daily budget (`GUARD_RESERVE_BPS`), which only the
+guard's lookups may spend. Registrations that never connect cost nothing, so nobody can drain the
+budget and switch the guard off with throwaway providers.
 
 Why it is shaped this way:
 
@@ -317,7 +364,9 @@ things:
 - `encryptTo` is validated at quote time, before anyone is reserved or paid.
 - A plaintext result for a private job is discarded unstored and the job fails over, the same way as
   any other provider failure.
-- Public views redact the prompt and title, and the event stream carries only status lines.
+- Public views redact the prompt and title, and the event stream carries only status lines. The
+  router's and screener's free-text reasons (which paraphrase the prompt) read "withheld for a
+  private job"; the buyer's own quote response still carries them.
 - The verifier is skipped.
 
 ---
@@ -376,20 +425,29 @@ a receipt batch. Each EOA must also stay above Monad's ~10 MON per-account reser
 
 ## Data flow, precisely
 
-**Registration.** Node → `POST /api/providers/register {address, agentId?, capabilities}` → the
-address is checksummed and a claimed agent is verified → registry keyed on the stable node id → a
-bearer token comes back → `registerProvider` on XorvLedger in the background. The node opens
-`wss://…/ws/provider?token=…`.
+**Registration.** Node → `POST /api/providers/register {address, agentId?, capabilities}` (plus
+the bearer token it holds, when it has one) → the address is checksummed, every price must be a
+whole number of micro-USD, and a claimed agent is verified → registry keyed on the stable node id
+(a live session is only taken over with its token: 409 `node_live` otherwise) → a bearer token comes
+back (a fresh one unless the caller presented the current one) → `registerProvider` on XorvLedger in
+the background. The node opens `wss://…/ws/provider?token=…`, and only then does the broker buy its
+payout wallet's Nansen signal. Every frame the node sends is validated before it is handled (8 MiB
+cap).
 
 **Heartbeat.** Every 15 s, `POST /api/providers/:id/heartbeat` with the node's bearer token, carrying
 load and per-capability availability. One in twenty is published as `ProviderHeartbeat`.
 
-**Quote.** Screen → candidates (live providers × capabilities, filtered on adapter, price ceiling,
-per-capability availability and free concurrency; sorted by price, then success rate, then load) →
-route when the buyer left the adapter open → freeze.
+**Quote.** Screen → candidates (live providers holding a control socket × capabilities, filtered on
+adapter, price ceiling, per-capability availability and free concurrency, minus providers failing
+more than they complete; sorted by price, then success rate, then load, with the Nansen trust nudge
+inside the success-rate key) → route when the buyer left the adapter open → freeze. Expired quotes
+are pruned by the sweep, and at 10,000 open quotes the broker answers 503.
 
 **Payment.** `@x402/hono` middleware on `POST /api/jobs/:quoteId`, behind a guard that turns an
-expired quote into a clean 404 and a paid or offline one into a 409. The facilitator is in-process
+expired quote into a clean 404, a paid, settling or offline one (or one whose provider has no
+control socket) into a 409, and a payment from the quoted provider's own `payTo` into a 403
+`self_payment`, all before anything settles. An `onBeforeSettle` hook refuses self-payment again as
+a backstop. The facilitator is in-process
 (`XORV_FACILITATOR=self`, a viem EOA), Monad's hosted one (`hosted`, `https://x402-facilitator.molandak.org`)
 or any URL. With nothing configured, the broker uses self-hosted when a key exists and hosted
 otherwise, and says so at boot. An explicit `self` without a key is never silently downgraded: the
@@ -436,8 +494,8 @@ What makes that possible:
 - **Contracts run against the real registry code.** `packages/contracts` deploys the vendored
   ERC-8004 v2.0.0 registries behind ERC1967 proxies the way upstream's own tests do, so behaviour
   like "`giveFeedback` rejects the agent's owner" is the real code, not a mock's approximation. Gas
-  tests report every call the broker pays for, and `pnpm gas:monad` re-measures them on live Monad
-  with state overrides.
+  tests report every call the broker pays for, and `pnpm --filter @xorv/contracts gas:monad`
+  re-measures them on live Monad with state overrides.
 - **Viem runs over stub transports.** Protocol and CLI tests drive viem through a fake JSON-RPC
   (`test/support/fake-rpc.ts`), so the gas headroom, the signer lock and the calldata are asserted
   on real encodings.
