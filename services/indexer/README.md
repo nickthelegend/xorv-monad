@@ -21,7 +21,8 @@ with the variable unset or the indexer down, the broker answers `/api/leaderboar
 
 ## What it derives
 
-`schema.graphql` is the reference; every field has a comment. The entities:
+`schema.graphql` is the reference; every field has a comment. It defines **14 entity types** (plus
+one enum, `FeedbackKind`), from 13 events on 3 contracts:
 
 | Entity | Id | What it holds |
 |---|---|---|
@@ -91,7 +92,7 @@ with `toBigInt` / `toNumber`.
 | Variable | Needed for | Meaning |
 |---|---|---|
 | `ENVIO_API_TOKEN` | local runs only | HyperSync token (required since Nov 2025), from https://envio.dev/app/api-tokens. Envio Cloud does not need it. |
-| `ENVIO_XORV_LEDGER_ADDRESS` | always | XorvLedger address: `address` in `packages/contracts/deployments/<network>.json` |
+| `ENVIO_XORV_LEDGER_ADDRESS` | always | XorvLedger address: `address` in `packages/contracts/deployments/<network>.json`, also printed by `pnpm deploy:ledger`. Unset, the configs fall back to the zero address and index no XorvLedger events (only the ERC-8004 registries). |
 | `ENVIO_XORV_LEDGER_START_BLOCK` | recommended | its deploy block (`blockNumber` in the same file). Keep it at or before the deploy block so the constructor's `BrokerSet` is indexed. |
 | `ENVIO_XORV_VERIFIER_ADDRESSES` | optional | extra comma-separated addresses whose `"xorv-verified"` feedback counts: a verifier with its own key, or the broker when the start block is after the deploy |
 | `ENVIO_ERC8004_START_BLOCK` | optional | skip ERC-8004 history before this block (default: every agent on the chain) |
