@@ -198,6 +198,7 @@ async function boot(opts: { vaults?: VaultStore; ai?: Omit<AiHooks, "verifier"> 
     facilitator: stubFacilitator(),
     ledgerReader: new StubReader(),
     agentWallet: async () => null,
+    agentAuthorizes: async () => false,
     ai: {
       ...opts.ai,
       verifier: {

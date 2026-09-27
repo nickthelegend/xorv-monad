@@ -53,6 +53,7 @@ import {
   explorerTx,
   formatUsd,
   getAgentWallet,
+  IDENTITY_ABI,
   isEvmAddress,
   isValidEncryptTo,
   isVaultId,
@@ -61,6 +62,7 @@ import {
   networkConfig,
   normalizeAddress,
   parseSealedResult,
+  publicClientFor,
   sameAddress,
   serializeFeedbackFile,
   sha256,
@@ -127,6 +129,8 @@ import {
 const REGISTRATION_WAIT_MS = 2_500;
 /** How long registration waits on the Identity Registry to verify a claimed agent id. */
 const AGENT_CHECK_TIMEOUT_MS = 4_000;
+/** How long an `isAuthorizedOrOwner` answer is reused. */
+const AUTHORIZATION_CACHE_MS = 60_000;
 /** A paid job is handed to at most this many providers in total. */
 const MAX_PROVIDERS_PER_JOB = 3;
 /** Receipt writes are retried by the sweep up to this many times. */
@@ -155,6 +159,12 @@ export interface AppDeps {
   ledgerReader?: LedgerReader;
   /** ERC-8004 agent-wallet lookup; defaults to the Identity Registry over RPC. */
   agentWallet?: (agentId: string) => Promise<string | null>;
+  /**
+   * Identity Registry `isAuthorizedOrOwner(spender, agentId)`: whether the
+   * agent's owner made `spender` its owner, approved address or operator.
+   * Defaults to a read over RPC; tests stub it.
+   */
+  agentAuthorizes?: (agentId: string, spender: string) => Promise<boolean>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
   /** Private-job history vaults; defaults to an in-memory store. */
@@ -202,6 +212,57 @@ export function createApp(deps: AppDeps) {
 
   const lookupAgentWallet =
     deps.agentWallet ?? ((agentId: string) => getAgentWallet(config.network, agentId));
+
+  const lookupAuthorizes =
+    deps.agentAuthorizes ??
+    ((agentId: string, spender: string) =>
+      publicClientFor(config.network).readContract({
+        address: net.erc8004.identity,
+        abi: IDENTITY_ABI,
+        functionName: "isAuthorizedOrOwner",
+        args: [spender as Hex, BigInt(agentId)],
+      }) as Promise<boolean>);
+  /** Recent `isAuthorizedOrOwner` answers, so offering a rating isn't an RPC call every time. */
+  const authorizations = new Map<string, { value: boolean; at: number }>();
+
+  /**
+   * True when the agent's owner has made `spender` (XorvLedger, or the
+   * verifier EOA) an approved address or operator of the agent NFT. The
+   * Reputation Registry refuses feedback from any such address as
+   * self-feedback, so a provider can freeze its score by approving the
+   * ledger: every rating would revert. Checked before a rating is offered or
+   * relayed so the buyer is told why, instead of paying for a Nansen check
+   * and getting an opaque revert. A failed lookup is not proof of anything,
+   * and answers false (the chain still has the last word).
+   */
+  async function agentAuthorizes(agentId: string, spender: string, opts: { fresh?: boolean } = {}): Promise<boolean> {
+    const key = `${agentId}:${spender.toLowerCase()}`;
+    const cached = authorizations.get(key);
+    if (!opts.fresh && cached && Date.now() - cached.at < AUTHORIZATION_CACHE_MS) return cached.value;
+    try {
+      const value = await withTimeout(
+        lookupAuthorizes(agentId, spender),
+        AGENT_CHECK_TIMEOUT_MS,
+        "authorization lookup timed out",
+      );
+      authorizations.set(key, { value, at: Date.now() });
+      return value;
+    } catch (err) {
+      console.warn(`[broker] isAuthorizedOrOwner(${spender}, #${agentId}): ${err instanceof Error ? err.message : err}`);
+      return false;
+    }
+  }
+
+  /** Why no rating can reach this agent, when the ledger is one of its operators. */
+  function ledgerAuthorizedRefusal(agentId: string) {
+    return {
+      error:
+        `ERC-8004 agent #${agentId} has approved XorvLedger as an operator of its identity, and the Reputation ` +
+        "Registry refuses feedback from an agent's own operators (self-feedback), so no rating can reach it. " +
+        "The provider has to revoke that approval before its jobs can be rated.",
+      code: "ledger_authorized",
+    } as const;
+  }
 
   /** The service a buyer starts at; the "xorv-jobs" endpoint and every rating's ERC-8004 `endpoint`. */
   const jobsEndpoint = `${config.publicUrl}/api/quotes`;
@@ -1188,7 +1249,7 @@ export function createApp(deps: AppDeps) {
     return { env, agentId, payer: job.payment.payer };
   }
 
-  app.get("/api/jobs/:id/rating", (c) => {
+  app.get("/api/jobs/:id/rating", async (c) => {
     const job = jobs.get(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
     const value = Number(c.req.query("value"));
@@ -1197,6 +1258,9 @@ export function createApp(deps: AppDeps) {
     }
     const target = ratingTarget(job);
     if ("error" in target) return c.json({ error: target.error }, target.status);
+    if (await agentAuthorizes(target.agentId, target.env.ledger)) {
+      return c.json(ledgerAuthorizedRefusal(target.agentId), 409);
+    }
 
     const deadline = Math.floor(Date.now() / 1000) + RATING_TTL_SECONDS;
     const parts = ratingParts(target.env, job, target.agentId, value, deadline);
@@ -1269,6 +1333,11 @@ export function createApp(deps: AppDeps) {
       }
       const recorded = ratingTarget(landed);
       if ("error" in recorded) return c.json({ error: recorded.error }, recorded.status);
+      // A fresh read: this is about to spend a Nansen lookup and gas.
+      if (await agentAuthorizes(recorded.agentId, recorded.env.ledger, { fresh: true })) {
+        metrics.inc("xorv_rating_refusals_total", { reason: "ledger_authorized" });
+        return c.json(ledgerAuthorizedRefusal(recorded.agentId), 409);
+      }
       // The wash-rating guard. Only reached with a valid payer signature, so
       // nobody but the buyer can make the broker spend on a lookup. A provider
       // rating itself from a second wallet — one it funded, or one funded by
@@ -1311,6 +1380,12 @@ export function createApp(deps: AppDeps) {
       const message = err instanceof Error ? err.message : String(err);
       // A receipt recorded without its agent before the broker tracked that
       // (an older job): remember it, so the rating stops being offered.
+      // The approval landed between the check and the relay (or the check
+      // could not be made): same reason, in words.
+      if (/Self-feedback not allowed/i.test(message)) {
+        authorizations.set(`${target.agentId}:${target.env.ledger.toLowerCase()}`, { value: true, at: Date.now() });
+        return c.json(ledgerAuthorizedRefusal(target.agentId), 409);
+      }
       if (/\bNoAgent\b/.test(message)) {
         jobs.patch(job.id, { receiptWithoutAgent: true });
         return c.json({ error: "this job's receipt is on the ledger without an agent identity, so it can't be rated" }, 409);
@@ -1793,6 +1868,18 @@ export function createApp(deps: AppDeps) {
     const target = verificationTarget(job, sink);
     if ("skip" in target) {
       console.log(`[broker] verification of ${jobId} stays off-chain: ${target.skip}`);
+      return;
+    }
+    // The agent's owner approved the verifier EOA on its identity NFT: the
+    // registry would refuse the write as self-feedback. Say so on the job
+    // rather than spend gas on a revert.
+    if (await agentAuthorizes(target.agentId, sink.address)) {
+      const reason =
+        `ERC-8004 agent #${target.agentId} has approved this broker's verifier (${sink.address}) as an operator, ` +
+        "and the Reputation Registry refuses feedback from an agent's own operators";
+      console.warn(`[broker] verification of ${jobId} stays off-chain: ${reason}`);
+      jobs.patch(jobId, { verification: { ...verification, agentId: target.agentId, feedbackError: reason } });
+      metrics.inc("xorv_ai_feedback_total", { outcome: "refused" });
       return;
     }
     let staged: VerificationRecord;

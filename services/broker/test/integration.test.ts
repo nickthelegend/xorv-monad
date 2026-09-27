@@ -270,6 +270,8 @@ interface Harness {
   paidFetch: typeof fetch;
   payAs(account: PrivateKeyAccount): typeof fetch;
   agentWallets: Map<string, string>;
+  /** `${agentId}:${spender lowercase}` pairs the Identity Registry reports as authorized. */
+  authorized: Set<string>;
   sweep(): void;
   stop(): Promise<void>;
 }
@@ -290,6 +292,7 @@ async function boot(
   const reader = new StubReader();
   const control: FacilitatorControl = { settled: [] };
   const agentWallets = new Map<string, string>();
+  const authorized = new Set<string>();
 
   let hub: Hub | null = null;
   const { app, hubHandlers, sweep } = createApp({
@@ -304,6 +307,7 @@ async function boot(
       if (agentId === "999") throw new Error("rpc unreachable");
       return agentWallets.get(agentId) ?? null;
     },
+    agentAuthorizes: async (agentId, spender) => authorized.has(`${agentId}:${spender.toLowerCase()}`),
     ai: opts.ai,
     trust: opts.trust,
   });
@@ -335,6 +339,7 @@ async function boot(
     paidFetch: payAs(buyer),
     payAs,
     agentWallets,
+    authorized,
     sweep,
     async stop() {
       hub?.close();
@@ -1453,6 +1458,47 @@ describe("ratings", () => {
     provider.close();
   }, 20_000);
 
+  it("says why no rating can land when the provider made XorvLedger an operator of its agent", async () => {
+    // The Reputation Registry refuses feedback from an agent's own operators,
+    // so an agent owner who approves the ledger freezes its score: every
+    // rating reverted with an opaque error after a paid Nansen check.
+    const { provider, jobId } = await ratedJobSetup();
+    const { body } = await typedDataFor(jobId, 10);
+    // The approval lands after the buyer fetched the typed data: the relay
+    // reads it fresh, refuses with the reason, and relays nothing.
+    h.authorized.add(`7:${LEDGER.toLowerCase()}`);
+    const res = await fetch(`${h.base}/api/jobs/${jobId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: 10, deadline: body.deadline, signature: await sign(h.buyer, body.typedData) }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as Json).code).toBe("ledger_authorized");
+    expect(h.chain.ratings).toHaveLength(0);
+    // And the rating is no longer offered.
+    const offered = await typedDataFor(jobId, 10);
+    expect(offered.res.status).toBe(409);
+    expect(offered.body.code).toBe("ledger_authorized");
+    expect(offered.body.error).toMatch(/approved XorvLedger as an operator/);
+    provider.close();
+  }, 20_000);
+
+  it("explains a self-feedback revert the check did not see coming", async () => {
+    const { provider, jobId } = await ratedJobSetup();
+    h.chain.rateError = "execution reverted: Self-feedback not allowed";
+    const { body } = await typedDataFor(jobId, 10);
+    const res = await fetch(`${h.base}/api/jobs/${jobId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: 10, deadline: body.deadline, signature: await sign(h.buyer, body.typedData) }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as Json).code).toBe("ledger_authorized");
+    // And it is remembered, so the rating stops being offered.
+    expect((await typedDataFor(jobId, 10)).body.code).toBe("ledger_authorized");
+    provider.close();
+  }, 20_000);
+
   it("answers 409 and stops offering the rating when the ledger refuses it with NoAgent", async () => {
     // A job receipted without its agent before the broker tracked that.
     const { provider, jobId } = await ratedJobSetup();
@@ -1932,6 +1978,26 @@ describe("AI roles", () => {
     expect(verified.verification.feedbackHash).toBeUndefined();
     expect(s.feedback.writes).toHaveLength(0);
     expect((await fetch(`${ai.base}/verifications/${paid.jobId}.json`)).status).toBe(404);
+    provider.close();
+  });
+
+  it("keeps verifier feedback off-chain, with the reason, when the agent approved the verifier EOA", async () => {
+    // The registry would refuse the write as self-feedback; say so on the job
+    // instead of spending gas on the revert.
+    const s = scriptedAi({ screen: ALLOW, verify: { score: 20, pass: false, rationale: "Wrong.", flags: [] } });
+    ai = await boot({ ai: s.ai });
+    ai.agentWallets.set("7", PAYEE_A);
+    ai.authorized.add(`7:${s.feedback.address.toLowerCase()}`);
+    const provider = await connectProvider(ai, { agentId: "7" });
+    const { body: q } = await quoteWith(ai, { prompt: "explain x402" });
+    const { body: paid } = await pay(ai, q.quoteId);
+    await provider.completeNextJob("x402 is");
+    const refused = await waitFor(async () => {
+      const j = await getJob(ai, paid.jobId);
+      return j.verification?.feedbackError ? j : undefined;
+    });
+    expect(refused.verification.feedbackError).toMatch(/approved this broker's verifier/);
+    expect(s.feedback.writes).toHaveLength(0);
     provider.close();
   });
 
