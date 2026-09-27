@@ -93,6 +93,20 @@ export function PrivateHistory() {
               </Panel>
             ) : null}
 
+            {history?.trimmed ? (
+              <p className="text-[12px] leading-relaxed text-fg-3">
+                The vault holds at most 176 KiB, so the last save made room:{" "}
+                {history.trimmed.dropped
+                  ? `${history.trimmed.dropped} oldest job${history.trimmed.dropped === 1 ? "" : "s"} dropped`
+                  : null}
+                {history.trimmed.dropped && history.trimmed.truncated ? " and " : null}
+                {history.trimmed.truncated
+                  ? `${history.trimmed.truncated} long prompt${history.trimmed.truncated === 1 ? "" : "s"} shortened`
+                  : null}
+                . Their results stay on their job pages.
+              </p>
+            ) : null}
+
             {historyError ? (
               <p role="alert" className="text-[12.5px] leading-relaxed text-fail">
                 {historyError}

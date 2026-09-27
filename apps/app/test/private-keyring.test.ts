@@ -15,6 +15,8 @@ import { MeraError } from "@category-labs/mera";
 import {
   PRF_NAMESPACE_ORDER,
   SealedError,
+  VAULT_MAX_CIPHERTEXT_BYTES,
+  addVaultEntry,
   deriveInboxKeys,
   prfSaltFor,
   sealResult,
@@ -24,7 +26,7 @@ import {
 } from "@xorv/protocol/web";
 import { KeyringLockedError, PrivateKeyring } from "@/lib/private/keyring";
 import { describePasskeyError, type PasskeyEnv } from "@/lib/private/passkey";
-import { VaultClient, VaultError } from "@/lib/private/vault-client";
+import { TRUNCATION_MARK, VaultClient, VaultError, fitVaultToBudget } from "@/lib/private/vault-client";
 import {
   envelopeSummary,
   readSealedResult,
@@ -47,9 +49,14 @@ function hex(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("hex");
 }
 
-/** The broker's vault routes, in memory, with the same rules (verifyVaultWrite + next-version). */
-function vaultBroker() {
+/**
+ * The broker's vault routes, in memory, with the same rules (size cap,
+ * verifyVaultWrite, next-version). `maxBytes` stands in for a broker
+ * configured with a smaller cap than the protocol's.
+ */
+function vaultBroker(maxBytes = VAULT_MAX_CIPHERTEXT_BYTES) {
   const vaults = new Map<string, VaultCiphertext & { updatedAt: number }>();
+  const rejected: number[] = [];
   let beforeNextPut: (() => Promise<void>) | null = null;
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -66,6 +73,11 @@ function vaultBroker() {
       await hook();
     }
     const body = JSON.parse(String(init.body));
+    // services/broker/src/app.ts: decoded ciphertext over the cap is a 413.
+    if (typeof body?.ciphertext === "string" && Math.floor((body.ciphertext.length * 3) / 4) > maxBytes) {
+      rejected.push(Math.floor((body.ciphertext.length * 3) / 4));
+      return json(413, { error: `vault ciphertext is larger than ${Math.round(maxBytes / 1024)} KiB` });
+    }
     const check = verifyVaultWrite(id, body);
     if (!check.ok) return json(check.forbidden ? 403 : 400, { error: check.reason });
     const current = vaults.get(id)?.version ?? 0;
@@ -77,6 +89,8 @@ function vaultBroker() {
   return {
     fetch: fetchImpl,
     vaults,
+    /** Decoded sizes of the writes refused with 413. */
+    rejected,
     onNextPut(hook: () => Promise<void>) {
       beforeNextPut = hook;
     },
@@ -315,6 +329,84 @@ describe("VaultClient", () => {
     // Serve the owner's ciphertext under the other device's id.
     broker.vaults.set(other.vaultId(), broker.vaults.get(ring.vaultId())!);
     await expect(new VaultClient(BROKER, other, broker.fetch).load()).rejects.toThrow(SealedError);
+  });
+});
+
+describe("a history that outgrows the broker's 176 KiB cap", () => {
+  async function unlocked() {
+    const ring = keyring(new FakeAuthenticator());
+    await ring.create();
+    await ring.unlock();
+    return ring;
+  }
+  /** A near-max prompt (the broker takes 20,000 chars). CJK is 3 bytes a char in UTF-8. */
+  const big = (jobId: string, createdAt: number, char = "x"): PrivateJobEntry => ({
+    jobId,
+    title: null,
+    prompt: char.repeat(20_000),
+    createdAt,
+  });
+  const storedBytes = (broker: ReturnType<typeof vaultBroker>, id: string): number =>
+    Math.floor((broker.vaults.get(id)!.ciphertext.length * 3) / 4);
+
+  it("keeps accepting new private jobs past the cap, dropping the oldest instead of failing every write", async () => {
+    const broker = vaultBroker();
+    const ring = await unlocked();
+    const client = new VaultClient(BROKER, ring, broker.fetch);
+    // Nine ~20 KB prompts is already over 180,224 bytes of JSON.
+    for (let i = 1; i <= 12; i += 1) {
+      const state = await client.add(big(`job_${i}`, i));
+      expect(state.vault.entries[0]?.jobId).toBe(`job_${i}`); // the job just bought is always kept
+    }
+    const history = await client.load();
+    expect(history.version).toBe(12);
+    const ids = history.vault.entries.map((e) => e.jobId);
+    expect(ids[0]).toBe("job_12");
+    expect(ids).not.toContain("job_1");
+    expect(ids.length).toBeGreaterThanOrEqual(8);
+    expect(history.vault.entries.every((e) => e.prompt.length === 20_000)).toBe(true);
+    expect(storedBytes(broker, ring.vaultId())).toBeLessThanOrEqual(VAULT_MAX_CIPHERTEXT_BYTES);
+    expect(broker.rejected).toEqual([]);
+  });
+
+  it("three CJK prompts (UTF-8 triples them) are enough to hit the cap, and still save", async () => {
+    const broker = vaultBroker();
+    const ring = await unlocked();
+    const client = new VaultClient(BROKER, ring, broker.fetch);
+    for (let i = 1; i <= 4; i += 1) await client.add(big(`job_cjk_${i}`, i, "漢"));
+    const ids = (await client.load()).vault.entries.map((e) => e.jobId);
+    expect(ids[0]).toBe("job_cjk_4");
+    expect(ids).not.toContain("job_cjk_1");
+    expect(storedBytes(broker, ring.vaultId())).toBeLessThanOrEqual(VAULT_MAX_CIPHERTEXT_BYTES);
+  });
+
+  it("when the new entries alone are too big (a retry of several unsaved jobs), shortens their stored prompts rather than dropping any", async () => {
+    const broker = vaultBroker();
+    const ring = await unlocked();
+    const client = new VaultClient(BROKER, ring, broker.fetch);
+    const unsaved = [1, 2, 3, 4].map((i) => big(`job_retry_${i}`, i, "漢")); // ~240 KB together
+    const state = await client.write((current) => unsaved.reduce(addVaultEntry, current));
+    expect(state.vault.entries.map((e) => e.jobId).sort()).toEqual(unsaved.map((e) => e.jobId).sort());
+    expect(state.trimmed?.truncated).toBeGreaterThan(0);
+    expect(state.vault.entries.some((e) => e.prompt.endsWith(TRUNCATION_MARK))).toBe(true);
+    expect(storedBytes(broker, ring.vaultId())).toBeLessThanOrEqual(VAULT_MAX_CIPHERTEXT_BYTES);
+  });
+
+  it("a 413 from a broker with a smaller cap trims harder and retries instead of giving up", async () => {
+    const broker = vaultBroker(64 * 1024);
+    const ring = await unlocked();
+    const client = new VaultClient(BROKER, ring, broker.fetch);
+    for (let i = 1; i <= 6; i += 1) await client.add(big(`job_small_${i}`, i));
+    expect(broker.rejected.length).toBeGreaterThan(0);
+    expect((await client.load()).vault.entries[0]?.jobId).toBe("job_small_6");
+    expect(storedBytes(broker, ring.vaultId())).toBeLessThanOrEqual(64 * 1024);
+  });
+
+  it("fitVaultToBudget leaves a history that fits untouched", () => {
+    const vault = { v: 1 as const, entries: [big("job_a", 2), big("job_b", 1)] };
+    const fitted = fitVaultToBudget(vault);
+    expect(fitted).toMatchObject({ vault, dropped: 0, truncated: 0 });
+    expect(fitted.plaintext).toBe(JSON.stringify(vault));
   });
 });
 
