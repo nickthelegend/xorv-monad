@@ -1258,6 +1258,17 @@ export function createApp(deps: AppDeps) {
     if (ratingsInFlight.has(job.id)) return c.json({ error: "a rating for this job is already being relayed" }, 409);
     ratingsInFlight.add(job.id);
     try {
+      // XorvLedger only accepts a rating for a job it has a receipt for. The
+      // receipt comes first: it can land without the agent (the agent's
+      // wallet moved since the quote), and then there is nothing to rate, so
+      // no Nansen lookup is spent on it.
+      if (!receiptLanded(job)) await ensureReceipt(job);
+      const landed = jobs.get(job.id);
+      if (!landed || !receiptLanded(landed)) {
+        return c.json({ error: "the job's receipt is not on-chain yet — retry in a few seconds" }, 409);
+      }
+      const recorded = ratingTarget(landed);
+      if ("error" in recorded) return c.json({ error: recorded.error }, recorded.status);
       // The wash-rating guard. Only reached with a valid payer signature, so
       // nobody but the buyer can make the broker spend on a lookup. A provider
       // rating itself from a second wallet — one it funded, or one funded by
@@ -1275,12 +1286,6 @@ export function createApp(deps: AppDeps) {
             403,
           );
         }
-      }
-      // XorvLedger only accepts a rating for a job it has a receipt for.
-      if (!receiptLanded(job)) await ensureReceipt(job);
-      const landed = jobs.get(job.id);
-      if (!landed || !receiptLanded(landed)) {
-        return c.json({ error: "the job's receipt is not on-chain yet — retry in a few seconds" }, 409);
       }
       const result = await chain.rateJob(ratingMessage(parts.rating), signature as Hex);
       jobs.patch(job.id, {
@@ -1303,7 +1308,14 @@ export function createApp(deps: AppDeps) {
         feedbackHash: parts.feedbackHash,
       });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+      const message = err instanceof Error ? err.message : String(err);
+      // A receipt recorded without its agent before the broker tracked that
+      // (an older job): remember it, so the rating stops being offered.
+      if (/NoAgent/.test(message)) {
+        jobs.patch(job.id, { receiptWithoutAgent: true });
+        return c.json({ error: "this job's receipt is on the ledger without an agent identity, so it can't be rated" }, 409);
+      }
+      return c.json({ error: message }, 502);
     } finally {
       ratingsInFlight.delete(job.id);
     }
@@ -1837,7 +1849,7 @@ export function createApp(deps: AppDeps) {
    * such receipts are recorded without an agent (and can't be rated).
    */
   function receiptAgentId(job: StoredJob): string | null {
-    if (!job.providerAgentId) return null;
+    if (!job.providerAgentId || job.receiptWithoutAgent) return null;
     const quoted = job.quotedProviderId ?? job.providerId;
     return job.providerId === quoted ? job.providerAgentId : null;
   }
@@ -1878,7 +1890,13 @@ export function createApp(deps: AppDeps) {
         state.pending = null;
         // A receipt found already recorded (a retry that reverted as a
         // duplicate) counts too, with its original tx when it was found.
-        if (result) jobs.patch(job.id, { ...(result.txHash ? { receiptTxHash: result.txHash } : {}), receiptRecorded: true });
+        if (result) {
+          jobs.patch(job.id, {
+            ...(result.txHash ? { receiptTxHash: result.txHash } : {}),
+            receiptRecorded: true,
+            ...(result.withoutAgent ? { receiptWithoutAgent: true } : {}),
+          });
+        }
         return result;
       });
     state.pending = pending;

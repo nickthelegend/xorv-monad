@@ -204,6 +204,12 @@ describe("receipt batching", () => {
       expect(await w.recordJob(receipt("job_dup"))).toMatchObject({ txHash: "", alreadyRecorded: true });
     });
 
+    it("says so when the receipt already recorded carries no agent", async () => {
+      const dup = jobIdHash("job_dup");
+      const { w } = writer({ submit: dupSubmit(dup), reads: reads({ recordedJob: async () => ({ buyer: BUYER, agentId: NO_AGENT }) }) });
+      expect(await w.recordJob(receipt("job_dup", { agentId: "7" }))).toMatchObject({ alreadyRecorded: true, withoutAgent: true });
+    });
+
     it("stays a failure when the recorded receipt names another buyer", async () => {
       const dup = jobIdHash("job_dup");
       const other = "0x3333333333333333333333333333333333333333";
@@ -258,6 +264,8 @@ describe("receipt batching", () => {
     });
     const result = await w.recordJob(receipt("job_a", { agentId: "7" }));
     expect(result).not.toBeNull();
+    // The caller is told, so the job stops offering a rating the ledger refuses.
+    expect(result!.withoutAgent).toBe(true);
     expect(calls).toHaveLength(2);
     expect(batchOf(calls[1]!)[0]!.agentId).toBe(NO_AGENT);
     expect(logs.join("\n")).toMatch(/without an agent/);

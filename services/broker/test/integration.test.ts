@@ -15,7 +15,7 @@
  * one does. Ratings are signed with real viem signatures too.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 import WebSocket from "ws";
@@ -81,6 +81,8 @@ class StubChain implements ChainLike {
    * DuplicateJob when the original transaction is out of its search window.
    */
   alreadyRecordedNoTx = false;
+  /** Answer receipts the way the writer does after re-recording one under NO_AGENT. */
+  recordWithoutAgent = false;
   private tx = 0;
 
   mode(): LedgerMode {
@@ -122,6 +124,7 @@ class StubChain implements ChainLike {
     if (this.alreadyRecordedNoTx) {
       return { contract: LEDGER, txHash: "", explorerUrl: "", blockNumber: null, alreadyRecorded: true };
     }
+    if (this.recordWithoutAgent) return { ...this.result(), withoutAgent: true };
     return this.result();
   }
   async rateJob(rating: RatingMessage, signature: Hex) {
@@ -2000,6 +2003,50 @@ describe("Nansen trust", () => {
       attributionUrl: "https://nansen.ai",
     });
   });
+
+  it("stops offering a rating once the receipt landed without the agent, before any Nansen lookup", async () => {
+    // The agent's wallet moved between the quote and the receipt, so the
+    // writer re-recorded it under NO_AGENT. The job kept its agent id, so the
+    // buyer was handed typed data, a paid Nansen check ran, and the ledger
+    // then refused the rating with NoAgent — on every retry.
+    await h.stop();
+    const trust = fixtureTrust();
+    const checkRelated = vi.spyOn(trust, "checkRelated");
+    h = await boot({ trust });
+    h.agentWallets.set("7", PAYEE_A);
+    const provider = await connectProvider(h, { agentId: "7" });
+    const { body: q } = await quote(h, "rate me");
+    // The receipt can't land yet (an RPC outage), so the rating is offered.
+    h.chain.failReceipts = 1_000;
+    const { body: paid } = await pay(h, q.quoteId);
+    await provider.completeNextJob("rated answer");
+    await waitForStatus(h, paid.jobId, "completed");
+    const td = (await (await fetch(`${h.base}/api/jobs/${paid.jobId}/rating?value=90`)).json()) as Json;
+    expect(td.agentId).toBe("7");
+
+    // Now it lands, without the agent.
+    h.chain.failReceipts = 0;
+    h.chain.recordWithoutAgent = true;
+    const typed = td.typedData as { domain: Record<string, unknown>; types: Record<string, unknown>; message: Parameters<typeof ratingMessage>[0] };
+    const signature = await h.buyer.signTypedData({
+      domain: typed.domain,
+      types: typed.types,
+      primaryType: "Rating",
+      message: ratingMessage(typed.message),
+    } as never);
+    const res = await fetch(`${h.base}/api/jobs/${paid.jobId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: 90, deadline: td.deadline, signature }),
+    });
+    expect(res.status).toBe(409);
+    expect(h.jobs.get(paid.jobId)!.receiptWithoutAgent).toBe(true);
+    expect(checkRelated).not.toHaveBeenCalled();
+    expect(h.chain.ratings).toHaveLength(0);
+    // And it is no longer offered.
+    expect((await fetch(`${h.base}/api/jobs/${paid.jobId}/rating?value=90`)).status).toBe(409);
+    provider.close();
+  }, 20_000);
 
   it("scores a provider's payout wallet on registration and serves the public view everywhere", async () => {
     await h.stop();

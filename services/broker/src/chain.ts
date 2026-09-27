@@ -85,6 +85,12 @@ export interface PublishResult {
    * transaction when it could be found.
    */
   alreadyRecorded?: boolean;
+  /**
+   * The receipt asked for an agent but is on the ledger without one (NO_AGENT):
+   * the agent's wallet no longer matched the address paid, or the receipt
+   * found already recorded carries none. XorvLedger refuses any rating for it.
+   */
+  withoutAgent?: boolean;
 }
 
 /**
@@ -394,18 +400,19 @@ export class LedgerWriter implements ChainLike {
     try {
       const recorded = await this.reads.recordedJob(struct.jobId);
       if (/^0x0{40}$/i.test(recorded.buyer) || recorded.buyer.toLowerCase() !== struct.buyer.toLowerCase()) return null;
+      const agentless = recorded.agentId === NO_AGENT && struct.agentId !== NO_AGENT ? { withoutAgent: true } : {};
       const sent = this.unconfirmed.get(struct.jobId.toLowerCase());
       if (sent) {
         const state = await this.reads.txStatus(sent).catch(() => null);
         if (state?.status === "success") {
           this.unconfirmed.delete(struct.jobId.toLowerCase());
-          return { ...this.resultFor(sent, state.blockNumber), alreadyRecorded: true };
+          return { ...this.resultFor(sent, state.blockNumber), alreadyRecorded: true, ...agentless };
         }
       }
       this.unconfirmed.delete(struct.jobId.toLowerCase());
       const found = await this.reads.findRecorded(struct.jobId).catch(() => null);
-      if (found) return { ...this.resultFor(found.txHash, found.blockNumber), alreadyRecorded: true };
-      return { contract: this.ledgerAddress, txHash: "", explorerUrl: "", blockNumber: null, alreadyRecorded: true };
+      if (found) return { ...this.resultFor(found.txHash, found.blockNumber), alreadyRecorded: true, ...agentless };
+      return { contract: this.ledgerAddress, txHash: "", explorerUrl: "", blockNumber: null, alreadyRecorded: true, ...agentless };
     } catch (err) {
       this.recordError(`recordJobs (checking ${struct.jobId})`, err);
       return null;
@@ -538,6 +545,10 @@ export class LedgerWriter implements ChainLike {
       if (batch.length === 1 && only && reverted === "PayToNotAgentWallet" && only.struct.agentId !== NO_AGENT) {
         this.log(`[ledger] receipt ${only.struct.jobId}: payTo is no longer the agent's wallet — recording without an agent`);
         only.struct = { ...only.struct, agentId: NO_AGENT };
+        // Tell the caller, so the job stops offering a rating the ledger
+        // would refuse (NoAgent) after the buyer signed and paid for checks.
+        const resolve = only.resolve;
+        only.resolve = (result) => resolve(result ? { ...result, withoutAgent: true } : result);
         await this.sendBatch([only]);
         return;
       }

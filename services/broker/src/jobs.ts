@@ -108,6 +108,12 @@ export interface StoredJob extends Job {
    * `DuplicateJob`) whose original transaction could not be looked up.
    */
   receiptRecorded?: boolean;
+  /**
+   * The receipt landed without the provider's agent (NO_AGENT), so the
+   * ledger refuses ratings for it: no rating is offered or relayed, and no
+   * verifier feedback is attributed to that identity.
+   */
+  receiptWithoutAgent?: boolean;
 }
 
 /** True once the job's receipt is known to be on XorvLedger. */
