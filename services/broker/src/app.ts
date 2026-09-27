@@ -32,6 +32,7 @@ import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { paymentMiddleware } from "@x402/hono";
 import { x402ResourceServer } from "@x402/core/server";
+import { decodePaymentSignatureHeader } from "@x402/core/http";
 import type {
   FacilitatorClient,
   HTTPRequestContext,
@@ -242,6 +243,17 @@ export function createApp(deps: AppDeps) {
      * in `settlements` for the handler; under a settle-after-handler flow the
      * job exists and the record is attached directly.
      */
+    // A payment from the payee to itself moves nothing, but it would still
+    // buy a "paid" job, a receipt, earnings and rating eligibility at the
+    // settlement's gas cost. The paid-route guard refuses it before this; this
+    // is the backstop for a payload that guard could not read.
+    x402Server.onBeforeSettle(async (ctx) => {
+      const from = authorizationFrom(ctx.paymentPayload as PaymentPayload);
+      if (from && sameAddress(from, ctx.requirements.payTo)) {
+        return { abort: true, reason: "self_payment", message: "the payer is the provider being paid" };
+      }
+    });
+
     x402Server.onAfterSettle(async (ctx) => {
       const quoteId = quoteIdFromTransport(ctx.transportContext);
       if (!quoteId || !ctx.result.success || !ctx.result.transaction) return;
@@ -878,6 +890,10 @@ export function createApp(deps: AppDeps) {
       return c.json({ error: settlement.unavailableReason ?? "payments are unavailable" }, 503);
     }
     if (!hasPaymentHeader(c)) return next();
+    // Refused before anything settles: see onBeforeSettle.
+    if (sameAddress(payerFromHeader(c), quote.providerAddress)) {
+      return c.json(SELF_PAYMENT_REFUSAL, 403);
+    }
 
     // One settlement per quote at a time — see Quote.paying.
     if (quote.paying) {
@@ -905,6 +921,11 @@ export function createApp(deps: AppDeps) {
 
     const settled = settlements.get(quote.id);
     settlements.delete(quote.id);
+    if (settled && sameAddress(settled.record.payer, settled.record.payTo)) {
+      // Nothing moved (payer and payee are one wallet), so nothing is owed:
+      // no job, no receipt, no earnings.
+      return c.json(SELF_PAYMENT_REFUSAL, 403);
+    }
     if (!settled) {
       // Only reachable if the payment flow were ever switched back to
       // settle-after-handler; then onAfterSettle attaches it to the job.
@@ -1150,6 +1171,11 @@ export function createApp(deps: AppDeps) {
     }
     if (!isTerminal(job.status)) return { error: "rate the job once it has finished", status: 409 };
     if (job.rating) return { error: "this job has already been rated", status: 409 };
+    // A job its own provider paid for (payer == payTo) says nothing about the
+    // provider. No lookup needed, so this holds whatever the Nansen guard says.
+    if (sameAddress(job.payment.payer, job.payment.payTo)) {
+      return { error: "this job was paid for by the provider's own payout address, so it can't be rated", status: 409 };
+    }
     const agentId = receiptAgentId(job);
     if (!agentId) {
       return {
@@ -2031,6 +2057,31 @@ export function adapterChoice(raw: unknown): AdapterKind | null {
   const value = raw.trim();
   if (!value || value.toLowerCase() === "auto") return null;
   return value as AdapterKind;
+}
+
+/** The answer to a buyer paying the quoted provider from the provider's own payout address. */
+const SELF_PAYMENT_REFUSAL = {
+  error:
+    "the paying wallet is the provider's own payout address — a provider can't buy its own jobs " +
+    "(it would mint a paid receipt and rating eligibility for nothing)",
+  code: "self_payment",
+} as const;
+
+/** `authorization.from` of an EIP-3009 payload, when it has one. */
+function authorizationFrom(payload: PaymentPayload | null | undefined): string | null {
+  const from = (payload?.payload as { authorization?: { from?: unknown } } | undefined)?.authorization?.from;
+  return typeof from === "string" && isEvmAddress(from) ? from : null;
+}
+
+/** The payer named by the request's x402 payment header, or null when it can't be read. */
+function payerFromHeader(c: Context): string | null {
+  const header = c.req.header("payment-signature") ?? c.req.header("x-payment");
+  if (!header) return null;
+  try {
+    return authorizationFrom(decodePaymentSignatureHeader(header));
+  } catch {
+    return null;
+  }
 }
 
 function hasPaymentHeader(c: Context): boolean {

@@ -872,6 +872,26 @@ describe("the paid path", () => {
     provider.close();
   });
 
+  it("refuses a payment from the provider's own payout address before it settles", async () => {
+    // payer == payTo moves no money but used to buy a paid job, a receipt,
+    // earnings and rating eligibility at the facilitator's gas cost. Only the
+    // Xorv clients refused it; raw @x402/fetch went straight through.
+    const provider = await connectProvider(h, { address: h.buyer.address });
+    const { body: q } = await quote(h);
+    expect(q.provider.address).toBe(h.buyer.address);
+    const { res, body } = await pay(h, q.quoteId);
+    expect(res.status).toBe(403);
+    expect(body.code).toBe("self_payment");
+    expect(h.control.settled).toHaveLength(0);
+    expect(h.jobs.list({ limit: 10 })).toHaveLength(0);
+    expect(h.registry.get(provider.providerId)!.stats).toMatchObject({ jobsCompleted: 0, earnedUsdcMicros: 0 });
+    // The quote is still for sale to a real buyer.
+    const other = privateKeyToAccount(generatePrivateKey());
+    expect((await pay(h, q.quoteId, h.payAs(other))).res.status).toBe(200);
+    expect(h.control.settled).toHaveLength(1);
+    provider.close();
+  });
+
   it("404s an unknown or expired quote instead of quoting a price nobody can pay", async () => {
     const provider = await connectProvider(h);
     const res = await fetch(`${h.base}/api/jobs/qte_does_not_exist`, {
@@ -1412,6 +1432,18 @@ describe("ratings", () => {
     expect(h.chain.ratings).toHaveLength(1);
     // Nothing more was sent: the receipt was already there.
     expect(h.chain.receipts).toHaveLength(1);
+    provider.close();
+  }, 20_000);
+
+  it("won't offer or relay a rating for a job its own provider paid for", async () => {
+    // Recorded before the paid route refused self-payment (or by any path
+    // that slipped past it): payer == payTo is no evidence about the provider.
+    const { provider, jobId } = await ratedJobSetup();
+    const job = h.jobs.get(jobId)!;
+    h.jobs.patch(jobId, { payment: { ...job.payment!, payTo: job.payment!.payer } });
+    const { res, body } = await typedDataFor(jobId, 100);
+    expect(res.status).toBe(409);
+    expect(body.error).toMatch(/own payout address/);
     provider.close();
   }, 20_000);
 
