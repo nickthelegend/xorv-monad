@@ -28,6 +28,7 @@ import { createWalletClient, custom, getAddress, type Address, type EIP1193Provi
 import { fetchBalances, publicClientFor, sameAddress, type AccountBalances } from "@xorv/protocol/web";
 import { APP_CHAIN, NETWORK, PUBLIC_RPC_URL } from "@/lib/network";
 import { errorMessage, isUserRejection } from "@/lib/errors";
+import { jsonSafeSigner } from "@/lib/typed-data";
 import type { PaymentSigner } from "@/lib/x402-pay";
 import type { RatingSigner } from "@/lib/rating";
 
@@ -152,10 +153,15 @@ function PrivyWalletProvider({ children }: { children: ReactNode }) {
     // confirmation modal for the embedded wallet, the extension for others).
     // Only the typed-data signer is handed on: an x402 exact payment and a
     // rating need nothing else, and nothing else should be reachable.
+    //
+    // Privy forwards the payload untouched, and its sign modal renders it with
+    // a bare JSON.stringify — which throws on the bigints viem uses for every
+    // uint256 and takes the whole app down mid-render. So Privy only ever sees
+    // the JSON-safe form (same digest, same signature): see lib/typed-data.ts.
     const account = await toViemAccount({ wallet });
     return {
       address: account.address,
-      signTypedData: (message) => account.signTypedData(message as never),
+      signTypedData: jsonSafeSigner((typedData) => account.signTypedData(typedData as never)),
     };
   }, [wallet]);
 
