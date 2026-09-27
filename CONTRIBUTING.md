@@ -27,9 +27,11 @@ pnpm --filter @xorv/broker setup -- --new-keys   # also prints fresh EVM keys fo
   ~10 MON per-account reserve. Hedera ED25519 keys cannot be reused: Monad needs secp256k1.
 - **With no keys**, the broker boots on `eip155:10143`, settles through Monad's hosted facilitator
   and reads the ledger read-only. That is enough to develop the app and the CLI against.
-- **Your own ledger.** `XORV_BROKER_ADDRESS=<operator address> pnpm deploy:ledger` deploys XorvLedger
-  (about 0.2 MON plus the reserve) and prints the `XORV_LEDGER_*` lines. A keyless dry run on an
-  in-process chain: `pnpm --filter @xorv/contracts exec hardhat run scripts/deploy.ts`.
+- **Your own ledger.** `XORV_BROKER_ADDRESS=<operator address> XORV_LEDGER_OWNER=<an address the
+  broker's host doesn't hold> pnpm deploy:ledger` deploys XorvLedger (about 0.2 MON plus the reserve)
+  and prints the `XORV_LEDGER_*` lines. On Monad networks the script refuses an owner that is the
+  broker or the operator key ([packages/contracts/README.md](packages/contracts/README.md#deploy-and-verify)).
+  A keyless dry run on an in-process chain: `pnpm --filter @xorv/contracts exec hardhat run scripts/deploy.ts`.
 - **A private RPC** (`XORV_RPC_URL`) saves you from the public one's rate limit (25–50 rps) and its
   100-block `eth_getLogs` cap.
 

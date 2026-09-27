@@ -104,9 +104,10 @@ adapters use pay-as-you-go API keys, and `openai-compatible` can serve your own 
 | Buyer key for `xorv run` | `XORV_PAYER_KEY` / `XORV_PRIVATE_KEY` | Signs USDC authorizations | Never taken as a flag (argv shows up in `ps`). Use a different key from the payout key. |
 | Broker operator key | `.env` / environment (`XORV_OPERATOR_KEY`) | XorvLedger writes (it is the ledger's `broker`), rating relays, and by default the verifier's feedback | Needs MON above Monad's ~10 MON reserve. Unset = read-only ledger. A leak lets someone forge receipts until the ledger owner rotates the broker (`setBroker`). Ratings still need the buyer's signature. |
 | Facilitator key | `XORV_FACILITATOR_KEY` (defaults to the operator key) | Submits buyers' authorizations and pays their gas | Holds MON, never USDC. It cannot redirect a payment: the signed authorization fixes `to` and `value`. A separate key keeps settlements from queueing behind ledger writes. |
-| Verifier key | `XORV_VERIFIER_KEY` (defaults to the operator key) | Writes Kimi's ERC-8004 feedback | Must never own or operate a provider's agent NFT (the registry refuses self-feedback). If separate, list it in the indexer's `ENVIO_XORV_VERIFIER_ADDRESSES`. |
-| Ledger deployer / owner | `XORV_DEPLOYER_KEY` or Hardhat keystore | Rotates the broker, transfers ownership | Cannot touch receipts or ratings. Keep it offline after deploy. |
-| App demo payer | `apps/app/.env.local`, server-only (`XORV_DEMO_PAYER_KEY`) | Pays for visitors without a wallet | Testnet only (refused on mainnet), capped per job (`XORV_DEMO_MAX_USDC_UNITS`), never `NEXT_PUBLIC_`. |
+| Verifier key | `XORV_VERIFIER_KEY` (defaults to the operator key) | Writes Kimi's ERC-8004 feedback | Must never own or operate a provider's agent NFT (the registry refuses self-feedback). The broker checks `isAuthorizedOrOwner` first and keeps the feedback off-chain, with the reason, when an agent has authorized it. If separate, list it in the indexer's `ENVIO_XORV_VERIFIER_ADDRESSES`. |
+| Ledger deployer | `XORV_DEPLOYER_KEY` (environment or Hardhat keystore), else the operator key | Pays for the deployment | Holds no role on the ledger afterwards. |
+| Ledger owner | An address named at deploy time (`XORV_LEDGER_OWNER`); ideally a hardware or multisig wallet | Rotates the broker (`setBroker`), transfers ownership | Cannot touch receipts or ratings. The deploy script refuses, on Monad networks, an owner that is the broker or the operator key: whoever leaked that key could take ownership first, and the ledger could never be recovered. Keep it offline. |
+| App demo payer | `apps/app/.env.local`, server-only (`XORV_DEMO_PAYER_KEY`) | Pays for visitors without a wallet, and signs ratings for jobs it paid | Testnet only (refused on mainnet), never `NEXT_PUBLIC_`. Capped per job (`XORV_DEMO_MAX_USDC_UNITS`) and per rolling 24 h (`XORV_DEMO_DAILY_USDC_UNITS`, default $5), rate-limited per IP and per deployment, one payment attempt per quote, and it rates only for the browser that paid (an HttpOnly, HMAC-signed demo receipt, 30 minutes, once per job). The counters are per server instance. |
 | Sponsor-model API keys | broker and provider environment | Call Qwen, Kimi, Hunyuan | Sent only to each preset's own base URL, and scrubbed from any error text before it is logged or served (`services/broker/src/ai/client.ts`). |
 | Privy app secret | MCP server environment | Drives the Privy server wallet | With `privy:setup --owner-key`, the secret alone can neither sign nor loosen the policy (see below). |
 
@@ -154,6 +155,13 @@ Everything below follows from that.
   (`quoteMatchPolicy`), caps each payment, and pays at the broker URL it was configured with, never
   at a URL the broker returns. The CLI, MCP and MetaMask plugin also refuse to pay the buyer's own
   address.
+- **Self-payment is refused by the broker and the ledger, not only by the clients.** A payment whose
+  payer is the quoted provider's `payTo` gets 403 `self_payment` before anything settles (and an
+  `onBeforeSettle` hook refuses it again). `XorvLedger` reverts `SelfDealing` on such a receipt,
+  whoever writes it. It would otherwise mint a paid receipt and rating eligibility for the price of
+  gas.
+- **A provider that can't be reached is never paid.** The paid route answers 409 before payment when
+  the quoted provider holds no control socket.
 - **The broker is never the payee.** `payTo` is the provider's own address. A compromised broker
   could quote a different provider, but it cannot redirect money to itself without the buyer's
   client noticing the `payTo` it is signing for.
@@ -178,10 +186,14 @@ refund path.** A buyer's cancel stops the work and frees the slot, but the money
   is the broker's attestation, backed by a settlement transaction that anyone can check. The
   identity binding (`payTo == agentWallet`) and the one-rating-per-job rule are enforced by the
   contract, not asserted by the broker.
-- **Ratings are payment-backed**: one per recorded job, signed by the wallet that paid (EOA or
-  ERC-1271), relayed with `clientAddress == XorvLedger`. **Self-dealing is still possible**: a
-  provider can pay for its own jobs from a second wallet and rate itself. Faking a rating costs the
-  price of a job. Weigh scores by distinct paying buyers (the indexer has every receipt's buyer).
+- **Ratings are payment-backed**: one per recorded job, signed by the wallet that paid (ECDSA, then
+  ERC-1271), relayed with `clientAddress == XorvLedger`. The ledger refuses a rating from the agent's
+  own wallet, owner or operators (`SelfDealing`), and the broker refuses to relay one between wallets
+  Nansen links (one funded the other, a shared non-exchange funder, related wallets).
+  **Self-dealing is still possible** from a second wallet with no traceable link, and the Nansen check
+  binds only what the broker relays: `rateJob` stays open to the buyer directly. Faking a rating
+  costs the price of a job. Weigh scores by distinct paying buyers (the indexer has every receipt's
+  buyer).
 - **Verifier scores are a separate signal** (`xorv-verified`, from the verifier EOA). They are an
   AI's opinion of a result, and the prompt and result are fenced as untrusted data so the result
   cannot instruct the grader.
@@ -195,9 +207,10 @@ refund path.** A buyer's cancel stops the work and frees the slot, but the money
 
 A private job's result is sealed on the provider's machine to a key derived from the buyer's passkey
 (Mera PRF), and the broker stores only the envelope. **The prompt is not private from the network**:
-the broker, the Hunyuan screen, the Qwen router and the provider all read it. Script running on the
-app's origin can read keys while they are unlocked. A broker could serve an older genuine version of
-the history vault. PRF support and an https domain are required. The full threat model, and the
+the broker, the Hunyuan screen, the Qwen router and the provider all read it. Public views withhold
+the router's and screener's free-text reasons, because they paraphrase the prompt. Script running
+on the app's origin can read keys while they are unlocked. A broker could serve an older genuine
+version of the history vault. PRF support and an https domain are required. The full threat model, and the
 tests that enforce each property, are in [docs/PRIVATE_JOBS.md §5](docs/PRIVATE_JOBS.md#5-threat-model).
 
 ## What the AI roles see
@@ -213,13 +226,28 @@ unless its key is configured, and `GET /api/network` says which ones are on.
 The broker is designed to face the internet:
 
 - **Per-IP rate limits** on the free endpoints: quotes 30/min (a quote reserves a provider and costs
-  nothing), registrations 10/min, rating relays 10/min (each costs the operator gas), and vault
-  writes 20/min.
-- A 256 KB body limit is applied before parsing. Prompts are capped at 20k characters.
-- Proxy headers (`X-Forwarded-For`) are trusted **only** when `XORV_TRUST_PROXY=1`.
+  nothing), registrations 10/min, rating relays 10/min (each costs the operator gas), vault writes
+  20/min, and 10 new vaults per client per hour.
+- A 256 KB body limit is applied before parsing, and a body without `Content-Length` (chunked) is
+  counted as it streams. Prompts are capped at 20k characters. Expired quotes are pruned by the
+  sweep, and at 10,000 open quotes new ones get 503.
+- Proxy headers (`X-Forwarded-For`) are trusted **only** when `XORV_TRUST_PROXY=1`, and then the
+  client address is read `XORV_TRUSTED_HOPS` entries from the right (default 1): the entries a
+  client writes itself are never the ones used.
+- **Registration cannot hijack a node.** Re-registering a node id whose session is live needs that
+  session's bearer token (409 `node_live` otherwise), and an existing token is never returned to a
+  caller who did not present it. Node ids never go on-chain (agent URIs name the provider id).
 - Provider callbacks are authenticated by bearer token **and** checked against job ownership, so one
   provider cannot post results or heartbeats for another. Bearer tokens never appear in a public
-  response.
+  response. Every WebSocket frame a node sends is validated before it is handled, frames are capped
+  at 8 MiB, and a handler that throws is caught, so a malformed frame cannot exit the broker.
+- **Nansen spend is bound to connected providers.** A provider's wallet signal is bought when its node
+  opens the control socket, not on the free registration, and 30% of the daily Nansen budget is
+  reserved for the wash-rating guard. A guard check that can't run for lack of budget defers the
+  rating (503 `trust_budget_spent`) instead of relaying it unchecked.
+- **Vaults are bounded on disk.** Vault ciphertext lives in the store, not the heap: at most 176 KiB
+  per vault and 1 GiB across all vaults (128 MiB when running without a durable store), after which
+  new vaults get 507 while existing ones can still be rewritten.
 - **Cancelling needs the buyer's one-time cancel token**, which is returned only in the payment
   response and stored as a hash. Job ids are public, so they are not capabilities.
 - A rating is verified in the broker before any gas is spent, and an in-flight guard stops a
@@ -232,7 +260,8 @@ The broker is designed to face the internet:
 
 - **Public jobs are public.** `/api/jobs` serves the prompt and result of every non-private job.
   Use a private job for the answer; nothing hides the prompt from the network.
-- **Rate limiting is per-process.** Running more than one broker needs shared state.
+- **Rate limiting is per-process.** Running more than one broker needs shared state. The app's demo
+  routes count per server instance too: a best-effort bound on a testnet float.
 - **Success rate is computed from provider-reported outcomes.** A provider that returns garbage
   quickly still "succeeds". Kimi's verification and buyer ratings exist to catch this, but both are
   opt-in signals.
