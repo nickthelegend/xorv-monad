@@ -30,8 +30,13 @@ exist.
 
 - `XorvLedger` replaces the three HCS topics. It handles provider registrations, sampled heartbeats,
   **batched job receipts** (`recordJobs`: one packed slot per job, everything else in events) and
-  **payer-signed ratings** (`rateJob`, EIP-712, EOA or ERC-1271 through `SignatureChecker`), forwarded
-  to the ERC-8004 Reputation Registry.
+  **payer-signed ratings** (`rateJob`, EIP-712: ECDSA against the buyer first, then ERC-1271, so
+  EIP-7702 accounts and smart accounts both work), forwarded to the ERC-8004 Reputation Registry.
+- The ledger refuses self-dealing itself (`SelfDealing`): a receipt whose buyer is its `payTo`, and a
+  rating from the agent's current wallet, owner or an approved operator, on the direct and the
+  relayed path alike.
+- The owner is a constructor argument, named at deploy time (`XORV_LEDGER_OWNER`). The deploy script
+  refuses, on Monad testnet and mainnet, an owner that is the broker or the operator key.
 - Receipts bind the settlement tx to `keccak256(prompt)`, `keccak256(result)`, the duration, the
   outcome, the buyer, the payee and the agent.
 - Tests on Hardhat 3 against the **vendored ERC-8004 v2.0.0 registries** (test-only), with gas
@@ -50,9 +55,9 @@ exist.
 - Nodes register by payout address plus an optional agent id. The broker verifies
   `getAgentWallet(agentId) == address`, and `XorvLedger` enforces `payTo == agentWallet` on every
   receipt.
-- The broker serves ERC-8004 registration files (`/agents/<id>.json`) and reproducible feedback files
-  (`/feedback/<jobId>.json`, `/verifications/<jobId>.json`) whose keccak256 is the on-chain
-  `feedbackHash`.
+- The broker serves ERC-8004 registration files (`/agents/<providerId>.json`; node ids never appear
+  on-chain) and reproducible feedback files (`/feedback/<jobId>.json`, `/verifications/<jobId>.json`)
+  whose keccak256 is the on-chain `feedbackHash`.
 - **Gasless ratings**: `GET /api/jobs/:id/rating` → the buyer signs → `POST /api/jobs/:id/rate` → the
   broker relays `rateJob`. One per job, from the wallet that paid.
 
@@ -60,7 +65,7 @@ exist.
 
 - Indexes XorvLedger and the ERC-8004 Identity and Reputation registries over HyperSync, with
   testnet and mainnet configs.
-- 15 entity types, including derived provider earnings, success rate and rating; agent reputation
+- 14 entity types, including derived provider earnings, success rate and rating; agent reputation
   split by writer (buyer ratings, Xorv-verified, other); network, daily, per-provider and per-buyer
   series.
 - Exported GraphQL queries, and 52 tests on Envio's test indexer. It lives outside the pnpm workspace
@@ -165,8 +170,8 @@ exist.
 - One quote could be settled twice by a double-click (there is now a `paying` guard).
 - Anyone who knew a public job id could cancel the job. Cancelling now needs a one-time token from
   the payment response.
-- Provider ids changed on every broker restart. They now derive from the node id, because they are
-  hashed on-chain and written into agent URIs.
+- Provider ids changed on every broker restart. They now derive from the node id
+  (`providerIdFor`, a one-way hash), because they are hashed on-chain and written into agent URIs.
 - The sandbox's deny rules missed a relocated `XORV_HOME`.
 - Receipts are now queued from every path that finishes a job (an old comment claimed the settle hook
   did it).
@@ -177,6 +182,50 @@ exist.
 - `xorv start` off a terminal (systemd, Docker, output to a file) printed its status footer once a
   second and nothing about jobs. It now prints each node event once. Found by the e2e harness.
 
+### Fixed after an adversarial review (52 confirmed findings)
+
+- **Registration.** Re-registering a node id whose session is still live needs that session's
+  bearer token (409 `node_live` otherwise), and an existing token is never handed to a caller who
+  did not present it. Node ids stay off-chain: `agentURI` is `<broker>/agents/<providerId>.json`,
+  built by the CLI, and `/agents/:file` no longer resolves node ids.
+- **Self-dealing.** The broker refuses a payment whose payer is the quoted provider's `payTo`
+  (403 `self_payment`, before anything settles) and never offers such a job for rating. `XorvLedger`
+  refuses the same receipt and ratings from the agent's own wallet, owner or operators (see above).
+- **Ledger owner.** Named at deploy time and never defaulted to the broker's hot key, so a leaked
+  broker key can be rotated out with `setBroker`.
+- **Ratings.** Relayed ratings are checked with ECDSA before ERC-1271, so EIP-7702 buyers can rate.
+  An agent that made the ledger (or the verifier) its operator is detected and answered with 409
+  `ledger_authorized` instead of an opaque revert. Receipts the ledger holds without an agent are
+  no longer offered for rating.
+- **Nansen budget.** Provider signals are bought when a node opens its control socket, not on the
+  free registration. 30% of the daily budget is reserved for the wash-rating guard, and a guard
+  check that can't run for lack of budget defers the rating (503 `trust_budget_spent`) instead of
+  relaying it unchecked.
+- **Matching and payment.** Only providers holding an open control socket are quoted or paid; a
+  paid dispatch the socket can't take counts as a failure against the quoted provider; a provider
+  failing more than it completes recently is left out of matching. Fractional prices (which froze
+  quotes at 0 USDC) are refused. A settlement still confirming after the facilitator's wait keeps its
+  quote locked and runs the job when it lands (`GET /api/quotes/:id`).
+- **Receipts.** A receipt that reverts `DuplicateJob` because it already landed counts as recorded,
+  and an unconfirmed batch is checked before anything is resent.
+- **Broker limits.** Expired quotes are pruned and open quotes capped at 10,000; the 256 KB body
+  limit counts streamed bytes; every WebSocket frame from a node is validated (8 MiB cap) so a
+  malformed one can't exit the broker; the rate limiter reads `X-Forwarded-For` from the right
+  (`XORV_TRUSTED_HOPS`).
+- **Persistence and vaults.** Vault ciphertext stays on disk, not in the heap, with a total cap
+  (1 GiB on disk, 128 MiB in memory mode) and 10 new vaults per client per hour. Boot merges Mongo
+  and SQLite record by record so an older copy never wins.
+- **Private jobs.** The router's and screener's free-text reasons are withheld from public views of
+  a private job. The job page checks a sealed result against the `resultHash` in the job's
+  XorvLedger receipt on Monad, not against the broker's own hash. The history vault trims its oldest
+  entries to fit the broker's 176 KiB cap instead of failing every write; unsaved private prompts are
+  dropped on Lock.
+- **Web app.** Privy's sign modal gets JSON-safe typed data (bigints as decimal strings), which fixed
+  a crash on the first payment or rating. The demo routes (`/api/pay`, `/api/rate`) are rate-limited
+  per IP and per deployment, capped per rolling 24 h (`XORV_DEMO_DAILY_USDC_UNITS`, default $5), allow
+  one payment attempt per quote, and sign a rating only for the browser that paid (an HttpOnly demo
+  receipt, 30 minutes, once per job).
+
 ### Quality
 
 - The root test count and a per-package breakdown are in the README ("For judges"). None of the
@@ -186,7 +235,7 @@ exist.
   XorvLedger deployed by its own script, the built broker, a real provider node, `xorv run --json`,
   the MCP server and a private job, with every claim read back off the fork. The last green report is
   committed as `e2e/last-run.md`.
-- CI builds before typechecking and runs every suite on Node 22 and 24, plus the CLI's Node 20.11
+- CI builds before typechecking and runs every suite on Node 22 and 24, plus the CLI's Node 20.19
   floor and the committed-secret scan.
 
 ---
