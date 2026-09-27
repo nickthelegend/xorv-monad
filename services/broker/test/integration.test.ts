@@ -83,6 +83,8 @@ class StubChain implements ChainLike {
   alreadyRecordedNoTx = false;
   /** Answer receipts the way the writer does after re-recording one under NO_AGENT. */
   recordWithoutAgent = false;
+  /** Make rateJob throw this, the way LedgerWriter reports a ledger refusal. */
+  rateError: string | null = null;
   private tx = 0;
 
   mode(): LedgerMode {
@@ -128,6 +130,7 @@ class StubChain implements ChainLike {
     return this.result();
   }
   async rateJob(rating: RatingMessage, signature: Hex) {
+    if (this.rateError) throw new Error(this.rateError);
     this.ratings.push({ rating, signature });
     return this.result();
   }
@@ -1447,6 +1450,22 @@ describe("ratings", () => {
     const { res, body } = await typedDataFor(jobId, 100);
     expect(res.status).toBe(409);
     expect(body.error).toMatch(/own payout address/);
+    provider.close();
+  }, 20_000);
+
+  it("answers 409 and stops offering the rating when the ledger refuses it with NoAgent", async () => {
+    // A job receipted without its agent before the broker tracked that.
+    const { provider, jobId } = await ratedJobSetup();
+    h.chain.rateError = "the ledger refused the rating: NoAgent";
+    const { body } = await typedDataFor(jobId, 60);
+    const res = await fetch(`${h.base}/api/jobs/${jobId}/rate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: 60, deadline: body.deadline, signature: await sign(h.buyer, body.typedData) }),
+    });
+    expect(res.status).toBe(409);
+    expect(h.jobs.get(jobId)!.receiptWithoutAgent).toBe(true);
+    expect((await typedDataFor(jobId, 60)).res.status).toBe(409);
     provider.close();
   }, 20_000);
 

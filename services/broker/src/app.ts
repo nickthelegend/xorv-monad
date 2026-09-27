@@ -1311,7 +1311,7 @@ export function createApp(deps: AppDeps) {
       const message = err instanceof Error ? err.message : String(err);
       // A receipt recorded without its agent before the broker tracked that
       // (an older job): remember it, so the rating stops being offered.
-      if (/NoAgent/.test(message)) {
+      if (/\bNoAgent\b/.test(message)) {
         jobs.patch(job.id, { receiptWithoutAgent: true });
         return c.json({ error: "this job's receipt is on the ledger without an agent identity, so it can't be rated" }, 409);
       }
