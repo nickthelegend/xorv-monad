@@ -12,9 +12,9 @@ Monad's **ERC-8004** registries.
 [![ERC-8004](https://img.shields.io/badge/ERC--8004-v2.0.0-3DDCFF?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8004)
 [![License](https://img.shields.io/badge/license-MIT-50F0C8?style=flat-square)](LICENSE)
 
-**Demo video:** <!-- TODO(deploy): demo video link --> _TBD, fill in after recording_ ·
-**App:** <!-- TODO(deploy): deployed app URL --> _TBD_ ·
-**XorvLedger:** <!-- TODO(deploy): XorvLedger address --> _TBD_
+**Demo video:** **TODO(deploy)** <!-- record RECORDING.md, paste the link --> ·
+**App:** **TODO(deploy)** <!-- the apps/app Vercel URL, DEPLOY.md §5 --> ·
+**XorvLedger:** **TODO(deploy)** <!-- `address` in packages/contracts/deployments/monadTestnet.json, from `pnpm deploy:ledger` -->
 
 </div>
 
@@ -47,10 +47,11 @@ layer, not a consumer app:
   (`PayToNotAgentWallet`), so the broker cannot simply assert it.
 - **Reputation that costs something to fake.** Buyer ratings reach the ERC-8004 Reputation Registry
   only through `XorvLedger.rateJob`. There is one rating per recorded job, and it must be signed by
-  the wallet that paid for that job, and the broker refuses to relay it when Nansen links the buyer's
-  wallet to the provider's (one funded the other, a shared non-exchange funder, related wallets).
-  `getSummary(agentId, [ledger], "starred", "")` is therefore a score built from paid jobs by
-  independent buyers, and any other marketplace can read it.
+  the wallet that paid for that job. The ledger itself refuses a receipt the provider paid for and a
+  rating from the agent's own wallet, owner or operators (`SelfDealing`), and the broker refuses to
+  relay a rating when Nansen links the buyer's wallet to the provider's (one funded the other, a
+  shared non-exchange funder, related wallets). `getSummary(agentId, [ledger], "starred", "")` is
+  therefore a score built from paid jobs by independent buyers, and any other marketplace can read it.
 - **AI trust services in the loop.** A safety screen protects provider machines, and a verifier
   publishes an independent quality score to the same registry under a separate tag.
 - **Wallet trust, bought agent to agent.** The broker pays Nansen a cent per call in USDC over x402
@@ -68,8 +69,9 @@ on Windows 11 with Node 22.21). A further 14 POSIX-only CLI cases (sandbox tiers
 skipped on Windows. They need **no keys, no RPC and no testnet funds**: the x402 facilitator and the
 XorvLedger writer are stubbed at the chain boundary, the contracts run on Hardhat's in-process chain
 against the real ERC-8004 v2.0.0 registry code, and the hosted models are scripted `fetch` stubs.
-You need Node 22.5+ (the broker uses `node:sqlite`) and pnpm 10. The first `pnpm build` downloads the
-Solidity compiler through Hardhat. CI runs the same commands on Node 22 and 24
+You need Node 22.18+ (the workspace floor, set by `package.json` engines; the broker alone needs 22.13+
+for `node:sqlite`, and the CLI and MCP server run on 20.19+) and pnpm 10. The first `pnpm build`
+downloads the Solidity compiler through Hardhat. CI runs the same commands on Node 22 and 24
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 | Package | Tests | What they cover |
@@ -99,13 +101,14 @@ binary. Its 52 tests run in a Linux container with the one command in
 | MetaMask plugin manifest accepted by MetaMask's own `PluginManifestSchema`; `providers` and `quote` run inside Agent Wallet 7.0.0 | `packages/mm-plugin/test/manifest.test.ts`, example session in [`packages/mm-plugin/README.md`](packages/mm-plugin/README.md#example-session) |
 | Private job keys reproduced on a second (simulated, synced) authenticator | `apps/app/test/private-keyring.test.ts` |
 | Nansen x402 payments: only the Monad mainnet USDC row of Nansen's real 402s is paid, at the captured price, under a per-call cap and a daily budget; a related-wallet rating refused with 403 and nothing relayed | `services/broker/test/trust.test.ts` (replays the captured 402s), "Nansen trust" in `services/broker/test/integration.test.ts` |
-| **XorvLedger deployed on Monad testnet** | <!-- TODO(deploy): XorvLedger address + deploy tx --> **Not yet.** TBD, fill in after deploy |
-| **A job paid, receipted, rated and verified on Monad testnet** | <!-- TODO(deploy): settlement / receipt / rating / feedback tx hashes --> **Not yet.** TBD, fill in after deploy |
-| **Envio indexer live on Envio Cloud** | <!-- TODO(deploy): Envio GraphQL endpoint --> **Not yet.** Deploy between Oct 10 and 13 (see [SUBMISSION.md](SUBMISSION.md#before-you-submit)) |
-| **A Nansen call paid over x402 on Monad mainnet** | <!-- TODO(deploy): Nansen settlement tx on monadscan.com --> **Not yet.** Needs a mainnet key with a few USDC: `pnpm nansen:probe --mode live <address>` |
+| **XorvLedger deployed on Monad testnet** | **Not yet. TODO(deploy)**: the `address` and `txHash` that `pnpm deploy:ledger` writes to `packages/contracts/deployments/monadTestnet.json` |
+| **A job paid, receipted, rated and verified on Monad testnet** | **Not yet. TODO(deploy)**: `payment.txHash`, `receiptTxHash`, `rating.txHash` and `verification.feedbackTxHash` from `curl -s <broker>/api/jobs/<job>` |
+| **An MCP agent paying from a policy-bounded Privy server wallet on Monad testnet** | **Not yet. TODO(deploy)**: the `Payment:` link `xorv_run_job` prints |
+| **Envio indexer live on Envio Cloud** | **Not yet. TODO(deploy)**: the endpoint from `envio-cloud deployment endpoint <indexer> <commit>`, deployed between Oct 10 and 13 (see [SUBMISSION.md](SUBMISSION.md#before-you-submit)) |
+| **A Nansen call paid over x402 on Monad mainnet** | **Not yet. TODO(deploy)**: `curl -s <broker>/api/network \| jq -r .nansen.lastPaidTx.url`, with a mainnet key holding a few USDC (or one lookup with `pnpm nansen:probe --mode live <address>`) |
 
-Nothing in this README claims an on-chain transaction that isn't linked. Every "TBD" is filled in
-after deployment.
+Nothing in this README claims an on-chain transaction that isn't linked. Every **TODO(deploy)** names
+the command or file its value comes from, and is filled in after deployment.
 
 ---
 
@@ -140,12 +143,14 @@ Service topics. None of that code remains on the payment path.
 | Monad/EVM payment rail | x402 v2 `exact` (EIP-3009) with Circle USDC on Monad. Upfront settlement. An in-process viem facilitator or Monad's hosted one. A buyer client bound to the frozen quote. Gas limits set to estimate + 15%. A per-address signer lock. | `packages/protocol/src/{chains,evm,x402,x402-client,money}.ts`, `services/broker/src/{app,facilitator}.ts` |
 | `XorvLedger` contract | Batched receipts, provider registrations and sampled heartbeats, gasless payer-signed ratings forwarded to ERC-8004. Hardhat 3 tests against the vendored registries. Live-Monad gas measurement. Deploy and verify scripts. | `packages/contracts/` |
 | ERC-8004 identity and payment-backed reputation | `xorv identity register/show`. The broker checks a claimed agent against the Identity Registry. Registration and feedback files are served by the broker. EIP-712 rating relay. | `packages/cli/src/commands/identity.ts`, `packages/protocol/src/erc8004.ts`, `services/broker/src/{app,ratings}.ts` |
-| Envio indexer | HyperIndex v3 over XorvLedger and the ERC-8004 Identity and Reputation registries, with 15 entity types including derived aggregates. The broker reads it first and falls back to RPC. | `services/indexer/`, `services/broker/src/{indexer,ledger-reader}.ts` |
+| Envio indexer | HyperIndex v3 over XorvLedger and the ERC-8004 Identity and Reputation registries, with 14 entity types including derived aggregates. The broker reads it first and falls back to RPC. | `services/indexer/`, `services/broker/src/{indexer,ledger-reader}.ts` |
 | Privy | Embedded wallet created at login pays per job and signs gasless ratings. MCP agent buyer on a Privy server wallet bound to a signing policy. | `apps/app/components/{providers,wallet-provider}.tsx`, `packages/mcp/src/{signer,privy-policy}.ts` |
+| Nansen wallet trust | The broker pays Nansen per call over x402 on Monad mainnet; provider trust score, wash-rating guard, matching tie-breaker. | `services/broker/src/trust/`, `apps/app/components/trust.tsx`, [`docs/NANSEN.md`](docs/NANSEN.md) |
 | MetaMask Agent Wallet | `@xorv/mm-plugin`: `mm xorv providers/quote/run/job/rate`, signing only through `ctx.walletExecutor`, plus a companion agent skill. | `packages/mm-plugin/` |
 | Qwen 3.8 Max, Kimi K3, Hunyuan hy4 | Provider adapters (`qwen`, `kimi`, `hunyuan`, `qwen-code`) and the broker's core-loop roles: Hunyuan screens, Qwen routes, Kimi verifies and writes ERC-8004 feedback. | `packages/cli/src/adapters/{hosted,qwen-code}.ts`, `services/broker/src/ai/`, `packages/protocol/src/llm.ts` |
 | Mera private jobs | Passkey-PRF keys in three namespaces. Results sealed on the provider to the buyer's inbox key. An encrypted history vault that decrypts on a second device. | `packages/protocol/src/{sealed,vault}.ts`, `apps/app/lib/private/`, [`docs/PRIVATE_JOBS.md`](docs/PRIVATE_JOBS.md) |
 | Bug fixes found during the port | Settlement used to run *after* dispatch, so a provider could work on a payment that never settled. A settlement was matched to "the latest unpaid job for this payee" and could swap two buyers' records; it is now matched by quote id. Reassignment kept stale timestamps, credited the wrong provider, and could resurrect a finished job. A double-click could settle one quote twice. Anyone who knew a public job id could cancel it; cancelling now needs a one-time token. Provider ids changed on every broker restart. The sandbox's deny rules missed a relocated `XORV_HOME`. | commits `fb7f041`, `b6e8ba6`, `2b3bdeb` |
+| Fixes from an adversarial review (52 confirmed findings) | Re-registering a live node needs its session token, and node ids stay off-chain (agent URIs use the provider id). The broker refuses self-payment, and `XorvLedger` refuses self-paid receipts and ratings from the agent's own wallets. The ledger owner is named at deploy (`XORV_LEDGER_OWNER`), never the broker key. EIP-7702 buyers can rate. The demo routes (`/api/pay`, `/api/rate`) are rate-limited, capped per day and receipt-gated. Vaults are disk-backed with byte caps. Plus Privy's sign modal, WebSocket frame validation, private-job redaction, the Nansen budget and more, listed in the [CHANGELOG](CHANGELOG.md#fixed-after-an-adversarial-review-52-confirmed-findings). | commits `7b6f014`…`c4f6d14` |
 
 ## AI tools disclosure
 
@@ -237,10 +242,17 @@ Three rules hold the design together. They are explained in [ARCHITECTURE.md](AR
 
 ## Sponsor integrations
 
-Each subsection says what the integration does in the product, which bounty requirement it answers,
-where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
+Xorv is entered in Track 04, so it can take the bounties marked **All tracks** and the Track 04 ones
+(the full checklists are in [SUBMISSION.md](SUBMISSION.md#bounties-entered)). Each subsection quotes
+the portal card, then says what the integration does in the product, how it meets the card, where the
+code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
+
+**Bounties entered:** Privy, Envio, Nansen, Kimi, Mera (One Passkey, Many Keys), Qwen 3.8 Max.
 
 ### Privy: the account that pays, rates, and runs agents
+
+> **Bounty card** (Privy · All tracks · $5,000 USD): "Integrate Privy beyond authentication —
+> login-only integrations will not qualify."
 
 - **What it does.** Visitors log in with email, Google, a passkey or a wallet. Anyone without a
   wallet gets an **embedded EVM wallet**, created on login and pinned to Monad. That wallet
@@ -265,14 +277,20 @@ where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md
   (pay), `apps/app/lib/rating.ts` and `apps/app/components/rate-job.tsx` (rate),
   `packages/mcp/src/signer.ts` (server wallet via `@privy-io/node/viem` `createViemAccount`),
   `packages/mcp/src/privy-policy.ts`, `packages/mcp/src/scripts/privy-setup.ts`.
-- **In the demo.** Log in, see the wallet appear in the header, pay from it, then rate with a free
-  signature. The Privy agent wallet (`xorv_wallet` in Claude Code) is an optional cutaway.
+- **In the demo.** Three Privy features in the main flow: log in and see the embedded wallet appear
+  in the header; pay from it (its signature modal shows the `TransferWithAuthorization`); rate with a
+  free EIP-712 signature from the same wallet; then an MCP agent in Claude Code pays from the
+  policy-bounded server wallet, with the policy's rules on the Privy dashboard and its id in
+  `xorv_wallet`'s output ([RECORDING.md](RECORDING.md) 0:08–1:40).
 
 ### Envio: the network's memory
 
+> **Bounty card** (Envio · All tracks · $1,000 USD): "Meaningfully use Envio's HyperIndex,
+> HyperSync, or HyperRPC to power real on-chain data driving a core feature in your app."
+
 - **What it does.** A HyperIndex v3 indexer follows **three contracts**: `XorvLedger` (6 events) and
   the ERC-8004 Identity (4) and Reputation (3) registries. It uses HyperSync, with configs for
-  testnet (`config.yaml`) and mainnet (`config.mainnet.yaml`). It derives **15 entity types**. These
+  testnet (`config.yaml`) and mainnet (`config.mainnet.yaml`). It derives **14 entity types**. These
   include per-provider earnings, success rate, average duration and average rating; each agent's
   reputation split by who wrote it (`BUYER_RATING` from the ledger, `XORV_VERIFIED` from the broker's
   verifier, `OTHER`); buyers; a global `NetworkStats`; and daily series (`DailyStats`,
@@ -284,36 +302,93 @@ where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md
   endpoints feed the app's **network page** ("indexed by Envio"), the **providers page** leaderboard
   join, and the **landing page ledger**. Without the indexer, the broker falls back to memory and a
   bounded RPC scan and says so (`source: "memory" | "rpc"`).
-- **Bounty fit ("actually driving a feature", depth).** Multiple contracts, a non-trivial schema,
-  derived and aggregated entities, and a trust classification. The repo includes `config.yaml`,
-  `schema.graphql`, the handlers, and 52 handler/ABI/query tests.
+- **Bounty fit ("real on-chain data driving a core feature", depth).** Multiple contracts, a
+  non-trivial schema, derived and aggregated entities, and a trust classification. The repo includes
+  `config.yaml`, `schema.graphql`, the handlers, and 52 handler/ABI/query tests.
 - **Code.** `services/indexer/` ([README](services/indexer/README.md)): `config.yaml`,
   `schema.graphql`, `src/handlers/*.ts`, `src/lib/{aggregates,trust,entities}.ts`, `src/queries.ts`.
-- **Deployment.** <!-- TODO(deploy): Envio Cloud GraphQL endpoint --> TBD. Envio Cloud's free plan
-  keeps a deployment for 30 days, so it is deployed between Oct 10 and 13.
+- **Not yet.** Quoting, matching and routing read the broker's own stats, not the indexer.
+- **Deployment.** **TODO(deploy)**: the Envio Cloud GraphQL endpoint (`envio-cloud deployment endpoint
+  <indexer> <commit>`). Envio Cloud's free plan keeps a deployment for 30 days, so it is deployed
+  between Oct 10 and 13.
 - **In the demo.** The network page and leaderboard, with the "indexed by Envio" label, and one live
   GraphQL query against the deployed indexer.
 
-### MetaMask Agent Wallet: `mm xorv run`
+### Nansen: wallet trust the broker buys per call, over x402 on Monad
 
-- **What it does.** `@xorv/mm-plugin` adds native `mm xorv providers | quote | run | job | rate`
-  commands to MetaMask's Agent Wallet CLI. `mm xorv run "<task>" --max 0.05` quotes the job and vets
-  the quote: Monad only, at or under the ceiling, the amount equals the price, the payee is the
-  quoted provider, and the buyer is not paying itself. It checks the USDC balance, then has
-  **MetaMask sign the EIP-3009 authorization through `ctx.walletExecutor`**, so MetaMask policy,
-  Guard Mode and 2FA apply. It recovers the signer before sending and returns the answer, the Monad
-  settlement link and the XorvLedger receipt. `mm xorv rate` signs the gasless ERC-8004 rating the
-  same way, after rebuilding the typed data locally and checking it field by field.
-- **Bounty fit.** A real plugin built on the official template. The `package.json#mm` manifest
-  declares per-command capabilities (`wallet-read`, `wallet-submit` only where needed) and
-  `targetChains: [10143, 143]`. It uses typed-data signing only and never submits a transaction.
-  A companion skill (`skills/xorv-metamask/SKILL.md`) teaches agents to use it.
-- **Code.** `packages/mm-plugin/` ([README](packages/mm-plugin/README.md)): `src/commands/xorv/*.ts`,
-  `src/lib/{executor,pay,vet,rate}.ts`.
-- **In the demo.** `mm xorv providers`, then `mm xorv run …` with the MetaMask approval, the
-  settlement link, and a rating.
+> **Bounty card** (Nansen AI · All tracks · $5,000 USD total prize pool): "Build a product
+> experience powered by Nansen data/API/MCP/CLI that goes beyond exposing raw data."
+
+- **What it does.** When a provider's node opens its control socket (not at registration, which
+  is free and unauthenticated), the broker looks up its payout wallet on Nansen in the background:
+  who first funded it and when (cross-chain), what it is linked to on Monad, and its Monad
+  activity. It folds the answers into a **0–100 trust score** with written rules
+  (age, exchange funding, activity, risky counterparties) that **never penalise missing data**, so a
+  testnet-only wallet reads "No wallet history", not "low". That signal does three jobs. (1) It is
+  shown on every provider: the badge on each row, and on `/providers/<id>` the wallet's age, first
+  funder, activity, risk flags and "Xorv paid Nansen $0.03 over x402 on Monad" with each settlement
+  linked on Monadscan. (2) **It stops wash ratings.** Before relaying a rating into ERC-8004 the
+  broker checks whether buyer and provider are one party: the same wallet, one funded the other, a
+  shared first funder that is not an exchange or bridge, or listed as related wallets. If so the
+  rating is refused with **403 `related_wallets`**, nothing is relayed, and the check is stored on
+  the job. A lookup that fails or times out never blocks an honest rating. 30% of the daily budget
+  is reserved for these checks, and one that can't run because the budget is spent defers the rating
+  (503 `trust_budget_spent`) rather than relaying it unchecked. (3) It breaks ties between equally
+  priced providers in matching (at most ±0.1 on the 0–1 reliability scale, so it never beats a
+  cheaper node or a real track record). The network page's *Wallet intelligence* panel shows what
+  the broker bought today: the mode, the payer, calls and spend against the budget, the last payment
+  and how many ratings were checked and refused.
+- **How it pays.** Nansen answers with an x402 v2 402 whose Monad row is `exact` USDC on
+  **mainnet** (`eip155:143`), $0.01 per profiler call. The broker's client registers only that
+  network, hard-codes mainnet USDC, validates every request locally first (Nansen charges before it
+  validates), checks the price per endpoint, caps each payment, reserves against a daily budget
+  (released if signing or settlement fails) and keeps the settlement transaction with the cached
+  answer. A few dollars of mainnet USDC on a separate key (`XORV_NANSEN_PAYER_KEY`) covers weeks;
+  `NANSEN_API_KEY` takes precedence when set.
+- **Modes.** `XORV_NANSEN_MODE=off` (the default), `fixture` (deterministic recorded-shape data, no
+  network and no money, for development, CI and judges; it never claims a paid transaction, and
+  `XORV_NANSEN_FIXTURE_CLUSTER` stages a related-wallet ring for the refused-rating demo) or `live`
+  (`XORV_NANSEN_PAYER_KEY` or `NANSEN_API_KEY`).
+- **What stays internal.** Nansen's redistribution guide keeps labels, smart-money data and
+  leaderboards internal. Smart-money membership only nudges matching and never leaves the broker;
+  related-wallet addresses are used for the sybil check and not published. Answers are cached
+  briefly (a first funder for 7 days, related wallets for a day, activity for an hour). Everything
+  shown carries "Powered by Nansen", linked to nansen.ai.
+- **Bounty fit ("a product experience … that goes beyond exposing raw data").** Nansen's answers
+  become decisions the product acts on (a refused rating, a ranking) and one explained number per
+  provider, paid for agent to agent over x402 on Monad.
+- **Code.** `services/broker/src/trust/{nansen,signal,service,fixtures}.ts`,
+  `services/broker/src/app.ts` (registration, `/api/providers/:id`, the rate guard, `/api/network`
+  `nansen`), `services/broker/src/registry.ts` (`TRUST_TIEBREAK_WEIGHT`),
+  `services/broker/src/scripts/nansen-probe.ts`, `apps/app/lib/trust.ts`,
+  `apps/app/components/trust.tsx` (badge, *Wallet trust* panel, *Wallet intelligence* panel, "Powered
+  by Nansen"), used by `live-lists.tsx`, `provider-view.tsx`, `network-view.tsx` and `rate-job.tsx`.
+  Full design: [docs/NANSEN.md](docs/NANSEN.md).
+- **In the demo.** The provider's trust badge and panel with its Monad mainnet payment links, then a
+  rating from a wallet the provider funded, refused.
+
+### Kimi K3: the result verifier that writes reputation
+
+> **Bounty card** (Kimi · All tracks · $3,000 in credits): "Build a project genuinely powered by
+> KIMI (Moonshot AI) — open scope, no category restrictions."
+
+- **What it does.** After every completed, non-private job, `kimi-k3` scores the result 0–100 with a
+  pass/fail, a rationale and flags. The prompt and result are fenced as untrusted data, and a result
+  flagged as prompt injection never passes. When the provider has a verified ERC-8004 agent, the
+  score is written to the **Reputation Registry** from the verifier EOA as
+  `giveFeedback(agentId, score, 0, "xorv-verified", …)`. The feedback file is served at
+  `/verifications/<jobId>.json`, and its keccak256 is the on-chain `feedbackHash`. Verification runs
+  after the buyer has the result and never blocks the job. Providers can also sell Kimi through the
+  `kimi` adapter.
+- **Code.** `services/broker/src/ai/verifier.ts`, `services/broker/src/ai/feedback.ts`,
+  `packages/cli/src/adapters/hosted.ts`.
+- **In the demo.** The *Verified* row on the job page (for example "92/100 · pass" with Kimi's
+  rationale) and its "ERC-8004 feedback" explorer link.
 
 ### Mera: one passkey, many keys (private jobs)
+
+> **Bounty card** (Monad Foundation · All tracks · $2,500 USD): "Most creative non-wallet use of
+> Mera's PRF-derived key material."
 
 - **What it does.** A **private job** keeps the answer for the buyer alone. Mera evaluates the
   WebAuthn PRF extension on a passkey in **three namespaced salts**. `xorv:inbox:v1` becomes an
@@ -334,45 +409,12 @@ where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md
 - **In the demo.** The private toggle, the passkey prompts, the sealed result decrypting in the tab,
   then the same fingerprints and history on a second device.
 
-### Nansen: wallet trust the broker buys per call, over x402 on Monad
-
-- **What it does.** When a provider registers, the broker looks up its payout wallet on Nansen in
-  the background: who first funded it and when (cross-chain), what it is linked to on Monad, and
-  its Monad activity. It folds the answers into a **0–100 trust score** with written rules
-  (age, exchange funding, activity, risky counterparties) that **never penalise missing data**, so a
-  testnet-only wallet reads "No wallet history", not "low". That signal does three jobs. (1) It is
-  shown on every provider: the badge on each row, and on `/providers/<id>` the wallet's age, first
-  funder, activity, risk flags and "Xorv paid Nansen $0.03 over x402 on Monad" with each settlement
-  linked on Monadscan. (2) **It stops wash ratings.** Before relaying a rating into ERC-8004 the
-  broker checks whether buyer and provider are one party: the same wallet, one funded the other, a
-  shared first funder that is not an exchange or bridge, or listed as related wallets. If so the
-  rating is refused with **403 `related_wallets`**, nothing is relayed, and the check is stored on
-  the job. (3) It breaks ties between equally priced providers in matching (at most ±0.1 on the
-  0–1 reliability scale, so it never beats a cheaper node or a real track record).
-- **How it pays.** Nansen answers with an x402 v2 402 whose Monad row is `exact` USDC on
-  **mainnet** (`eip155:143`), $0.01 per profiler call. The broker's client registers only that
-  network, hard-codes mainnet USDC, validates every request locally first (Nansen charges before it
-  validates), checks the price per endpoint, caps each payment, reserves against a daily budget
-  (released if signing or settlement fails) and keeps the settlement transaction with the cached
-  answer. A few dollars of mainnet USDC on a separate key (`XORV_NANSEN_PAYER_KEY`) covers weeks;
-  `NANSEN_API_KEY` takes precedence when set. `XORV_NANSEN_MODE=fixture` serves deterministic
-  recorded-shape data with no network and no money for development and CI.
-- **What stays internal.** Nansen's redistribution guide keeps labels, smart-money data and
-  leaderboards internal. Smart-money membership only nudges matching and never leaves the broker;
-  related-wallet addresses are used for the sybil check and not published. Everything shown carries
-  "Powered by Nansen".
-- **Bounty fit ("a product experience … that goes beyond exposing raw data").** Nansen's answers
-  become decisions the product acts on (a refused rating, a ranking) and one explained number per
-  provider, paid for agent to agent over x402 on Monad.
-- **Code.** `services/broker/src/trust/{nansen,signal,service,fixtures}.ts`,
-  `services/broker/src/app.ts` (registration, `/api/providers/:id`, the rate guard, `/api/network`
-  `nansen`), `services/broker/src/registry.ts` (`TRUST_TIEBREAK_WEIGHT`),
-  `services/broker/src/scripts/nansen-probe.ts`, `apps/app/lib/trust.ts`,
-  `apps/app/components/{trust,provider-view,rate-job}.tsx`. Full design: [docs/NANSEN.md](docs/NANSEN.md).
-- **In the demo.** The provider's trust badge and panel with its Monad mainnet payment links, then a
-  rating from a wallet the provider funded, refused.
-
 ### Qwen 3.8 Max: the job router, and two adapters
+
+> **Bounty card** (Alibaba Cloud · Trust, Identity & AI Infrastructure · $5,000 in credits): "Push
+> Qwen 3.8 Max into genuinely agentic territory on Monad."
+
+*Section finalized after the agentic router lands.* What follows is the router in this build.
 
 - **What it does.** When a buyer picks **Auto** and at least two adapters are live under the ceiling,
   the broker asks `qwen3.8-max` (thinking off, JSON mode) to choose the adapter. It sees the prompt
@@ -388,22 +430,45 @@ where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md
 - **In the demo.** The quote card reads "Routed by Qwen 3.8 Max to kimi (easy): …", and the job page's
   *Network checks* panel repeats it.
 
-### Kimi K3: the result verifier that writes reputation
+### Also built (not entered: track-locked to other tracks)
 
-- **What it does.** After every completed, non-private job, `kimi-k3` scores the result 0–100 with a
-  pass/fail, a rationale and flags. The prompt and result are fenced as untrusted data, and a result
-  flagged as prompt injection never passes. When the provider has a verified ERC-8004 agent, the
-  score is written to the **Reputation Registry** from the verifier EOA as
-  `giveFeedback(agentId, score, 0, "xorv-verified", …)`. The feedback file is served at
-  `/verifications/<jobId>.json`, and its keccak256 is the on-chain `feedbackHash`. Verification runs
-  after the buyer has the result and never blocks the job. Providers can also sell Kimi through the
-  `kimi` adapter.
-- **Code.** `services/broker/src/ai/verifier.ts`, `services/broker/src/ai/feedback.ts`,
-  `packages/cli/src/adapters/hosted.ts`.
-- **In the demo.** The *Verified* row on the job page (for example "92/100 · pass" with Kimi's
-  rationale) and its "ERC-8004 feedback" explorer link.
+The MetaMask plugin and the Hunyuan screen are part of the product and its tests. Their bounties name
+a different track on the card, so a Track 04 project can't enter them, and neither has a beat of its
+own in the main demo.
 
-### Hunyuan hy4: the safety screen
+#### MetaMask Agent Wallet: `mm xorv run`
+
+> **Bounty card** (Metamask · Onchain Finance & Trading · $2,500 USD): "Build a plugin that gives
+> the MetaMask Agent Wallet a new trading superpower via its plugin architecture."
+
+Not entered: the card is locked to another track and asks for a trading plugin. The plugin stays
+as one of Xorv's four buyer clients.
+
+- **What it does.** `@xorv/mm-plugin` adds native `mm xorv providers | quote | run | job | rate`
+  commands to MetaMask's Agent Wallet CLI. `mm xorv run "<task>" --max 0.05` quotes the job and vets
+  the quote: Monad only, at or under the ceiling, the amount equals the price, the payee is the
+  quoted provider, and the buyer is not paying itself. It checks the USDC balance, then has
+  **MetaMask sign the EIP-3009 authorization through `ctx.walletExecutor`**, so MetaMask policy,
+  Guard Mode and 2FA apply. It recovers the signer before sending and returns the answer, the Monad
+  settlement link and the XorvLedger receipt. `mm xorv rate` signs the gasless ERC-8004 rating the
+  same way, after rebuilding the typed data locally and checking it field by field.
+- **What it is.** A real plugin built on the official template. The `package.json#mm` manifest
+  declares per-command capabilities (`wallet-read`, `wallet-submit` only where needed) and
+  `targetChains: [10143, 143]`. It uses typed-data signing only and never submits a transaction.
+  A companion skill (`skills/xorv-metamask/SKILL.md`) teaches agents to use it.
+- **Code.** `packages/mm-plugin/` ([README](packages/mm-plugin/README.md)): `src/commands/xorv/*.ts`,
+  `src/lib/{executor,pay,vet,rate}.ts`.
+- **In the demo.** Only as an optional cutaway: `mm xorv providers`, then `mm xorv run …` with the
+  MetaMask approval and the settlement link.
+
+#### Hunyuan hy4: the safety screen
+
+> **Bounty card** (Kepler Plan by Tencent · Social, Attention & Culture · $2,000 in Tencent Cloud
+> vouchers): "Build a multimodal or interactive experience genuinely powered by Tencent's Hunyuan
+> model."
+
+Not entered: the card is locked to another track and asks for a multimodal or interactive
+experience. The screen stays in the core loop as a product feature.
 
 - **What it does.** Every quote request is screened by `hy4-preview` (Tencent TokenHub) **before any
   provider can see the prompt and before anyone pays**. The screen looks for credential or key
@@ -415,22 +480,27 @@ where the code is, and where it appears in the demo ([RECORDING.md](RECORDING.md
   the `hunyuan` adapter.
 - **Code.** `services/broker/src/ai/screener.ts`, `services/broker/src/ai/client.ts` (shared deadline,
   validation, key redaction), `packages/cli/src/adapters/hosted.ts`.
-- **In the demo.** "Screened by Hunyuan hy4: allowed — …" on the quote card and the *Screened* row on
-  the job page. A hostile prompt is refused with a 422 before any quote exists.
+- **In the demo.** One line on the quote card ("Screened by Hunyuan hy4: allowed — …") and the
+  *Screened* row on the job page. A hostile prompt refused with a 422 is an optional cutaway. On a
+  private job, public views withhold the screen's written reason.
 
-All three roles are documented in [services/broker/README.md](services/broker/README.md). A missing
-key turns a role off and never stops the broker. `GET /api/network` reports each role's state.
+The three model roles (Qwen routes, Kimi verifies, Hunyuan screens) are documented in
+[services/broker/README.md](services/broker/README.md). A missing key turns a role off and never
+stops the broker. `GET /api/network` reports each role's state.
 
 ### ERC-8004 on Monad: identity and payment-backed reputation
 
 - **Identity.** `xorv identity register` calls `IdentityRegistry.register(agentURI)` from the payout
   key. This makes that address both the owner and the agent wallet. `agentURI` is
-  `<broker>/agents/<nodeId>.json`, the registration file the broker serves (`x402Support: true`).
-  On registration, the broker checks that the claimed agent's `getAgentWallet` equals the node's
-  payout address. `XorvLedger` enforces the same rule on every receipt.
+  `<broker>/agents/<providerId>.json`, the registration file the broker serves (`x402Support: true`).
+  The CLI builds it from the provider id, a one-way hash of the node id, so the node id (what a node
+  registers with) never goes on-chain. On registration, the broker checks that the claimed agent's
+  `getAgentWallet` equals the node's payout address. `XorvLedger` enforces the same rule on every
+  receipt.
 - **Reputation.** Buyer ratings arrive under tag `starred` with `clientAddress == XorvLedger`, one
-  per paid job, signed by the payer. Kimi scores arrive under `xorv-verified` from the verifier EOA.
-  The two signals stay separable, and the indexer classifies them.
+  per paid job, signed by the payer, and never from the agent's own wallet, owner or operators (the
+  ledger reverts `SelfDealing`). Kimi scores arrive under `xorv-verified` from the verifier EOA. The
+  two signals stay separable, and the indexer classifies them.
 - **Code.** `packages/protocol/src/erc8004.ts`, `packages/cli/src/commands/identity.ts`,
   `packages/contracts/contracts/XorvLedger.sol`, `services/broker/src/app.ts` (`/agents`,
   `/feedback`, `/verifications`, `verifyAgent`).
@@ -442,24 +512,27 @@ key turns a role off and never stops the broker. `GET /api/network` reports each
 
 ## Deployments
 
-<!-- TODO(deploy): fill every TBD row after deploying; do not remove the rows. -->
+Nothing is deployed yet. Every **TODO(deploy)** row is filled after deploying, from the source named
+next to it; do not remove the rows. `<broker>` is the broker's public URL and `<job>` a job id.
 
-| | Monad testnet (`eip155:10143`) |
-|---|---|
-| XorvLedger | TBD, fill in after deploy (`packages/contracts/deployments/monadTestnet.json`) |
-| XorvLedger deploy tx | TBD |
-| Broker operator EOA (ledger writes, rating relay, verifier) | TBD |
-| Facilitator | TBD: self-hosted EOA address, or `https://x402-facilitator.molandak.org` |
-| Example x402 settlement (buyer → provider USDC) | TBD |
-| Example `recordJobs` receipt | TBD |
-| Example `rateJob` → ERC-8004 feedback | TBD |
-| Example Kimi `giveFeedback` (`xorv-verified`) | TBD |
-| Example Nansen x402 payment (Monad **mainnet**, broker → Nansen) | TBD (`https://monadscan.com/tx/<hash>`, from `/api/network` → `nansen.lastPaidTx`) |
-| Demo provider's ERC-8004 agent | TBD (`https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/<agentId>`) |
-| Envio GraphQL endpoint | TBD |
-| Broker URL | TBD |
-| App URL | TBD |
-| Landing URL | TBD |
+| | Monad testnet (`eip155:10143`) | Where the value comes from |
+|---|---|---|
+| XorvLedger | **TODO(deploy)** | `address` in `packages/contracts/deployments/monadTestnet.json`, written by `pnpm deploy:ledger` |
+| XorvLedger deploy tx | **TODO(deploy)** | `txHash` in the same file |
+| XorvLedger owner | **TODO(deploy)** | `owner` in the same file (`XORV_LEDGER_OWNER`, a key the broker's host doesn't hold) |
+| Broker operator EOA (ledger writes, rating relay, verifier) | **TODO(deploy)** | `broker` in the same file; `pnpm setup:monad` prints it with its balance |
+| Facilitator | **TODO(deploy)** | `curl -s <broker>/api/network`: the self-hosted EOA's address, or `https://x402-facilitator.molandak.org` |
+| Example x402 settlement (buyer → provider USDC) | **TODO(deploy)** | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` |
+| Example `recordJobs` receipt | **TODO(deploy)** | `… \| jq -r .job.receiptTxHash` |
+| Example `rateJob` → ERC-8004 feedback | **TODO(deploy)** | `… \| jq -r .job.rating.txHash` |
+| Example Kimi `giveFeedback` (`xorv-verified`) | **TODO(deploy)** | `… \| jq -r .job.verification.feedbackTxHash` |
+| Example Privy server-wallet payment (MCP agent) | **TODO(deploy)** | the `Payment:` link `xorv_run_job` prints |
+| Example Nansen x402 payment (Monad **mainnet**, broker → Nansen) | **TODO(deploy)** | `curl -s <broker>/api/network \| jq -r .nansen.lastPaidTx.url` |
+| Demo provider's ERC-8004 agent | **TODO(deploy)** | the agent id from `xorv identity show`, as `https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/<agentId>` |
+| Envio GraphQL endpoint | **TODO(deploy)** | `envio-cloud deployment endpoint <indexer> <commit>` |
+| Broker URL | **TODO(deploy)** | `XORV_PUBLIC_URL` |
+| App URL | **TODO(deploy)** | the `apps/app` Vercel project ([DEPLOY.md §5](DEPLOY.md#5-deploy-the-app-and-the-landing-to-vercel)) |
+| Landing URL | **TODO(deploy)** | the `apps/landing` Vercel project |
 | USDC (Circle) | [`0x534b2f3A21130d7a60830c2Df862319e593943A3`](https://testnet.monadscan.com/token/0x534b2f3A21130d7a60830c2Df862319e593943A3) |
 | ERC-8004 Identity / Reputation | `0x8004A818BFB912233c491871b3d84c89A494BD9e` / `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
 
@@ -470,7 +543,8 @@ prototype**. Until 0.2.0 is published, install from source (below).
 
 ## Quickstart
 
-Needs Node 22.5+ and pnpm 10. Test USDC comes from <https://faucet.circle.com> (pick Monad Testnet) and
+Needs Node 22.18+ (the broker alone runs on 22.13+, the CLI and MCP server on 20.19+) and pnpm 10.
+Test USDC comes from <https://faucet.circle.com> (pick Monad Testnet) and
 test MON from <https://faucet.monad.xyz>. **Buyers need USDC only.**
 
 ```bash
@@ -510,10 +584,13 @@ Other buyers: the MCP server ([`packages/mcp/README.md`](packages/mcp/README.md)
 
 ### Deploying
 
-The full order of operations, with faucets, env lines and the Oct 10–13 indexer redeploy, is in [DEPLOY.md](DEPLOY.md). In short:
+The full order of operations, with faucets, env lines and the Oct 10–13 indexer redeploy, is in
+[DEPLOY.md](DEPLOY.md). In short:
 
-1. **Ledger.** `XORV_BROKER_ADDRESS=<operator address> pnpm deploy:ledger` deploys `XorvLedger` to
-   Monad testnet (about 0.2 MON plus Monad's 10 MON account reserve). It checks that the registries
+1. **Ledger.** `XORV_BROKER_ADDRESS=<operator address> XORV_LEDGER_OWNER=<cold owner address>
+   pnpm deploy:ledger` deploys `XorvLedger` to Monad testnet (about 0.2 MON plus Monad's 10 MON
+   account reserve). The owner is the only account that can rotate a leaked broker key out, so the
+   script refuses an owner that is the broker or the operator key. It checks that the registries
    report v2.0.0, writes `packages/contracts/deployments/monadTestnet.json`, and prints the
    `XORV_LEDGER_*` and `ENVIO_XORV_LEDGER_*` lines. Verify it with
    `pnpm --filter @xorv/contracts verify:testnet`. See [packages/contracts/README.md](packages/contracts/README.md#deploy-and-verify).
@@ -521,10 +598,14 @@ The full order of operations, with faucets, env lines and the Oct 10–13 indexe
    set `XORV_INDEXER_URL` on the broker. See [services/indexer/README.md](services/indexer/README.md#deploying-to-envio-cloud).
 3. **Broker.** `docker compose up -d` (SQLite in a volume; `--profile mongo` adds MongoDB). Set
    `XORV_PUBLIC_URL` to the broker's public https URL: it is written into on-chain agent and
-   feedback URIs. Set `XORV_TRUST_PROXY=1` behind a proxy. `/metrics` speaks Prometheus.
-4. **App and landing.** Deploy `apps/app` and `apps/landing` (Next.js) with `NEXT_PUBLIC_XORV_BROKER_URL`,
-   `NEXT_PUBLIC_XORV_NETWORK` and `NEXT_PUBLIC_PRIVY_APP_ID`. Private jobs need an https domain,
-   because passkeys are scoped to it.
+   feedback URIs. Set `XORV_TRUST_PROXY=1` (and `XORV_TRUSTED_HOPS`) behind a proxy. `/metrics`
+   speaks Prometheus.
+4. **App and landing.** Deploy `apps/app` (Next.js) with `NEXT_PUBLIC_XORV_BROKER_URL`,
+   `NEXT_PUBLIC_XORV_NETWORK` and `NEXT_PUBLIC_PRIVY_APP_ID`, and `apps/landing` with
+   `NEXT_PUBLIC_XORV_BROKER_URL`, `NEXT_PUBLIC_XORV_APP_URL` (the app's URL, or every "Open app"
+   button points to `localhost:3002`), `NEXT_PUBLIC_XORV_LEDGER_ADDRESS` and
+   `NEXT_PUBLIC_XORV_NETWORK` ([DEPLOY.md §5](DEPLOY.md#5-deploy-the-app-and-the-landing-to-vercel)).
+   Private jobs need an https domain, because passkeys are scoped to it.
 
 ---
 
@@ -567,7 +648,9 @@ the Xorv home (where a payout key would live), SSH keys and cloud credentials ar
 `xorv doctor` names the tier. Windows gets the environment tier only. Providers can run **address-only**, with no key on the machine at
 all. Buyers check every 402 against the frozen quote before signing, because a signed EIP-3009
 authorization can be spent by whoever holds it. The Privy agent wallet and MetaMask each add their
-own signing policy on top. The full threat model, including what is *not* protected, is in
+own signing policy on top. A provider paying itself is refused by the broker (403 `self_payment`,
+before anything settles) and by `XorvLedger` (`SelfDealing`), so it can't mint receipts or ratings
+for the price of gas. The full threat model, including what is *not* protected, is in
 [SECURITY.md](SECURITY.md), and the private-job limits are in [docs/PRIVATE_JOBS.md](docs/PRIVATE_JOBS.md#5-threat-model).
 
 On terms of service: most consumer AI subscriptions are licensed to an individual, and reselling
