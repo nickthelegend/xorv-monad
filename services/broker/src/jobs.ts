@@ -120,6 +120,11 @@ export interface StoredJob extends Job {
    * someone else finishes the job.
    */
   quotedUndelivered?: boolean;
+  /**
+   * How many times this job has been saved. The Mongo layer orders two
+   * copies of a job by it: the higher one is the newer state.
+   */
+  rev?: number;
 }
 
 /** True once the job's receipt is known to be on XorvLedger. */
@@ -171,6 +176,7 @@ export class JobStore {
   }
 
   private persist(job: StoredJob): void {
+    job.rev = (job.rev ?? 0) + 1;
     try {
       this.persistence.saveJob(job);
     } catch (err) {

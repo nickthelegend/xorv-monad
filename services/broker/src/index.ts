@@ -148,11 +148,15 @@ function shutdown(signal: string): void {
   clearInterval(sweeper);
   if (mongoRetry) clearInterval(mongoRetry);
   hub?.close();
-  // Queued receipts get one bounded chance to go out before the process ends.
-  void chain.close().finally(() => {
-    persistence.close();
-    server.close(() => process.exit(0));
-  });
+  // Queued receipts get one bounded chance to go out before the process ends,
+  // and the Mongo writes they cause one bounded chance to land after them.
+  void chain
+    .close()
+    .then(() => layered?.drain(2_000))
+    .finally(() => {
+      persistence.close();
+      server.close(() => process.exit(0));
+    });
   // Don't let a stuck socket or RPC hold the process open forever.
   setTimeout(() => process.exit(0), 8_000).unref();
 }
