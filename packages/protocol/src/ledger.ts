@@ -103,7 +103,7 @@ export const XORV_LEDGER_ABI = [
     type: "function",
     name: "jobs",
     stateMutability: "view",
-    inputs: [{ name: "", type: "bytes32" }],
+    inputs: [{ name: "jobId", type: "bytes32" }],
     outputs: [
       { name: "buyer", type: "address" },
       { name: "agentId", type: "uint64" },
@@ -306,6 +306,7 @@ export const XORV_LEDGER_ABI = [
   { type: "error", name: "BadSignature", inputs: [] },
   { type: "error", name: "AgentIdTooLarge", inputs: [] },
   { type: "error", name: "ZeroAddress", inputs: [] },
+  { type: "error", name: "SelfDealing", inputs: [{ name: "jobId", type: "bytes32" }] },
 ] as const;
 
 /** `XorvLedger.NO_AGENT` — the agentId a provider without an ERC-8004 identity is recorded under. */

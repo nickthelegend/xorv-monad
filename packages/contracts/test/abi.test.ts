@@ -49,6 +49,7 @@ const SPEC_ABI = parseAbi([
   "error BadSignature()",
   "error AgentIdTooLarge()",
   "error ZeroAddress()",
+  "error SelfDealing(bytes32 jobId)",
 ]);
 
 /** What `is EIP712("XorvLedger", "1")` adds on its own (ERC-5267 and OpenZeppelin's ShortStrings). */

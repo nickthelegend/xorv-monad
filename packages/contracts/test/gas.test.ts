@@ -127,8 +127,11 @@ describe("gas report (Hardhat simulated chain, Ethereum gas schedule)", async fu
     for (const r of rows) console.log(`  ${pad(r.call, 46)}${num(r.gasUsed, 12)}${num(r.estimate, 12)}${num(r.perJob, 10)}`);
     console.log();
 
-    // Batching must pay off: the per-job cost of a 20-receipt batch is well under a single receipt's.
-    assert.ok(perJob[20]! * 2n < perJob[1]!, `batching stopped amortising: ${perJob[20]} vs ${perJob[1]}`);
+    // Batching must pay off: a receipt in a 20-receipt batch sheds nearly all of the fixed cost a lone
+    // receipt carries (21k intrinsic, cold ledger and registry accounts, the cold agentWallet slot:
+    // ~35k on this schedule). Measured as the saving rather than as a ratio, so a check that costs
+    // every receipt the same few gas (like the buyer == payTo refusal) can't trip it.
+    assert.ok(perJob[1]! - perJob[20]! > 30_000n, `batching stopped amortising: ${perJob[20]} vs ${perJob[1]}`);
     // Loose ceilings (roughly 1.5x today's figures) to catch accidental extra storage writes.
     assert.ok(perJob[20]! < 45_000n, `recordJobs(20) per job ${perJob[20]}`);
     assert.ok(perJob[1]! < 110_000n, `recordJobs(1) ${perJob[1]}`);

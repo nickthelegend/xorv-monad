@@ -6,6 +6,8 @@
  * contract's own construction), and the bounded feed reader.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   concat,
@@ -18,7 +20,9 @@ import {
   toHex,
   verifyTypedData,
   zeroHash,
+  type Abi,
   type AbiEvent,
+  type AbiParameter,
   type Hex,
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -103,7 +107,38 @@ describe("XORV_LEDGER_ABI", () => {
       "BadSignature",
       "AgentIdTooLarge",
       "ZeroAddress",
+      "SelfDealing",
     ]);
+  });
+
+  // packages/contracts commits the compiler's own ABI. This transcription has to say exactly the
+  // same thing: the broker encodes its writes with it and names the errors its writes revert with
+  // (a missing error decodes as a bare "reverted", and the broker can't tell why a receipt failed).
+  const compiledAbiPath = fileURLToPath(new URL("../../contracts/abi/XorvLedger.json", import.meta.url));
+  it.skipIf(!existsSync(compiledAbiPath))("matches the compiled contract ABI, minus what EIP712 itself declares", () => {
+    const eip712Extras = ["function:eip712Domain", "event:EIP712DomainChanged", "error:InvalidShortString", "error:StringTooLong"];
+    type Item = Abi[number];
+    const key = (item: Item) => `${item.type}:${"name" in item ? item.name : ""}`;
+    // internalType is solc's annotation, not part of the interface.
+    const param = (p: AbiParameter): unknown => ({
+      name: p.name ?? "",
+      type: p.type,
+      ...("indexed" in p && p.indexed !== undefined ? { indexed: p.indexed } : {}),
+      ...("components" in p ? { components: p.components.map(param) } : {}),
+    });
+    const normalize = (item: Item) => ({
+      key: key(item),
+      inputs: "inputs" in item ? item.inputs.map(param) : [],
+      outputs: "outputs" in item ? item.outputs.map(param) : [],
+      stateMutability: "stateMutability" in item ? item.stateMutability : undefined,
+      anonymous: "anonymous" in item ? item.anonymous : undefined,
+    });
+    const byKey = (a: { key: string }, b: { key: string }) => a.key.localeCompare(b.key);
+
+    const compiled = (JSON.parse(readFileSync(compiledAbiPath, "utf8")) as Abi).filter(
+      (item) => !eip712Extras.includes(key(item)),
+    );
+    expect((XORV_LEDGER_ABI as Abi).map(normalize).sort(byKey)).toEqual(compiled.map(normalize).sort(byKey));
   });
 
   it("encodes the JobReceipt struct field-for-field in contract order", () => {

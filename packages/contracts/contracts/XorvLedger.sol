@@ -23,6 +23,14 @@ import {IReputationRegistry8004} from "./interfaces/IReputationRegistry8004.sol"
 ///         contract must never own or operate a provider's agent NFT: ERC-8004 rejects feedback from
 ///         an agent's owner or operators, so doing so would brick rating for that agent.
 ///
+///         Because the registry only ever sees the ledger as the client, its own self-feedback guard
+///         can't see who is really rating. The ledger applies it itself, whoever submits the call:
+///         a receipt whose buyer is its payTo is refused (a provider paying itself buys nothing, and
+///         its USDC comes straight back), and rateJob refuses a buyer that is the agent's wallet,
+///         owner or operator. Wallets that are merely related (a second wallet the provider funded)
+///         are beyond what a contract can see. The broker checks those before it relays a rating,
+///         but rateJob stays open to the buyer and to any relayer, so that check is advisory.
+///
 ///         Gas on Monad shapes the whole layout:
 ///         - Monad bills the transaction's gas LIMIT, not the gas used (execution is asynchronous,
 ///           so the block is built before anything runs). The broker sizes every call from
@@ -124,6 +132,9 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     error BadSignature();
     error AgentIdTooLarge();
     error ZeroAddress();
+    /// @notice The buyer is the provider itself: in recordJobs, buyer == payTo; in rateJob, the buyer
+    ///         is the agent's wallet, owner or an approved operator of its NFT.
+    error SelfDealing(bytes32 jobId);
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -205,10 +216,11 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     ///         10,100) dwarf the marginal cost of a receipt, and the broker pays for the gas limit it
     ///         asks for, so it estimates the exact batch and adds a small margin.
     ///
-    ///         The whole batch reverts on the first bad receipt (duplicate, zero buyer, payTo that is
-    ///         not the agent's wallet). A partial write would leave the broker unable to tell which
-    ///         receipts landed; all-or-nothing keeps its retry logic trivial, at the price of having
-    ///         to validate receipts before submitting them.
+    ///         The whole batch reverts on the first bad receipt (duplicate, zero buyer, buyer that is
+    ///         its own payTo, payTo that is not the agent's wallet). A partial write would leave the
+    ///         broker unable to tell which receipts landed; all-or-nothing keeps its retry logic
+    ///         trivial, at the price of having to validate receipts before submitting them (the
+    ///         broker splits a reverted batch until the bad receipt is on its own).
     function recordJobs(JobReceipt[] calldata receipts) external onlyBroker {
         // The same provider usually appears several times in one batch. getAgentWallet cannot change
         // within this transaction (nothing here writes to the registry; the lookup is a staticcall),
@@ -228,6 +240,11 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
             // A zero buyer would be stored as "no such job": undetectable duplicates, unratable job.
             // A zero payTo is never a real provider (see _checkAgentWallet for why it matters there).
             if (buyer == address(0) || payTo == address(0)) revert ZeroAddress();
+            // A provider paying itself: EIP-3009 allows from == to and the facilitator pays the gas,
+            // so the "price" of the job comes straight back. Such a receipt proves nothing, and
+            // storing it would let the payTo wallet rate its own agent. Refused with or without an
+            // agent, so it doesn't pad the provider's job count or volume in the indexer either.
+            if (buyer == payTo) revert SelfDealing(jobId);
             // An existing job always has a non-zero buyer (enforced just above).
             if (jobs[jobId].buyer != address(0)) revert DuplicateJob(jobId);
 
@@ -267,6 +284,11 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     ///         The deadline bounds how long a signed rating can sit in a relayer's queue. It is not
     ///         checked on the direct path, where there is no signature to expire.
     ///
+    ///         Either way, a buyer that is the agent's current wallet, owner or operator is refused
+    ///         (SelfDealing). The Reputation Registry applies that rule to its caller, which here is
+    ///         always the ledger, so without this check a provider could rate itself by paying from
+    ///         its own wallet or from its agent's owner.
+    ///
     ///         One rating per job, for jobs whose provider has an agentId. Replays are impossible:
     ///         the digest binds chainId, this contract and the jobId, and `rated` is set before the
     ///         external call.
@@ -285,6 +307,11 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
             if (block.timestamp > r.deadline) revert Expired();
             if (!SignatureChecker.isValidSignatureNow(buyer, ratingDigest(r), buyerSig)) revert BadSignature();
         }
+
+        // Now that the rater is known to be the buyer: is the buyer the provider? Checked against
+        // the registry as it is now, not at record time, so a buyer who has since taken over the
+        // agent can't rate it either.
+        if (_isAgentSide(buyer, agentId)) revert SelfDealing(jobId);
 
         // Effects before the interaction: the registry is trusted, but the write costs the same
         // either way, and it makes re-entering rateJob for this job impossible.
@@ -328,6 +355,14 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
         if (agentId >= NO_AGENT_ID) revert AgentIdTooLarge();
         address wallet = identity.getAgentWallet(agentId);
         if (wallet != payTo) revert PayToNotAgentWallet(agentId, payTo, wallet);
+    }
+
+    /// @dev True when `account` is the agent's verified wallet, or owns or operates its NFT: the
+    ///      addresses ERC-8004 itself would refuse feedback from, plus the payout wallet. An honest
+    ///      buyer pays for both staticcalls (the registry is warm for giveFeedback afterwards, which
+    ///      makes the same owner/operator lookup for the ledger).
+    function _isAgentSide(address account, uint256 agentId) private view returns (bool) {
+        return account == identity.getAgentWallet(agentId) || identity.isAuthorizedOrOwner(account, agentId);
     }
 
     /// @dev The registry sees msg.sender == address(this), so every rating lands under the ledger's

@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 
 import { network } from "hardhat";
 import {
+  type LocalAccount,
+  type WalletClient,
   getAddress,
   hashTypedData,
   keccak256,
@@ -65,6 +67,39 @@ describe("XorvLedger", async function () {
       current = current.cause;
     }
     return parts.join(" | ");
+  }
+
+  /**
+   * Points `agentId`'s verified payout wallet at `wallet`, as its owner `provider` would: the
+   * registry wants the new wallet's EIP-712 consent, with a deadline at most five minutes out.
+   */
+  async function setAgentWallet(
+    identity: Awaited<ReturnType<typeof deployErc8004>>["identity"],
+    agentId: bigint,
+    wallet: LocalAccount | WalletClient,
+  ) {
+    const local = wallet.type === "local" ? (wallet as LocalAccount) : undefined;
+    const client = wallet as WalletClient;
+    const newWallet = local ? local.address : client.account!.address;
+    const deadline = BigInt(await networkHelpers.time.latest()) + 120n;
+    const typedData = {
+      domain: { name: "ERC8004IdentityRegistry", version: "1", chainId, verifyingContract: identity.address },
+      types: {
+        AgentWalletSet: [
+          { name: "agentId", type: "uint256" },
+          { name: "newWallet", type: "address" },
+          { name: "owner", type: "address" },
+          { name: "deadline", type: "uint256" },
+        ],
+      },
+      primaryType: "AgentWalletSet" as const,
+      message: { agentId, newWallet, owner: provider!.account.address, deadline },
+    };
+    const signature = local
+      ? await local.signTypedData(typedData)
+      : await client.signTypedData({ ...typedData, account: client.account! });
+    await identity.write.setAgentWallet([agentId, newWallet, deadline, signature], { account: provider!.account });
+    assert.equal(await identity.read.getAgentWallet([agentId]), getAddress(newWallet));
   }
 
   /** A receipt for `buyer` paying `provider` (agent 0) unless overridden. */
@@ -417,6 +452,34 @@ describe("XorvLedger", async function () {
       );
     });
 
+    it("refuses a receipt whose buyer is its own payTo, with or without an agent", async function () {
+      // The provider pays itself (EIP-3009 allows from == to and the USDC comes straight back),
+      // then would rate the job from that same wallet. The receipt itself is the thing refused.
+      const { asBroker, agentId } = await load();
+      const selfPaid = receiptFor("self", agentId, { buyer: provider.account.address });
+      await viem.assertions.revertWithCustomErrorWithArgs(asBroker.write.recordJobs([[selfPaid]]), asBroker, "SelfDealing", [
+        selfPaid.jobId,
+      ]);
+      const selfPaidNoAgent = receiptFor("self-na", NO_AGENT, { buyer: stranger.account.address, payTo: stranger.account.address });
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        asBroker.write.recordJobs([[selfPaidNoAgent]]),
+        asBroker,
+        "SelfDealing",
+        [selfPaidNoAgent.jobId],
+      );
+
+      // All-or-nothing like any other bad receipt: the honest one batched with it isn't written.
+      const honest = receiptFor("honest", agentId);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        asBroker.write.recordJobs([[honest, selfPaid]]),
+        asBroker,
+        "SelfDealing",
+        [selfPaid.jobId],
+      );
+      assert.equal((await asBroker.read.jobs([honest.jobId]))[0], zeroAddress);
+      assert.equal((await asBroker.read.jobs([selfPaid.jobId]))[0], zeroAddress);
+    });
+
     it("accepts an empty batch as a no-op", async function () {
       const { asBroker } = await load();
       const hash = await asBroker.write.recordJobs([[]]);
@@ -657,6 +720,92 @@ describe("XorvLedger", async function () {
         ledger.write.rateJob([makeRating(jobId), "0x"], { account: provider.account }),
         ledger,
         "BadSignature",
+      );
+    });
+
+    // The registry refuses feedback from an agent's owner and operators, but every rating reaches it
+    // from the ledger, so the ledger has to apply that rule to the buyer itself. Otherwise a provider
+    // pays its own node from the wallet that owns the agent (the USDC lands back in its payout
+    // wallet) and rates itself, directly or through any relayer, and nothing off-chain ever sees it.
+
+    it("refuses a rating from the agent's owner, when the agent pays out to another wallet", async function () {
+      const { asBroker, ledger, identity, reputation, agentId } = await loadRecorded();
+      const payout = privateKeyToAccount(generatePrivateKey());
+      await setAgentWallet(identity, agentId, payout);
+      // buyer (the owner) != payTo (the payout wallet), so the receipt itself is fine.
+      const r = receiptFor("owner-pays", agentId, { buyer: provider.account.address, payTo: payout.address });
+      await asBroker.write.recordJobs([[r]]);
+
+      const rating = makeRating(r.jobId, { value: 100n });
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        ledger.write.rateJob([rating, "0x"], { account: provider.account }),
+        ledger,
+        "SelfDealing",
+        [r.jobId],
+      );
+      // Relaying its own signature through someone else changes nothing.
+      const signature = await signRating(provider, chainId, ledger.address, rating);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        ledger.write.rateJob([rating, signature], { account: stranger.account }),
+        ledger,
+        "SelfDealing",
+        [r.jobId],
+      );
+      assert.equal((await ledger.read.jobs([r.jobId]))[2], false);
+      assert.deepEqual(await reputation.read.getSummary([agentId, [ledger.address], "starred", ""]), [0n, 0n, 0]);
+    });
+
+    it("refuses a rating from an operator of the agent, approved for all or for the one token", async function () {
+      const { asBroker, ledger, identity, agentId, jobId } = await loadRecorded();
+      await identity.write.setApprovalForAll([buyer.account.address, true], { account: provider.account });
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        ledger.write.rateJob([makeRating(jobId), "0x"], { account: buyer.account }),
+        ledger,
+        "SelfDealing",
+        [jobId],
+      );
+
+      const approved = privateKeyToAccount(generatePrivateKey());
+      const r = receiptFor("approved", agentId, { buyer: approved.address });
+      await asBroker.write.recordJobs([[r]]);
+      await identity.write.approve([approved.address, agentId], { account: provider.account });
+      const rating = makeRating(r.jobId);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        asBroker.write.rateJob([rating, await signRating(approved, chainId, ledger.address, rating)]),
+        asBroker,
+        "SelfDealing",
+        [r.jobId],
+      );
+
+      // Revoking the approval makes the buyer an outsider again.
+      await identity.write.setApprovalForAll([buyer.account.address, false], { account: provider.account });
+      await viem.assertions.emit(ledger.write.rateJob([makeRating(jobId), "0x"], { account: buyer.account }), ledger, "JobRated");
+    });
+
+    it("checks the registry at rating time: a buyer who has since become the agent's wallet or owner can't rate", async function () {
+      const { asBroker, ledger, identity, agentId, jobId } = await loadRecorded();
+      const later = receiptFor("later", agentId);
+      await asBroker.write.recordJobs([[later]]);
+
+      // The provider points its payouts at the buyer after the job was recorded.
+      await setAgentWallet(identity, agentId, buyer);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        ledger.write.rateJob([makeRating(jobId), "0x"], { account: buyer.account }),
+        ledger,
+        "SelfDealing",
+        [jobId],
+      );
+
+      // Or hands the agent over to the buyer (which clears the wallet).
+      await identity.write.transferFrom([provider.account.address, buyer.account.address, agentId], {
+        account: provider.account,
+      });
+      assert.equal(await identity.read.getAgentWallet([agentId]), zeroAddress);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        ledger.write.rateJob([makeRating(later.jobId), "0x"], { account: buyer.account }),
+        ledger,
+        "SelfDealing",
+        [later.jobId],
       );
     });
 

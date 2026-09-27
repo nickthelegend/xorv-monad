@@ -112,6 +112,17 @@
   {
     "inputs": [
       {
+        "internalType": "bytes32",
+        "name": "jobId",
+        "type": "bytes32"
+      }
+    ],
+    "name": "SelfDealing",
+    "type": "error"
+  },
+  {
+    "inputs": [
+      {
         "internalType": "string",
         "name": "str",
         "type": "string"
