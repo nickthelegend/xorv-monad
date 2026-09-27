@@ -110,9 +110,13 @@ export function SealedResultSection({ job }: { job: Job }) {
             <LockGlyph className="h-3 w-3" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[13.5px] text-fg">Sealed to the buyer&rsquo;s passkey</p>
+            <p className="text-[13.5px] text-fg">
+              {state.kind === "invalid" ? "This sealed result is malformed" : "Sealed to the buyer’s passkey"}
+            </p>
             <p className="mt-1 text-[12.5px] leading-relaxed text-fg-3">
-              {state.kind === "foreign"
+              {state.kind === "invalid"
+                ? `The provider returned an envelope that can't be opened with any key (${state.reason}). Nothing is wrong with your passkey; the answer itself is unreadable. The receipt below still records what was delivered.`
+                : state.kind === "foreign"
                 ? `This answer was sealed to a different passkey than the one unlocked here (inbox ${keys.snapshot.inbox?.fingerprint}). Lock, then unlock with the passkey you bought it with.`
                 : state.kind === "bad-link"
                   ? "This share link's key doesn't open this result. If it's yours, unlock with your passkey."
@@ -126,7 +130,7 @@ export function SealedResultSection({ job }: { job: Job }) {
           </div>
         </div>
         <div className="mt-3.5 flex flex-wrap gap-2">
-          {state.kind === "foreign" ? (
+          {state.kind === "invalid" ? null : state.kind === "foreign" ? (
             <Button variant="secondary" onClick={keys.lock}>
               Lock these keys
             </Button>

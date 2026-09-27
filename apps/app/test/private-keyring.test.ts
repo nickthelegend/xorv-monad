@@ -8,6 +8,7 @@
  * keys, loads the same history and opens the same sealed result.
  */
 
+import { createCipheriv } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -450,6 +451,30 @@ describe("the job page's decrypt path", () => {
     });
     expect(readSealedResult({ jobId: "job_b", result: second, keyring: null, sharedKey: key })).toEqual({ kind: "bad-link" });
     expect(sharedKeyFromHash("#k=too-short")).toBeNull();
+  });
+
+  it("a malformed envelope from a provider is 'invalid', never a throw in the middle of rendering the page", async () => {
+    // readSealedResult runs in a useMemo while the job page renders; a throw
+    // there took the whole app down once the buyer unlocked their inbox.
+    const owner = keyring(new FakeAuthenticator());
+    await owner.create();
+    const genuine = JSON.parse(sealResult(owner.encryptTo(), "answer", "job_bad")) as Record<string, string>;
+
+    // 32 zero bytes: the right length, but not a usable X25519 point.
+    const lowOrder = JSON.stringify({ ...genuine, epk: "A".repeat(43) });
+    expect(() => readSealedResult({ jobId: "job_bad", result: lowOrder, keyring: owner })).not.toThrow();
+    expect(readSealedResult({ jobId: "job_bad", result: lowOrder, keyring: owner })).toMatchObject({ kind: "invalid" });
+
+    // Authentic ciphertext (sealed to the buyer's key) whose plaintext isn't UTF-8.
+    const key = Buffer.from(owner.shareKey(JSON.stringify(genuine), "job_bad"), "base64url");
+    const cipher = createCipheriv("aes-256-gcm", key, Buffer.from(genuine.iv!, "base64url"));
+    cipher.setAAD(Buffer.concat([Buffer.from("xorv:result:v1"), Buffer.from([0]), Buffer.from("job_bad")]));
+    const ct = Buffer.concat([cipher.update(Buffer.from([0xff, 0xfe, 0xfd])), cipher.final(), cipher.getAuthTag()]);
+    const notUtf8 = JSON.stringify({ ...genuine, ct: ct.toString("base64url") });
+    expect(readSealedResult({ jobId: "job_bad", result: notUtf8, keyring: owner })).toMatchObject({ kind: "invalid" });
+    expect(
+      readSealedResult({ jobId: "job_bad", result: notUtf8, keyring: null, sharedKey: key.toString("base64url") }),
+    ).toMatchObject({ kind: "invalid" });
   });
 
   it("summarises an envelope and checks it against the receipt hash", () => {

@@ -13,7 +13,10 @@
  *    broker's copy of the hash).
  *
  * Pure functions over the job and a keyring, so the decision is testable
- * without rendering anything.
+ * without rendering anything. `readSealedResult` never throws: it runs while
+ * the job page renders, and an envelope a provider got wrong (or forged) —
+ * an ephemeral key that isn't a usable X25519 point, a plaintext that isn't
+ * UTF-8 — must become a message on the page, not an unmounted app.
  */
 
 import { keccak256, stringToBytes } from "viem";
@@ -34,6 +37,8 @@ export type SealedRead =
   | { kind: "foreign" }
   /** A shared link whose key doesn't open this result. */
   | { kind: "bad-link" }
+  /** The envelope is malformed: it cannot be opened by anyone, whatever key they hold. */
+  | { kind: "invalid"; reason: string }
   | { kind: "not-sealed" };
 
 export interface ResultOpener {
@@ -54,7 +59,8 @@ export function readSealedResult(opts: {
     try {
       return { kind: "opened", text: openSharedResult(sharedKey, result, jobId), via: "link" };
     } catch (err) {
-      if (!(err instanceof SealedError)) throw err;
+      // A key that decrypts but yields garbage is the envelope's fault, not the link's.
+      if (!isWrongKey(err) && !isUnusableKey(err)) return invalid(err);
       // Fall through to the passkey, if there is one: a stale link shouldn't
       // stop the owner from reading their own result.
       if (!keyring?.isUnlocked("inbox")) return { kind: "bad-link" };
@@ -65,9 +71,23 @@ export function readSealedResult(opts: {
     return { kind: "opened", text: keyring.openResult(result, jobId), via: "passkey" };
   } catch (err) {
     if (err instanceof KeyringLockedError) return { kind: "locked" };
-    if (err instanceof SealedError && err.code === "DECRYPT_FAILED") return { kind: "foreign" };
-    throw err;
+    if (isWrongKey(err)) return { kind: "foreign" };
+    return invalid(err);
   }
+}
+
+/** AES-GCM refused: this key is not the one the result was sealed to. */
+function isWrongKey(err: unknown): boolean {
+  return err instanceof SealedError && err.code === "DECRYPT_FAILED";
+}
+
+/** The key itself is malformed (a share link's fragment that isn't a 32-byte key). */
+function isUnusableKey(err: unknown): boolean {
+  return err instanceof SealedError && err.code === "INVALID_KEY";
+}
+
+function invalid(err: unknown): SealedRead {
+  return { kind: "invalid", reason: err instanceof Error ? err.message : String(err) };
 }
 
 /** What the page can say about an envelope without opening it. */
