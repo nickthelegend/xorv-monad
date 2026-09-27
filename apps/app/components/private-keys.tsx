@@ -11,7 +11,11 @@
  *
  * It also keeps the decrypted history once loaded, and any history entry that
  * couldn't be saved yet (the broker was unreachable right after a payment), so
- * a retry doesn't depend on the buyer remembering their own prompt.
+ * a retry doesn't depend on the buyer remembering their own prompt. Those
+ * unsaved entries carry plaintext prompts, so they are as private as the
+ * history: tied to the vault they were meant for (lib/private/pending.ts),
+ * visible only while it is unlocked, and dropped on Lock, auto-lock and a new
+ * passkey, exactly like the history.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -20,6 +24,7 @@ import { BROKER_URL } from "@/lib/api";
 import { PrivateKeyring, type KeyringSnapshot } from "@/lib/private/keyring";
 import { browserPasskeyEnv, describePasskeyError, detectPrfSupport, type PasskeyFailure } from "@/lib/private/passkey";
 import { VaultClient, type VaultState } from "@/lib/private/vault-client";
+import { holdPending, pendingFor, releasePending, type PendingEntry } from "@/lib/private/pending";
 
 /** Keys are dropped this long after the last unlock, like a password manager's timeout. */
 const AUTO_LOCK_MS = 30 * 60_000;
@@ -44,6 +49,7 @@ export interface PrivateKeysValue {
   loadHistory: () => Promise<VaultState | null>;
   /** Save a private job to the vault; on failure it is kept (in memory) for `retryPending`. */
   saveToHistory: (entry: PrivateJobEntry) => Promise<boolean>;
+  /** Unsaved entries for the vault that is unlocked right now — none while locked. */
   pending: PrivateJobEntry[];
   retryPending: () => Promise<boolean>;
 }
@@ -57,7 +63,7 @@ export function PrivateKeysProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<PrivateKeysValue["error"]>(null);
   const [history, setHistory] = useState<VaultState | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [pending, setPending] = useState<PrivateJobEntry[]>([]);
+  const [held, setHeld] = useState<PendingEntry[]>([]);
   const lockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const vault = useMemo(() => new VaultClient(BROKER_URL, keyring), [keyring]);
@@ -78,6 +84,7 @@ export function PrivateKeysProvider({ children }: { children: ReactNode }) {
     lockTimer.current = setTimeout(() => {
       keyring.lock();
       setHistory(null);
+      setHeld([]);
     }, AUTO_LOCK_MS);
   }, [keyring]);
 
@@ -86,6 +93,7 @@ export function PrivateKeysProvider({ children }: { children: ReactNode }) {
     try {
       await keyring.create();
       setHistory(null);
+      setHeld([]);
       armAutoLock();
       return true;
     } catch (err) {
@@ -113,6 +121,7 @@ export function PrivateKeysProvider({ children }: { children: ReactNode }) {
     keyring.lock();
     setHistory(null);
     setHistoryError(null);
+    setHeld([]);
     if (lockTimer.current) clearTimeout(lockTimer.current);
   }, [keyring]);
 
@@ -131,33 +140,40 @@ export function PrivateKeysProvider({ children }: { children: ReactNode }) {
 
   const saveToHistory = useCallback(
     async (entry: PrivateJobEntry) => {
+      // The vault this entry is for: a later retry may only ever write it there.
+      const vaultId = keyring.isUnlocked("vaultAuth") ? keyring.vaultId() : null;
       try {
         const state = await vault.add(entry);
         setHistory(state);
-        setPending((prev) => prev.filter((p) => p.jobId !== entry.jobId));
+        if (vaultId) setHeld((prev) => releasePending(prev, vaultId, [entry.jobId]));
         return true;
       } catch (err) {
-        setPending((prev) => [...prev.filter((p) => p.jobId !== entry.jobId), entry]);
+        // Locked mid-save: there is no vault it could safely wait for.
+        if (vaultId) setHeld((prev) => holdPending(prev, vaultId, entry));
         setHistoryError(err instanceof Error ? err.message : String(err));
         return false;
       }
     },
-    [vault],
+    [keyring, vault],
   );
 
+  const openVaultId = snapshot.vault && snapshot.vaultAuth ? snapshot.vaultAuth.vaultId : null;
+  const pending = useMemo(() => pendingFor(held, openVaultId), [held, openVaultId]);
+
   const retryPending = useCallback(async () => {
-    if (pending.length === 0) return true;
+    if (!openVaultId || pending.length === 0) return true;
+    const entries = pending;
     try {
-      const state = await vault.write((current) => pending.reduce(addVaultEntry, current));
+      const state = await vault.write((current) => entries.reduce(addVaultEntry, current));
       setHistory(state);
-      setPending([]);
+      setHeld((prev) => releasePending(prev, openVaultId, entries.map((e) => e.jobId)));
       setHistoryError(null);
       return true;
     } catch (err) {
       setHistoryError(err instanceof Error ? err.message : String(err));
       return false;
     }
-  }, [pending, vault]);
+  }, [openVaultId, pending, vault]);
 
   const value: PrivateKeysValue = {
     keyring,
