@@ -77,8 +77,19 @@ exist.
 
 - **Hunyuan hy4 screens** every quote before any provider sees the prompt. A block is a 422. The
   fail mode is set by `XORV_SCREENER_FAIL=open|closed`.
-- **Qwen 3.8 Max routes** "Auto" quotes among live adapters under the ceiling, with a deterministic
-  fallback.
+- **Qwen 3.8 Max is a tool-using routing agent.** For "Auto" quotes it runs a bounded loop (≤4
+  turns, ≤6 reads, 15 s, thinking on) over `list_candidates`, `erc8004_reputation` (ERC-8004
+  Reputation and Identity registries on Monad), `recent_receipts` (XorvLedger events),
+  `indexer_provider_stats` (Envio aggregates) and `nansen_trust`, then `select_provider`. It
+  chooses the provider, not only the adapter. The pick is checked against the live candidates and
+  the ceiling, with one retry, then a deterministic fallback. Every call is recorded in
+  `routing.steps` and rendered as an agent trace on the quote card and job page. The protocol LLM
+  client gained a tool-calling chat turn for it.
+- **The matcher ranks on indexed reputation.** When no router runs, price ties break on buyer
+  ratings and Kimi scores from the Envio indexer (shrunk toward a neutral prior, refreshed at most
+  once a minute), or on the broker's own jobs without an indexer.
+- The screen's deadline is `XORV_SCREENER_TIMEOUT_MS` (default 8 s), and `XORV_SCREENER_REASONING`
+  sets TokenHub's reasoning effort.
 - **Kimi K3 verifies** completed public jobs and writes the score to ERC-8004 (`xorv-verified`) from
   the verifier EOA. It never blocks the job.
 - Each role has a shared client, hard per-role deadlines, strict JSON validation, key redaction,

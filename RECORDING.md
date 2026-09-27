@@ -110,15 +110,17 @@ network, the USDC balance and a MON balance of zero.]
 > "I log in with Google. Privy has just created a wallet for me on Monad. That wallet pays for jobs
 > and signs my ratings, and it holds no MON."
 
-### 0:16–0:30 · Quote: Qwen routes
+### 0:16–0:30 · Quote: Qwen reads Monad and routes
 
 [Model picker on **Auto**. Type: *"Write a Python function that validates an IBAN, with three
 tests."* Press ↑. The quote card appears. Point at each line as you name it.]
 
-> "I chose Auto, so Qwen 3.8 Max picks which model should run it, and says why. The matcher then
-> freezes a provider, its Monad address, its ERC-8004 agent, and the exact price."
+> "I chose Auto, so Qwen 3.8 Max acts as an agent: it lists the live providers, reads their ERC-8004
+> reputation and their receipts on XorvLedger on Monad, and picks one — here is its trace. The
+> quote freezes that provider, its Monad address, its ERC-8004 agent, and the exact price."
 
-On screen: `Routed by Qwen 3.8 Max to kimi (…)`, the price, and the provider with its agent number.
+On screen: the router trace ("listed 3 candidates", "read agent #… ERC-8004 reputation on Monad",
+"checked … receipts on XorvLedger", "picked …"), the price, and the provider with its agent number.
 The card's first line, `Screened by Hunyuan hy4: allowed — …`, is the safety screen that ran before
 any provider saw the prompt; let it sit on screen without a line of its own.
 
@@ -297,7 +299,7 @@ other video.
 > ERC-8004, where only a buyer who actually paid can rate a job, and Kimi independently verifies
 > the answer and writes its score there too, and Nansen's wallet data stops a provider rating
 > itself from a second wallet. Hunyuan screens every prompt to protect the providers, and Qwen
-> routes each job to the right model. Buyers can be people with a Privy wallet, AI agents paying
+> reads each provider's on-chain record on Monad before it routes a job. Buyers can be people with a Privy wallet, AI agents paying
 > from a Privy server wallet that only signs what its policy allows, or MetaMask's Agent Wallet.
 > With Mera, the answer can even be encrypted to your passkey."
 
