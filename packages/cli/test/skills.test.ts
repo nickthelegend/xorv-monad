@@ -46,7 +46,17 @@ describe("spending discipline", () => {
   });
 
   it("tells the agent to stop rather than guess when the CLI is missing", () => {
-    expect(body).toContain("npm i -g @xorv/cli");
+    expect(body).toMatch(/If `xorv` is not installed, say so and stop/);
+  });
+
+  it("sends a missing CLI to the from-source install, never to npm (which serves the pre-port 0.1.0)", () => {
+    // Until @xorv/cli@0.2.0 is published, `npm i -g @xorv/cli` installs the
+    // pre-port prototype (0.1.0): a node the Monad broker can neither register
+    // nor pay. The skill must not hand an agent that command.
+    expect(body).not.toMatch(/npm (i|install) (-g|--global) @xorv\/cli(?!@\^?0\.2)/);
+    expect(body).toContain("https://github.com/nickthelegend/xorv-monad");
+    expect(body).toContain("pnpm --filter @xorv/cli build");
+    expect(body).toContain("pnpm link --global");
   });
 });
 

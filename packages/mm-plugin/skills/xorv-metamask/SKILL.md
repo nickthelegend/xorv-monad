@@ -22,9 +22,21 @@ mm plugins inspect @xorv/mm-plugin   # is the plugin installed?
 mm doctor                            # is the wallet signed in and initialised?
 ```
 
-If the plugin is missing, say so and stop. The user installs it with
-`mm config set experimentalPlugins true` then `mm plugins install @xorv/mm-plugin`
-(they review a consent screen; do not pass `--accept-permissions` for them).
+If the plugin is missing, say so and stop. It is not on npm yet, so do not
+suggest installing it by package name: that fails with a 404. The user
+installs it from a checkout of https://github.com/nickthelegend/xorv-monad:
+
+```bash
+pnpm install
+pnpm --filter @xorv/protocol build
+pnpm --filter @xorv/mm-plugin build
+mm config set experimentalPlugins true
+mm config set experimentalAllowUnverifiedInstalls true   # local installs are development-only
+mm plugins install "file:<absolute path to the checkout>/packages/mm-plugin"
+```
+
+They review a consent screen; do not pass `--accept-permissions` for them.
+On Windows the path needs a drive letter (`E:/…`), not `/e/…`.
 
 `mm xorv` talks to the broker at `XORV_BROKER_URL` (default
 `http://localhost:8402`). Pass `--broker <url>` if the user named one.

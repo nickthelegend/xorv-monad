@@ -15,6 +15,14 @@ import { valueToStars } from "@/lib/rating";
 import { readTrust } from "@/lib/trust";
 import { TrustBadge, TrustSummary } from "@/components/trust";
 
+/**
+ * Where a would-be provider learns to run a node. It installs from source
+ * until `@xorv/cli@0.2.0` is on npm: what npm serves under that name today is
+ * the Hedera prototype (0.1.0), which the Monad broker can neither register
+ * nor pay — so the app never tells anyone to `npm i -g` it.
+ */
+const PROVIDER_GUIDE_URL = "https://github.com/nickthelegend/xorv-monad/tree/main/packages/cli#readme";
+
 /** Match a live provider to its leaderboard row: by broker id when known, else by payout address. */
 function rowFor(provider: Provider, board: Leaderboard | null): LeaderboardRow | null {
   if (!board) return null;
@@ -60,8 +68,9 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
         title="No providers online"
         hint={
           <>
-            Run <span className="mono text-fg-3">npm i -g @xorv/cli &amp;&amp; xorv init</span> on any
-            machine with Claude Code, Codex, Qwen Code or a Qwen / Kimi / Hunyuan API key.
+            Run one on any machine with Claude Code, Codex, Qwen Code or a Qwen / Kimi / Hunyuan API key:
+            install the CLI from source (<Ext href={PROVIDER_GUIDE_URL}>provider guide ↗</Ext>), then{" "}
+            <span className="mono text-fg-3">xorv init &amp;&amp; xorv start</span>.
           </>
         }
       />

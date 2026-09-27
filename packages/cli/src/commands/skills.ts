@@ -128,8 +128,12 @@ Money leaves the user's wallet when this runs. So:
   they set without re-asking each time.
 - **Never invent a higher ceiling** because a quote came back above it. Report
   the quote and let them decide.
-- If \`xorv\` is not installed, say so and stop: \`npm i -g @xorv/cli\` (or, from
-  a checkout of the repo, \`pnpm --filter @xorv/cli build\` and link it).
+- If \`xorv\` is not installed, say so and stop. It installs from source for
+  now: clone https://github.com/nickthelegend/xorv-monad, run \`pnpm install\`,
+  \`pnpm --filter @xorv/protocol build\` and \`pnpm --filter @xorv/cli build\`,
+  then \`pnpm link --global\` inside \`packages/cli\`. Do not suggest installing
+  it from npm: until 0.2.0 is published there, npm serves the pre-port
+  prototype, which cannot pay or be paid on Monad.
 
 The buyer's wallet needs **USDC on Monad and nothing else** — no MON: the
 payment is a signed authorization, and the network's facilitator pays the gas.
