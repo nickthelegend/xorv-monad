@@ -15,7 +15,7 @@ the set of awkward parts that EVM and Monad bring instead.
  buyers                         broker (services/broker)                 provider node (xorv start)
  app+Privy · xorv run ·            │                                        dials OUT over WebSocket
  MCP+Privy · mm xorv               │                                                  │
-   │ 1 POST /api/quotes ─────────► │ Hunyuan screen → Qwen route → matcher             │
+   │ 1 POST /api/quotes ─────────► │ Hunyuan screen → Qwen agent → matcher             │
    │ ◄── frozen quote ──────────── │ (provider 0x…, agentId, usdcAmount, accepts[])    │
    │ 2 POST /api/jobs/:quoteId ──► │ 402: exact · USDC · payTo = PROVIDER              │
    │ 3 PAYMENT-SIGNATURE ────────► │ facilitator: transferWithAuthorization ─────► Monad
@@ -301,18 +301,33 @@ scrubbed from any error text.
 
 | Role | Runs | Deadline | When it fails |
 |---|---|---|---|
-| **Screener**, Hunyuan hy4 | every quote, before any provider sees the prompt | 5 s | `XORV_SCREENER_FAIL=open` (default): quote anyway, recorded as "not screened: …". `closed`: 503 until the screen is back. A **block** is a 422 and no quote exists. |
-| **Router**, Qwen 3.8 Max | quotes with no adapter (or "auto") when two or more adapters are live under the ceiling | 6 s | Timeout, HTTP error, bad JSON or a pick that is not a live candidate → the deterministic matcher, recorded as `routing.fallback` with the reason. |
+| **Screener**, Hunyuan hy4 | every quote, before any provider sees the prompt | 8 s (`XORV_SCREENER_TIMEOUT_MS`; `XORV_SCREENER_REASONING` sets TokenHub's reasoning effort, default low) | `XORV_SCREENER_FAIL=open` (default): quote anyway, recorded as "not screened: …". `closed`: 503 until the screen is back. A **block** is a 422 and no quote exists. |
+| **Router**, Qwen 3.8 Max | quotes with no adapter (or "auto") when more than one live option fits under the ceiling | 15 s for the whole tool loop (`XORV_ROUTER_TIMEOUT_MS`), 3 s per tool | Timeout, HTTP error, turn/read cap without a pick, or a pick that is not a live candidate under the ceiling (after one retry) → the deterministic matcher, recorded as `routing.fallback` with a templated reason. |
 | **Verifier**, Kimi K3 | every completed, non-private job | 20 s | Never blocks: it runs after the buyer has the result. No score means no feedback. A failed `giveFeedback` is stored as `verification.feedbackError`. |
 
 Why they are shaped this way:
 
 - **What was screened is what runs.** The quote freezes the screened request, and the paid route
   runs only the quoted request, so a prompt cannot be swapped after screening.
-- **The router picks an adapter, never a node.** It sees a table of live candidates under the
-  buyer's ceiling (price, success rate, mean rating, mean Kimi score, ERC-8004 identity). The price
-  matcher still chooses the node for the adapter it picked, so the model cannot steer a job to a
-  particular provider or above the ceiling.
+- **The router is an agent that reads Monad, and its pick is checked.** Qwen 3.8 Max runs at most 4
+  turns and 6 reads (`services/broker/src/ai/router.ts`): `list_candidates`, `erc8004_reputation`
+  (ERC-8004 Reputation `getSummary` for the XorvLedger client and the verifier client, plus the
+  Identity registry's agent wallet), `recent_receipts` (XorvLedger events, indexer first), 
+  `indexer_provider_stats` (Envio aggregates) and `nansen_trust` (public view), then
+  `select_provider`. Tool results are small JSON built by the broker (`router-tools.ts`,
+  `router-data.ts`), each with its own timeout and cache. The pick must be a live candidate under
+  the buyer's ceiling, so the model can choose among eligible providers but never outside them or
+  above the price. Thinking stays on with a small budget because Model Studio supports non-streaming
+  thinking for the commercial `qwen3.8-max`; `tool_choice` stays `auto` because `required` is refused
+  while thinking.
+- **The trace is the broker's words, not the model's.** `routing.steps` records each call with
+  validated ids, a templated summary and explorer links, and the app renders it as an agent trace.
+  A made-up id is recorded as "(not a candidate)". For a private job the model's reason is
+  withheld, while the steps (public provider data) stay.
+- **Envio ranks providers even without the router.** When no router runs, the matcher breaks price
+  ties on reputation from the indexer (buyer ratings and Kimi scores, shrunk toward a neutral 50
+  worth three ratings), refreshed in the background at most once a minute
+  (`services/broker/src/ai/reputation-book.ts`), and from the broker's own jobs without an indexer.
 - **The verifier's score is a separate signal.** It is written from the verifier EOA under tag
   `xorv-verified`, never mixed with buyer `starred` ratings. The feedback file at
   `/verifications/<jobId>.json` hashes to the committed `feedbackHash`, and its hash is stored on the
@@ -465,21 +480,21 @@ reassignment means someone else finished the job. The verifier runs, and the rec
 
 ## Testing
 
-The root `pnpm test` runs every workspace suite: **1,038 tests**, counted on 2026-09-27 by running
+The root `pnpm test` runs every workspace suite: **1,184 tests**, counted on 2026-09-27 by running
 each suite once, one after another, on Windows. A further 14 POSIX-only CLI cases are skipped there.
 None of them needs a key, an RPC or testnet funds.
 
 | Suite | Files | Tests | What it leans on |
 |---|---:|---:|---|
-| `packages/protocol` | 11 | 236 | viem over a fake JSON-RPC, a real x402 facilitator over a stub transport, known-answer crypto vectors |
-| `packages/contracts` | 4 | 47 | Hardhat's in-process chain (EDR), the vendored ERC-8004 registries, `node:test` |
-| `packages/cli` | 16 | 245 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
-| `packages/mcp` | 7 | 82 | the real server over stdio, a mock broker that verifies signatures, a fake Privy client |
-| `packages/mm-plugin` | 7 | 71 | the real `PluginCommand` base, a fake executor that signs the way MetaMask's JSON-RPC signer does |
-| `services/broker` | 11 | 264 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
-| `apps/app` | 7 | 79 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
-| `apps/landing` | 1 | 14 | hand-built broker payloads, including malformed ones |
-| **Total** | **64** | **1,038** | |
+| `packages/protocol` | 11 | 242 | viem over a fake JSON-RPC, a real x402 facilitator over a stub transport, known-answer crypto vectors |
+| `packages/contracts` | 4 | 60 | Hardhat's in-process chain (EDR), the vendored ERC-8004 registries, `node:test` |
+| `packages/cli` | 18 | 253 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
+| `packages/mcp` | 7 | 83 | the real server over stdio, a mock broker that verifies signatures, a fake Privy client |
+| `packages/mm-plugin` | 9 | 74 | the real `PluginCommand` base, a fake executor that signs the way MetaMask's JSON-RPC signer does |
+| `services/broker` | 11 | 343 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
+| `apps/app` | 7 | 114 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
+| `apps/landing` | 1 | 15 | hand-built broker payloads, including malformed ones |
+| **Total** | **68** | **1,184** | |
 
 What makes that possible:
 
