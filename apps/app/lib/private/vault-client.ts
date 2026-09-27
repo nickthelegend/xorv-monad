@@ -53,12 +53,14 @@ const MAX_ATTEMPTS = 4;
 export class VaultClient {
   private readonly fetch: typeof fetch;
   /**
-   * The newest version this client has seen. A broker can't forge a vault,
-   * but it could serve an older genuine one; within a session that is caught
-   * here. (Across sessions nothing is remembered, by design — see
-   * docs/PRIVATE_JOBS.md.)
+   * The newest version this client has seen, per vault id. A broker can't
+   * forge a vault, but it could serve an older genuine one; within a session
+   * that is caught here. (Across sessions nothing is remembered, by design —
+   * see docs/PRIVATE_JOBS.md.) Keyed by id because one client outlives Lock:
+   * a passkey unlocked later in the same tab is a different vault with its
+   * own versions, and must not be judged against this one's.
    */
-  private highestSeen = 0;
+  private readonly highestSeen = new Map<string, number>();
 
   constructor(
     private readonly brokerUrl: string,
@@ -68,33 +70,35 @@ export class VaultClient {
     this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
   }
 
-  private url(): string {
-    return `${this.brokerUrl}/api/vaults/${this.keys.vaultId()}`;
+  private url(id: string): string {
+    return `${this.brokerUrl}/api/vaults/${id}`;
   }
 
   /** Fetch and decrypt the history. An empty history when the vault doesn't exist yet. */
   async load(): Promise<VaultState> {
+    return this.loadVault(this.keys.vaultId());
+  }
+
+  private async loadVault(id: string): Promise<VaultState> {
+    const seen = this.highestSeen.get(id) ?? 0;
     let res: Response;
     try {
-      res = await this.fetch(this.url(), { cache: "no-store" });
+      res = await this.fetch(this.url(id), { cache: "no-store" });
     } catch (err) {
       throw new VaultError(`couldn't reach the broker: ${err instanceof Error ? err.message : err}`, "network");
     }
     if (res.status === 404) {
-      if (this.highestSeen > 0) throw new VaultError("the broker no longer has this vault", "rollback");
+      if (seen > 0) throw new VaultError("the broker no longer has this vault", "rollback");
       return { vault: emptyVault(), version: 0, updatedAt: null };
     }
     if (!res.ok) throw new VaultError(`the broker answered ${res.status}`, "network");
     const blob = (await res.json()) as VaultCiphertext & { updatedAt?: number };
-    if (blob.version < this.highestSeen) {
-      throw new VaultError(
-        `the broker served version ${blob.version} after this device saw ${this.highestSeen}`,
-        "rollback",
-      );
+    if (blob.version < seen) {
+      throw new VaultError(`the broker served version ${blob.version} after this device saw ${seen}`, "rollback");
     }
     // Throws SealedError DECRYPT_FAILED for a vault this passkey didn't write.
     const vault = parseVaultContents(this.keys.decryptVault(blob));
-    this.highestSeen = blob.version;
+    this.highestSeen.set(id, blob.version);
     return { vault, version: blob.version, updatedAt: blob.updatedAt ?? null };
   }
 
@@ -107,14 +111,15 @@ export class VaultClient {
   async write(change: (vault: PrivateVault) => PrivateVault): Promise<VaultState> {
     let lastError: unknown = null;
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-      const current = await this.load();
+      const id = this.keys.vaultId();
+      const current = await this.loadVault(id);
       const next = mergeVaults(change(current.vault), current.vault);
       const version = current.version + 1;
       const write = await this.keys.signVaultWrite(this.keys.encryptVault(JSON.stringify(next), version));
 
       let res: Response;
       try {
-        res = await this.fetch(this.url(), {
+        res = await this.fetch(this.url(id), {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(write),
@@ -124,7 +129,7 @@ export class VaultClient {
       }
       if (res.ok) {
         const body = (await res.json().catch(() => ({}))) as { updatedAt?: number };
-        this.highestSeen = version;
+        this.highestSeen.set(id, version);
         return { vault: next, version, updatedAt: body.updatedAt ?? Date.now() };
       }
       const body = (await res.json().catch(() => ({}))) as { error?: string };

@@ -272,6 +272,41 @@ describe("VaultClient", () => {
     expect(VaultError).toBeDefined();
   });
 
+  it("keeps one rollback watermark per vault: a second passkey in the same tab isn't a 'rollback' of the first", async () => {
+    // The app builds one VaultClient per tab (private-keys.tsx) and keeps it
+    // across Lock. Passkey A's history reaching v3 must not make passkey B's
+    // missing (or younger) vault look like a broker serving stale data.
+    const broker = vaultBroker();
+    const auth = new FakeAuthenticator();
+    const ring = keyring(auth);
+    await ring.create();
+    await ring.unlock();
+    const client = new VaultClient(BROKER, ring, broker.fetch);
+    for (const id of ["job_a1", "job_a2", "job_a3"]) await client.add(entry(id));
+    const vaultA = ring.vaultId();
+    expect(broker.vaults.get(vaultA)?.version).toBe(3);
+
+    // Lock, then create and unlock a new passkey — same tab, same client.
+    ring.lock();
+    await ring.create();
+    await ring.unlock();
+    const vaultB = ring.vaultId();
+    expect(vaultB).not.toBe(vaultA);
+    expect(await client.load()).toMatchObject({ version: 0, vault: { entries: [] } });
+    expect((await client.add(entry("job_b1"))).version).toBe(1);
+    expect((await client.load()).vault.entries.map((e) => e.jobId)).toEqual(["job_b1"]);
+
+    // Back to A: its own watermark still guards it against a stale copy.
+    const v2 = { ...broker.vaults.get(vaultA)!, version: 2 };
+    ring.lock();
+    auth.choose = (candidates) => candidates[0];
+    await ring.unlock();
+    expect(ring.vaultId()).toBe(vaultA);
+    expect((await client.load()).version).toBe(3);
+    broker.vaults.set(vaultA, v2);
+    await expect(client.load()).rejects.toMatchObject({ kind: "rollback" });
+  });
+
   it("refuses to decrypt a vault this passkey didn't write", async () => {
     const broker = vaultBroker();
     const { ring } = await unlocked();
