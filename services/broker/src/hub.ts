@@ -34,6 +34,60 @@ export type UpMessage =
   | { type: "job.accepted"; jobId: string }
   | { type: "ping"; at: number };
 
+/**
+ * The largest frame a node may send (a job result is the big one). ws
+ * defaults to 100 MiB, which one socket could make the broker buffer.
+ */
+export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
+
+const EVENT_KINDS = new Set<JobEvent["kind"]>(["status", "message", "tool_call", "file_edit", "error", "reasoning"]);
+
+/**
+ * Parse one frame from a node, or null when it is not a well-formed
+ * `UpMessage`. Frames come from any registered node, and registration is
+ * open, so nothing here trusts the shape: `null`, an array or a message whose
+ * fields have the wrong types would otherwise throw inside the ws listener,
+ * where nothing catches it, and take the whole broker down.
+ */
+export function parseUpMessage(raw: string): UpMessage | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const m = value as Record<string, unknown>;
+  const jobId = typeof m.jobId === "string" && m.jobId.length > 0 && m.jobId.length <= 128 ? m.jobId : null;
+  const durationMs = typeof m.durationMs === "number" && Number.isFinite(m.durationMs) ? Math.max(0, m.durationMs) : null;
+  switch (m.type) {
+    case "ping":
+      return { type: "ping", at: typeof m.at === "number" && Number.isFinite(m.at) ? m.at : 0 };
+    case "job.accepted":
+      return jobId ? { type: "job.accepted", jobId } : null;
+    case "job.result":
+      return jobId && typeof m.result === "string" && durationMs !== null
+        ? { type: "job.result", jobId, result: m.result, durationMs }
+        : null;
+    case "job.error":
+      return jobId && typeof m.error === "string" && durationMs !== null
+        ? { type: "job.error", jobId, error: m.error, durationMs }
+        : null;
+    case "job.event": {
+      const e = m.event;
+      if (!jobId || !e || typeof e !== "object" || Array.isArray(e)) return null;
+      const ev = e as Record<string, unknown>;
+      if (typeof ev.kind !== "string" || !EVENT_KINDS.has(ev.kind as JobEvent["kind"]) || typeof ev.text !== "string") {
+        return null;
+      }
+      const at = typeof ev.at === "number" && Number.isFinite(ev.at) ? ev.at : 0;
+      return { type: "job.event", jobId, event: { at, kind: ev.kind as JobEvent["kind"], text: ev.text } };
+    }
+    default:
+      return null;
+  }
+}
+
 export interface HubHandlers {
   onEvent(providerId: string, jobId: string, event: JobEvent): void;
   onResult(providerId: string, jobId: string, result: string, durationMs: number): void;
@@ -55,7 +109,7 @@ export class Hub {
   ) {
     // `noServer` + a manual upgrade hook, so the HTTP app and the socket share
     // one port and Hono keeps serving every non-/ws path untouched.
-    this.wss = new WebSocketServer({ noServer: true });
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
 
     server.on("upgrade", (req, socket, head) => {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -88,13 +142,16 @@ export class Hub {
     this.send(providerId, { type: "welcome", providerId, brokerEpoch: this.epoch });
 
     ws.on("message", (raw) => {
-      let message: UpMessage;
+      const message = parseUpMessage(String(raw));
+      if (!message) return;
+      // A handler that throws must not escape into ws, which does not catch
+      // listener errors: that would be an uncaught exception, and the broker
+      // exits on those.
       try {
-        message = JSON.parse(String(raw)) as UpMessage;
-      } catch {
-        return;
+        this.handle(providerId, message);
+      } catch (err) {
+        console.error(`[broker] frame from ${providerId} failed: ${err instanceof Error ? err.message : String(err)}`);
       }
-      this.handle(providerId, message);
     });
 
     ws.on("close", () => {

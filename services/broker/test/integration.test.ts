@@ -974,6 +974,39 @@ describe("failure handling", () => {
     b.close();
   }, 20_000);
 
+  it("survives malformed frames from a node and keeps serving its socket", async () => {
+    // Registration is open, so anyone can hold a control socket. `null` (or a
+    // job.event whose event is null) used to throw inside the ws listener,
+    // which nothing catches: one 4-byte frame exited the broker.
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId);
+    const job = await waitFor(() => provider.dispatched[0]);
+    for (const frame of [
+      "null",
+      "[]",
+      "7",
+      JSON.stringify({ type: "job.event", jobId: job.jobId, event: null }),
+      JSON.stringify({ type: "job.result", jobId: job.jobId, result: null, durationMs: 1 }),
+      JSON.stringify({ type: "job.error", jobId: job.jobId, error: { x: 1 }, durationMs: 1 }),
+    ]) {
+      provider.ws.send(frame);
+    }
+    const pong = new Promise<boolean>((resolve) => {
+      provider.ws.on("message", (raw) => {
+        if ((JSON.parse(String(raw)) as { type: string }).type === "pong") resolve(true);
+      });
+    });
+    provider.ws.send(JSON.stringify({ type: "ping", at: Date.now() }));
+    expect(await pong).toBe(true);
+    // None of the malformed frames touched the job, and a real answer still lands.
+    expect((await getJob(h, paid.jobId)).status).not.toBe("failed");
+    await provider.completeNextJob("still here");
+    const done = await waitForStatus(h, paid.jobId, "completed");
+    expect(done.result).toBe("still here");
+    provider.close();
+  }, 20_000);
+
   it("never bounces a job back to a provider that already failed it", async () => {
     const a = await connectProvider(h, { label: "a", nodeId: "n1", address: PAYEE_A });
     const b = await connectProvider(h, { label: "b", nodeId: "n2", address: PAYEE_B });
