@@ -2,12 +2,13 @@
 
 import { useCallback } from "react";
 import { explorerAddress, explorerAgent, explorerTx, formatUsdc, shortHex } from "@xorv/protocol/web";
-import { api, formatAgo, formatDuration, formatUsd, type Provider } from "@/lib/api";
+import { api, formatDuration, formatUsd, type Provider } from "@/lib/api";
 import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import { readTrust } from "@/lib/trust";
 import { Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { TrustPanel } from "@/components/trust";
+import { Ago } from "@/components/ago";
 
 /**
  * One provider: what it sells, what it has done, and how much its payout
@@ -55,7 +56,10 @@ export function ProviderView({ id, initial }: { id: string; initial: Provider | 
               "not yet"
             )}
           </Row>
-          <Row label="last heartbeat">{formatAgo(provider.lastHeartbeatAt)}</Row>
+          {/* Server-rendered from `initial`: relative time only after hydration (components/ago.tsx). */}
+          <Row label="last heartbeat">
+            <Ago at={provider.lastHeartbeatAt} />
+          </Row>
           <Row label="jobs">
             <span className="tnum">
               {provider.stats.jobsCompleted} done
