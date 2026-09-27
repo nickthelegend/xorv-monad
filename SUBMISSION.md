@@ -56,8 +56,9 @@ Xorv connects the two sides with an open protocol:
 1. A provider runs `xorv init && xorv start`. Their machine dials out to the broker and offers the
    CLIs and model keys it has (Claude Code, Codex, Qwen, Kimi, Hunyuan, Qwen Code, local models),
    each at a price they set.
-2. A buyer asks for a quote. Hunyuan screens the prompt, Qwen picks the adapter when the buyer chose
-   "Auto", and the matcher freezes a provider, a price and a USDC amount.
+2. A buyer asks for a quote. Hunyuan screens the prompt; when the buyer chose "Auto", Qwen 3.8 Max
+   runs a tool loop that reads ERC-8004 reputation, XorvLedger receipts, Envio aggregates and Nansen
+   trust on Monad and picks the provider; the quote freezes that provider, a price and a USDC amount.
 3. The buyer signs **one EIP-3009 USDC authorization** to the provider's own address. The x402
    facilitator settles it on Monad **before** the job runs and pays the gas. The broker is never the
    payee.
@@ -181,7 +182,7 @@ public `config.yaml`, `schema.graphql` and handlers, a consumer, and a short dem
 | Depth: more than a single-event indexer | 3 contracts, 13 events, 14 entity types; derived `Provider` earnings, success rate and rating; `Agent` reputation split by writer; `NetworkStats`, `DailyStats`, `ProviderDay`, `BuyerDay` | Code |
 | Non-trivial logic | Feedback classified by client address (ledger = buyer rating, broker = verified, else other); revocations undo exactly; receipts that arrive before their registration are claimed later; broker rotation respected (`src/lib/trust.ts`, `src/lib/aggregates.ts`) | Code |
 | Real on-chain data driving a feature | Broker `/api/leaderboard`, `/api/ledger`, `/api/receipts` read Envio first (`services/broker/src/indexer.ts`, `ledger-reader.ts`) → app network page ("indexed by Envio"), providers leaderboard, landing ledger | Code |
-| Envio in the core loop (quoting, matching, routing) | Not in this build: they read the broker's own stats. Revisited in the second docs pass, after the agentic router lands | Open |
+| Envio in the core loop (matching, routing) | The Qwen router's `indexer_provider_stats` and `recent_receipts` tools read the indexer while choosing a provider; when no router runs, the deterministic matcher breaks price ties on indexed reputation (buyer ratings + Kimi scores, shrunk toward a neutral prior; one batched GraphQL query a minute at most) — `services/broker/src/ai/router-tools.ts`, `router-data.ts`, `reputation-book.ts` | Code |
 | HyperSync | Both configs read `monad-testnet.hypersync.xyz` / `monad.hypersync.xyz` | Code |
 | Tests | 52 handler, ABI, config and query tests (`services/indexer/test`) | Code (run in Docker/WSL, and in CI) |
 | Hosted indexer with live data | Envio Cloud, deployed between Oct 10 and 13 so the 30-day free deployment outlives judging | Live: TODO(deploy) |
@@ -247,13 +248,15 @@ reproduce the same keys and decrypt the same state.
 > **Card** (Alibaba Cloud · Trust, Identity & AI Infrastructure · $5,000 in credits): "Push Qwen 3.8
 > Max into genuinely agentic territory on Monad."
 
-*Section finalized after the agentic router lands.* The table below describes the router as it is in
-this build.
+Qwen 3.8 Max is a bounded, tool-using agent on the quote path. For every "Auto" quote with more than one
+live option under the ceiling, it reads Monad state and then picks the provider that runs the job.
 
 | What Qwen does | Evidence | Status |
 |---|---|---|
-| **Load-bearing core-loop role: the job router** for every "Auto" quote; constrained to live candidates under the ceiling; deterministic fallback | `services/broker/src/ai/router.ts`, integration tests "routes an Auto request with Qwen…" and "falls back to the price matcher…" | Code |
-| Visible in the product | Quote card "Routed by Qwen 3.8 Max to …", the job page's *Network checks*, `/api/network` `aiRoles`; RECORDING.md 0:16–0:30 | Code |
+| **Agentic, on Monad:** a tool loop (≤4 turns, ≤6 reads, 15 s budget, thinking on with a 256-token budget) over `list_candidates`, `erc8004_reputation` (ERC-8004 Reputation `getSummary` for the XorvLedger and verifier clients + Identity agent-wallet check), `recent_receipts` (XorvLedger `JobRecorded`/`JobRated`, indexer first, RPC fallback), `indexer_provider_stats` (Envio aggregates), `nansen_trust` (public trust view), then `select_provider` | `services/broker/src/ai/router.ts`, `router-tools.ts`, `router-data.ts`; `packages/protocol/src/llm.ts` (tool-calling chat turn) | Code |
+| **Load-bearing:** it chooses the provider (not just the adapter); the pick is checked against live candidates and the ceiling, gets one retry, else the deterministic matcher takes over and `routing.fallback` is recorded | `services/broker/test/ai.test.ts` (multi-turn loop, each tool's mapping, invalid pick, timeout, turn caps), integration tests | Code |
+| **Visible:** `routing.steps` — every tool call with validated ids, a templated summary and explorer links — rendered as an agent trace on the quote card and the job page; private jobs withhold the model's reason | `apps/app/components/routing-trace.tsx`, `apps/app/lib/ai.ts`, `apps/app/test/ai.test.ts`; RECORDING.md quote beat | Code |
+| Exercised end to end against a Monad testnet fork (mock Qwen driving the real tool loop over the fork's ERC-8004 registries and XorvLedger) | `e2e/src` mock LLM, `e2e/README.md` | Code |
 | Provider backend: `qwen` adapter (`qwen3.8-max`, streamed reasoning, token cost) | `packages/cli/src/adapters/hosted.ts` | Code |
 | Provider backend: `qwen-code` adapter (Qwen Code CLI with tools, on Qwen 3.8 Max) | `packages/cli/src/adapters/qwen-code.ts` | Code |
 | Live calls with a Model Studio key | `DASHSCOPE_API_KEY` on the demo broker and provider | Live: TODO(deploy) |
