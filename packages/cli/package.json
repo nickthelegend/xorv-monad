@@ -4,13 +4,13 @@
   "description": "Rent out your idle Claude / Codex / Grok / Qwen / Kimi / Hunyuan capacity and get paid per job in USDC over x402 on Monad.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
-  "homepage": "https://github.com/nickthelegend/xorv#readme",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv.git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
     "directory": "packages/cli"
   },
-  "bugs": "https://github.com/nickthelegend/xorv/issues",
+  "bugs": "https://github.com/nickthelegend/xorv-monad/issues",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"

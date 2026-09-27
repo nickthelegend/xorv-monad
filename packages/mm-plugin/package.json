@@ -4,12 +4,13 @@
   "description": "MetaMask Agent Wallet plugin for Xorv: `mm xorv run` buys an AI job from a stranger's idle subscription and pays the provider in USDC over x402 on Monad, signed by the wallet under MetaMask policy.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
-  "homepage": "https://github.com/nickthelegend/xorv/tree/main/packages/mm-plugin#readme",
+  "homepage": "https://github.com/nickthelegend/xorv-monad/tree/main/packages/mm-plugin#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv.git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
     "directory": "packages/mm-plugin"
   },
+  "bugs": "https://github.com/nickthelegend/xorv-monad/issues",
   "type": "module",
   "keywords": [
     "oclif-plugin",

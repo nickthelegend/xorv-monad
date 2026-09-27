@@ -25,6 +25,7 @@ import {
   resumeCommand,
   testCommand,
 } from "./commands/manage.js";
+import { REPO_URL } from "./links.js";
 import * as ui from "./ui.js";
 
 ui.installCursorGuard();
@@ -55,7 +56,7 @@ program
       `  ${ui.c.bold("buyer — spend")}`,
       `    ${ui.c.accent('xorv run "…"')}       post a job and pay for it`,
       "",
-      `  ${ui.c.muted("docs: https://github.com/nickthelegend/xorv")}`,
+      `  ${ui.c.muted(`docs: ${REPO_URL}`)}`,
       "",
     ].join("\n"),
   );

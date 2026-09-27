@@ -3,6 +3,13 @@
   "version": "0.2.0",
   "description": "Shared Xorv protocol: domain types, money math, Monad chain config, XorvLedger + ERC-8004 helpers, x402 (EVM exact) wiring and OpenAI-compatible LLM presets.",
   "license": "MIT",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
+    "directory": "packages/protocol"
+  },
+  "bugs": "https://github.com/nickthelegend/xorv-monad/issues",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"

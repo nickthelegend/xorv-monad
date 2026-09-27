@@ -12,11 +12,13 @@
   "files": ["dist", "README.md"],
   "publishConfig": { "access": "public" },
   "engines": { "node": ">=20.19.0" },
+  "homepage": "https://github.com/nickthelegend/xorv-monad/tree/main/packages/mcp#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv.git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
     "directory": "packages/mcp"
   },
+  "bugs": "https://github.com/nickthelegend/xorv-monad/issues",
   "keywords": ["mcp", "x402", "monad", "evm", "usdc", "privy", "ai-agents", "model-context-protocol"],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/make-executable.mjs dist/index.js dist/scripts/privy-setup.js",
