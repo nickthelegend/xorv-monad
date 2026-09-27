@@ -505,6 +505,15 @@ async function main(): Promise<void> {
     report.equal("screened by Hunyuan and allowed", `${out.quote.screening?.by}:${out.quote.screening?.verdict}`, "hunyuan:allow");
     report.equal("routed by Qwen", out.quote.routing?.by, "qwen");
     report.equal("router's pick (over the cheaper echo) is the quoted adapter", `${out.quote.routing?.adapter}/${out.quote.provider.adapter}`, "qwen/qwen");
+    // The agent router picks the provider itself, after reading it with its tools.
+    const agentRouting = out.quote.routing as (QuoteResponse["routing"] & { providerId?: string | null; steps?: Array<{ tool: string }> }) | null;
+    report.equal("router picked the quoted provider", agentRouting?.providerId ?? null, out.quote.provider.id);
+    const tools = (agentRouting?.steps ?? []).map((st) => st.tool);
+    report.check(
+      "router's trace: listed candidates, read the provider, then selected",
+      tools[0] === "list_candidates" && tools.at(-1) === "select_provider" && tools.includes("recent_receipts") && tools.includes("nansen_trust"),
+      tools.join(" → ") || "no steps",
+    );
     report.equal("quote freezes $0.04 = 40000 USDC units", out.quote.usdcAmount, "40000");
     report.equal("payTo is the provider, not the broker", out.quote.provider.address, parties.provider.address);
     report.check("result came from the provider's qwen adapter (mock answer token)", Boolean(out.result?.includes(answerToken(cliPrompt))), answerToken(cliPrompt));

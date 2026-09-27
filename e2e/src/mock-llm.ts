@@ -12,9 +12,13 @@
  * The rules:
  *  - Hunyuan screen: blocks a prompt containing {@link BLOCK_MARKER}, allows
  *    everything else.
- *  - Qwen router: picks "qwen" whenever it is on the table — deliberately not
- *    the cheapest option, so the quote proves the router (not the price
- *    matcher) chose.
+ *  - Qwen router: runs the broker's tool loop the way the real model does —
+ *    turn 1 calls list_candidates; turn 2 reads the chosen provider with
+ *    erc8004_reputation (when it has an agent), recent_receipts,
+ *    indexer_provider_stats and nansen_trust in parallel; turn 3 calls
+ *    select_provider. It picks the "qwen" provider whenever one is listed —
+ *    deliberately not the cheapest option, so the quote proves the router
+ *    (not the price matcher) chose.
  *  - Kimi verifier: scores every result {@link VERIFIER_SCORE}, pass.
  *  - Streaming chat (the provider's qwen adapter): streams some reasoning,
  *    then an answer that carries {@link answerToken} — a value derived from
@@ -91,7 +95,8 @@ export async function startMockLlm(opts: { keys: Record<MockPreset, string> }): 
     const body = JSON.parse(raw || "{}") as {
       model?: string;
       stream?: boolean;
-      messages?: Array<{ role: string; content: string }>;
+      messages?: Array<{ role: string; content: string | null }>;
+      tools?: Array<{ function?: { name?: string } }>;
     };
     const messages = body.messages ?? [];
     const system = messages.find((m) => m.role === "system")?.content ?? "";
@@ -108,10 +113,9 @@ export async function startMockLlm(opts: { keys: Record<MockPreset, string> }): 
         ? { verdict: "block", category: "credential_exfiltration", reason: "asks the agent to read and send out the provider's keys" }
         : { verdict: "allow", category: "none", reason: "an ordinary task with no effect on the provider's machine" };
     } else if (system.includes("job router")) {
-      role = "router";
-      const adapters = [...user.matchAll(/^([a-z][a-z0-9-]*) \|/gm)].map((m) => m[1]).filter((a) => a !== "adapter");
-      const pick = adapters.includes("qwen") ? "qwen" : (adapters[0] ?? "echo");
-      answer = { adapter: pick, reason: `${pick} answers a self-contained question in one pass`, difficulty: "easy" };
+      // The buyer's prompt is the router's first user message; later ones are the broker's nudges.
+      const prompt = messages.find((m) => m.role === "user")?.content ?? "";
+      return routerTurn(res, preset, model, prompt, messages, (body.tools ?? []).map((t) => t.function?.name ?? ""));
     } else if (system.includes("result verifier")) {
       role = "verifier";
       answer = { score: VERIFIER_SCORE, pass: true, rationale: "The result answers the prompt directly and completely.", flags: [] };
@@ -127,6 +131,71 @@ export async function startMockLlm(opts: { keys: Record<MockPreset, string> }): 
       model,
       choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
       usage: { prompt_tokens: Math.ceil((system.length + user.length) / 4), completion_tokens: 40, total_tokens: 0 },
+    });
+  }
+
+  /**
+   * One turn of the router's tool loop: list, look, select — the tool calls
+   * go back as an OpenAI `tool_calls` message, like Qwen's.
+   */
+  function routerTurn(
+    res: http.ServerResponse,
+    preset: MockPreset,
+    model: string,
+    user: string,
+    messages: Array<{ role: string; content: string | null }>,
+    offered: string[],
+  ): void {
+    const results = messages.filter((m) => m.role === "tool");
+    let n = 0;
+    const call = (name: string, args: Record<string, unknown>) => ({
+      id: `call_e2e_${calls.length}_${n++}`,
+      type: "function",
+      function: { name, arguments: JSON.stringify(args) },
+    });
+    let toolCalls: Array<ReturnType<typeof call>>;
+    if (results.length === 0 && offered.includes("list_candidates")) {
+      toolCalls = [call("list_candidates", {})];
+    } else {
+      let rows: Array<{ providerId: string; adapter: string; agentId: string | null }> = [];
+      try {
+        rows = (JSON.parse(results[0]?.content ?? "{}") as { candidates?: typeof rows }).candidates ?? [];
+      } catch {
+        rows = [];
+      }
+      const pick = rows.find((r) => r.adapter === "qwen") ?? rows[0];
+      if (results.length === 1 && pick && offered.includes("recent_receipts")) {
+        toolCalls = [
+          ...(pick.agentId ? [call("erc8004_reputation", { agentId: pick.agentId })] : []),
+          call("recent_receipts", { providerId: pick.providerId }),
+          call("indexer_provider_stats", { providerId: pick.providerId }),
+          call("nansen_trust", { providerId: pick.providerId }),
+        ];
+      } else {
+        toolCalls = [
+          call("select_provider", {
+            providerId: pick?.providerId ?? "none",
+            reason: `${pick?.adapter ?? "this provider"} answers a self-contained question in one pass`,
+            difficulty: "easy",
+          }),
+        ];
+      }
+    }
+    const answer = JSON.stringify(toolCalls.map((c) => ({ name: c.function.name, args: JSON.parse(c.function.arguments) })));
+    calls.push({ at: Date.now(), preset, role: "router", model, stream: false, user, answer });
+    json(res, 200, {
+      id: `chatcmpl-e2e-${calls.length}`,
+      object: "chat.completion",
+      created: Math.floor(Date.now() / 1000),
+      model,
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: null, reasoning_content: "Weighing the live candidates.", tool_calls: toolCalls },
+          finish_reason: "tool_calls",
+        },
+      ],
+      usage: { prompt_tokens: Math.ceil(user.length / 4) + 200, completion_tokens: 30, total_tokens: 0 },
     });
   }
 
