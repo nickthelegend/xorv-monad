@@ -655,19 +655,27 @@ export function createApp(deps: AppDeps) {
     // A private job names the buyer's passkey-derived inbox key. It is
     // checked here, before a provider is reserved, because a key nobody can
     // seal to would only fail on the provider after the buyer had paid.
-    const { encryptTo, ...rest } = body;
+    const { encryptTo } = body;
     if (encryptTo !== undefined && encryptTo !== null && !isValidEncryptTo(encryptTo)) {
       return c.json(
         { error: "encryptTo must be a 32-byte X25519 public key in unpadded base64url (a private job's inbox key)" },
         400,
       );
     }
+    if (!jobs.hasQuoteRoom()) {
+      return c.json({ error: "this broker is holding too many open quotes — try again in a minute" }, 503);
+    }
+    // Only the fields a job request has. Spreading the body kept whatever
+    // else the caller sent (up to the body limit) in every quote and job.
+    const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 200) : null;
+    const deadlineAt = typeof body.deadlineAt === "number" && Number.isFinite(body.deadlineAt) ? body.deadlineAt : null;
     const request: JobRequest = {
-      ...rest,
       prompt: body.prompt,
       // "auto" (or nothing) is how a buyer says "you choose" — the router's cue.
       adapter: adapterChoice(body.adapter),
       maxPriceUsdMicros: maxPrice,
+      ...(title ? { title } : {}),
+      ...(deadlineAt !== null ? { deadlineAt } : {}),
       ...(encryptTo ? { encryptTo } : {}),
     };
 
@@ -1943,6 +1951,8 @@ export function createApp(deps: AppDeps) {
           if (isTerminal(job.status) && job.payment && !receiptLanded(job)) enqueueReceipt(job);
         }
       }
+      // Quotes nobody paid for, past their TTL.
+      jobs.pruneQuotes();
       // A settlement whose request never reached the handler is not coming back for.
       const staleBefore = Date.now() - QUOTE_TTL_SECONDS * 2_000;
       for (const [quoteId, entry] of settlements) if (entry.at < staleBefore) settlements.delete(quoteId);

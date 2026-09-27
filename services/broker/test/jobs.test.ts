@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { JobStore, type Quote } from "../src/jobs.js";
+import { JobStore, MAX_OPEN_QUOTES, type Quote } from "../src/jobs.js";
 
 const PAYEE = "0x1111111111111111111111111111111111111111";
 
@@ -72,6 +72,34 @@ describe("quotes", () => {
 
   it("returns undefined for an unknown quote", () => {
     expect(store.getQuote("qte_nope")).toBeUndefined();
+  });
+
+  it("prunes expired quotes nobody looks up again, but not one mid-settlement", () => {
+    // Removal used to be lazy, in getQuote only: a quote that was never paid
+    // or asked for again stayed in memory for good, request body and all.
+    vi.useFakeTimers();
+    const stale = store.createQuote(quoteInput());
+    const settling = store.createQuote(quoteInput());
+    settling.paying = true;
+    vi.advanceTimersByTime(301_000);
+    const fresh = store.createQuote(quoteInput());
+    expect(store.quoteCount).toBe(3);
+    expect(store.pruneQuotes()).toBe(1);
+    expect(store.quoteCount).toBe(2);
+    expect(store.getQuote(stale.id)).toBeUndefined();
+    expect(store.getQuote(settling.id)).toBeDefined();
+    expect(store.getQuote(fresh.id)).toBeDefined();
+    vi.useRealTimers();
+  });
+
+  it("stops taking quotes at the cap, and makes room once old ones expire", () => {
+    vi.useFakeTimers();
+    for (let i = 0; i < MAX_OPEN_QUOTES; i += 1) store.createQuote(quoteInput());
+    expect(store.hasQuoteRoom()).toBe(false);
+    vi.advanceTimersByTime(301_000);
+    expect(store.hasQuoteRoom()).toBe(true);
+    expect(store.quoteCount).toBe(0);
+    vi.useRealTimers();
   });
 });
 

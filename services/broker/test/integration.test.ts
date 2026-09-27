@@ -683,6 +683,24 @@ describe("quoting", () => {
     provider.close();
   });
 
+  it("keeps only a job request's own fields from the quote body", async () => {
+    // The body used to be spread into the request, so anything else the
+    // caller sent (up to the body limit) rode along in the quote and the job.
+    const provider = await connectProvider(h);
+    const res = await fetch(`${h.base}/api/quotes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "hi", maxPriceUsdMicros: 50_000, title: "  my job  ", padding: "x".repeat(100_000) }),
+    });
+    expect(res.status).toBe(200);
+    const q = (await res.json()) as Json;
+    const { body: paid } = await pay(h, q.quoteId);
+    const request = h.jobs.get(paid.jobId)!.request as unknown as Record<string, unknown>;
+    expect(request.padding).toBeUndefined();
+    expect(request).toEqual({ prompt: "hi", adapter: null, maxPriceUsdMicros: 50_000, title: "my job" });
+    provider.close();
+  });
+
   it("picks the cheaper of two live providers", async () => {
     const dear = await connectProvider(h, { label: "dear", nodeId: "n1", address: PAYEE_A, price: 9_000 });
     const cheap = await connectProvider(h, { label: "cheap", nodeId: "n2", address: PAYEE_B, price: 2_000 });

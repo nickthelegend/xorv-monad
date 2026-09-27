@@ -122,6 +122,14 @@ export function isTerminal(status: JobStatus): boolean {
   return status === "completed" || status === "failed" || status === "expired";
 }
 
+/**
+ * The most quotes held at once. A quote is free to ask for and each one
+ * keeps its request (up to the body limit) for its TTL; expired ones are
+ * pruned by the sweep, and past this many live ones the broker refuses new
+ * quotes rather than growing without bound.
+ */
+export const MAX_OPEN_QUOTES = 10_000;
+
 export class JobStore {
   private quotes = new Map<string, Quote>();
   private jobs = new Map<string, StoredJob>();
@@ -186,6 +194,34 @@ export class JobStore {
       return undefined;
     }
     return quote;
+  }
+
+  /**
+   * Drop every quote past its TTL that no payment is settling against, the
+   * same rule `getQuote` applies lazily. Without this a quote nobody looked
+   * up again stayed in memory for good. Returns how many were dropped.
+   */
+  pruneQuotes(now = Date.now()): number {
+    let dropped = 0;
+    for (const [id, quote] of this.quotes) {
+      if (now > quote.expiresAt && !quote.paying) {
+        this.quotes.delete(id);
+        dropped += 1;
+      }
+    }
+    return dropped;
+  }
+
+  /** How many quotes are held right now (live, paid-but-unexpired, or settling). */
+  get quoteCount(): number {
+    return this.quotes.size;
+  }
+
+  /** True while there is room for another quote (pruning first when at the cap). */
+  hasQuoteRoom(): boolean {
+    if (this.quotes.size < MAX_OPEN_QUOTES) return true;
+    this.pruneQuotes();
+    return this.quotes.size < MAX_OPEN_QUOTES;
   }
 
   // -- jobs -----------------------------------------------------------------
