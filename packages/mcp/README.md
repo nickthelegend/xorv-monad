@@ -31,6 +31,20 @@ The `xorv_run_job` description states the per-job cap and the session budget, be
 
 You need a broker URL. It defaults to a local one at `http://localhost:8402`; run one with `pnpm broker` from the repo root. You also need a payer that holds **test USDC on Monad testnet**. It needs no MON, because the facilitator pays gas.
 
+> **Install from source until 0.2.0 is on npm.** What npm serves as `@xorv/mcp` today is 0.1.0, the
+> Hedera prototype: it pays on Hedera and cannot buy from a Monad broker. `npx -y @xorv/mcp` resolves
+> to it. Build this package from the repository instead:
+>
+> ```sh
+> git clone https://github.com/nickthelegend/xorv-monad.git && cd xorv-monad
+> pnpm install
+> pnpm --filter @xorv/protocol build && pnpm --filter @xorv/mcp build
+> ```
+>
+> Every example below then runs `node /path/to/xorv-monad/packages/mcp/dist/index.js`. Once 0.2.0 is
+> published, `npx -y @xorv/mcp@0.2.0` (pinned, so it can never fall back to 0.1.0) replaces that
+> command.
+
 ### Claude Code
 
 ```sh
@@ -38,16 +52,14 @@ You need a broker URL. It defaults to a local one at `http://localhost:8402`; ru
 claude mcp add xorv \
   -e XORV_BROKER_URL=http://localhost:8402 \
   -e XORV_PRIVATE_KEY=0xYOUR_TESTNET_KEY \
-  -- npx -y @xorv/mcp
+  -- node /path/to/xorv-monad/packages/mcp/dist/index.js
 
 # or: a Privy server wallet (see "Privy agentic wallet" below)
 claude mcp add xorv \
   -e XORV_BROKER_URL=http://localhost:8402 \
   -e XORV_PRIVY_APP_ID=... -e XORV_PRIVY_APP_SECRET=... -e XORV_PRIVY_WALLET_ID=... \
-  -- npx -y @xorv/mcp
+  -- node /path/to/xorv-monad/packages/mcp/dist/index.js
 ```
-
-From a checkout of this repo, run `pnpm --filter @xorv/protocol build && pnpm --filter @xorv/mcp build` first, then use `-- node /path/to/xorv-monad/packages/mcp/dist/index.js` in place of `-- npx -y @xorv/mcp`.
 
 For a project-scoped setup, put the same thing in `.mcp.json`:
 
@@ -55,8 +67,8 @@ For a project-scoped setup, put the same thing in `.mcp.json`:
 {
   "mcpServers": {
     "xorv": {
-      "command": "npx",
-      "args": ["-y", "@xorv/mcp"],
+      "command": "node",
+      "args": ["/path/to/xorv-monad/packages/mcp/dist/index.js"],
       "env": {
         "XORV_BROKER_URL": "http://localhost:8402",
         "XORV_NETWORK": "eip155:10143",
@@ -79,8 +91,8 @@ In `claude_desktop_config.json` (Settings → Developer → Edit Config):
 {
   "mcpServers": {
     "xorv": {
-      "command": "npx",
-      "args": ["-y", "@xorv/mcp"],
+      "command": "node",
+      "args": ["/path/to/xorv-monad/packages/mcp/dist/index.js"],
       "env": {
         "XORV_BROKER_URL": "https://your-broker.example",
         "XORV_PRIVATE_KEY": "0xYOUR_TESTNET_KEY",
@@ -91,7 +103,7 @@ In `claude_desktop_config.json` (Settings → Developer → Edit Config):
 }
 ```
 
-On Windows, if Claude Desktop cannot find `npx`, use `"command": "cmd"` and `"args": ["/c", "npx", "-y", "@xorv/mcp"]`. You can also point `"command"` at `node` and give `dist/index.js` as the argument.
+On Windows, give the path with forward slashes or escaped backslashes (`"C:/src/xorv-monad/packages/mcp/dist/index.js"`). If Claude Desktop cannot find `node`, put the full path to `node.exe` in `"command"`. After 0.2.0 is published, `"command": "npx"` with `"args": ["-y", "@xorv/mcp@0.2.0"]` works too (on Windows, `"command": "cmd"` and `"args": ["/c", "npx", "-y", "@xorv/mcp@0.2.0"]`).
 
 Then ask for something like: *"Use xorv to get a second opinion on this function from another model, and don't spend more than 2 cents."*
 
@@ -140,7 +152,7 @@ The problem with giving a model a spending tool is that its limits are usually p
 
    The script is also published as the `xorv-mcp-privy-setup` bin. It prints the `XORV_PRIVY_*` lines for your MCP config and the wallet address.
 3. Fund the address with test USDC at [faucet.circle.com](https://faucet.circle.com) by choosing **Monad Testnet**. No MON is needed.
-4. Add the printed variables to the MCP server's `env` and call `xorv_wallet` to check the setup.
+4. Add the printed variables to the MCP server's `env` and call `xorv_wallet` to check the setup. Its first line names the Privy wallet id, its address and the attached policy id (`Payer: Privy server wallet <id> 0x… (policy <policy id>)`), and says `NO POLICY attached` in capitals if the wallet has none. A signature Privy refuses under the policy ends the call with `Payment not made: …` and releases the session-budget reservation, because nothing was signed.
 
 ### What the policy does not do
 
