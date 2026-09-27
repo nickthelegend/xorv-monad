@@ -3,8 +3,9 @@
  *
  * Three places lean on it:
  *
- *  1. **Provider trust.** When a node registers (and every few hours while it
- *     stays), the broker looks up its payout wallet and keeps a signal. The
+ *  1. **Provider trust.** When a node opens its control channel (and every
+ *     few hours while it stays), the broker looks up its payout wallet and
+ *     keeps a signal. Not at registration: that is free and unauthenticated. The
  *     public view rides on `/api/providers`, `/api/providers/:id` and the
  *     leaderboard. The lookup never blocks registration: it runs in the
  *     background and the provider simply has no signal until it lands.
@@ -19,7 +20,11 @@
  *     smart-money wallets that is never shown.
  *
  * Every path degrades to "no opinion": a failed or slow lookup never blocks,
- * never refuses a rating and never lowers a provider's rank.
+ * never refuses a rating and never lowers a provider's rank. The one
+ * exception is a spent budget, which a caller can bring about: the guard's
+ * lookups draw on a slice of the daily budget provider signals can't touch,
+ * and a check that still couldn't run for lack of budget is reported as
+ * `budgetSpent`, which the broker answers by deferring the rating.
  */
 
 import { normalizeAddress } from "@xorv/protocol";
@@ -67,6 +72,12 @@ export interface RelatedCheck {
   mode: NansenMode;
   /** Some lookups failed or timed out; an unproven link is never a refusal. */
   degraded: boolean;
+  /**
+   * A lookup could not run because the daily Nansen budget is spent. Unlike
+   * an outage this is something a caller can cause, so the broker defers
+   * the rating instead of relaying it unchecked.
+   */
+  budgetSpent: boolean;
   /** INTERNAL. */
   errors: string[];
 }
@@ -300,10 +311,11 @@ export class NansenTrust {
     );
     if (self.related) {
       this.ratingsRefused += 1;
-      return { ...base, related: true, reasons: self.reasons, degraded: false, errors: [] };
+      return { ...base, related: true, reasons: self.reasons, degraded: false, budgetSpent: false, errors: [] };
     }
 
-    const lookups = Promise.all([this.links(buyer), this.links(provider)]).then(
+    // Guard lookups draw on the slice of the budget provider signals can't spend.
+    const lookups = this.client.forPurpose("guard", () => Promise.all([this.links(buyer), this.links(provider)])).then(
       ([a, b]) => ({ a, b }),
       (err: unknown) => ({ error: err instanceof Error ? err.message : String(err) }),
     );
@@ -313,12 +325,19 @@ export class NansenTrust {
     });
     const outcome = await Promise.race([lookups, timeout]).finally(() => clearTimeout(timer));
     if ("error" in outcome) {
-      return { ...base, related: false, reasons: [], degraded: true, errors: [outcome.error] };
+      return { ...base, related: false, reasons: [], degraded: true, budgetSpent: false, errors: [outcome.error] };
     }
     const verdict = relatedParties(outcome.a, outcome.b);
     const errors = [...outcome.a.errors.map((e) => `buyer ${e}`), ...outcome.b.errors.map((e) => `provider ${e}`)];
     if (verdict.related) this.ratingsRefused += 1;
-    return { ...base, related: verdict.related, reasons: verdict.reasons, degraded: errors.length > 0, errors };
+    return {
+      ...base,
+      related: verdict.related,
+      reasons: verdict.reasons,
+      degraded: errors.length > 0,
+      budgetSpent: errors.some((e) => /daily Nansen budget/.test(e)),
+      errors,
+    };
   }
 
   status(): NansenStatus {

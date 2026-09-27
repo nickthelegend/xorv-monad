@@ -628,9 +628,9 @@ export function createApp(deps: AppDeps) {
     // A fresh token was minted, so whoever held the old one — and any socket
     // it opened — no longer speaks for this node.
     if (!outcome.authenticated) deps.getHub()?.disconnect(provider.id, "this node re-registered with a new token");
-    // Look up the payout wallet on Nansen in the background — never on the
-    // registration's critical path. The signal shows up once it lands.
-    trust.watch(provider.address);
+    // The payout wallet's Nansen signal is bought once the node opens its
+    // control channel (hubHandlers.onConnect), not here: a registration is
+    // free and unauthenticated, and every fresh address costs real USDC.
     const registryResult = await publishRegistration(provider);
 
     return c.json({
@@ -1357,6 +1357,21 @@ export function createApp(deps: AppDeps) {
       if (trust.ratingGuard && job.payment) {
         const check = await trust.checkRelated(target.payer, job.payment.payTo);
         jobs.patch(job.id, { trustCheck: check });
+        // An outage never blocks an honest buyer, but a spent budget is
+        // something a caller can bring about; relaying unchecked then would
+        // switch the guard off. Defer instead.
+        if (check.budgetSpent && !check.related) {
+          metrics.inc("xorv_rating_refusals_total", { reason: "trust_budget_spent" });
+          return c.json(
+            {
+              error:
+                "the wash-rating check can't run right now: today's Nansen budget is spent. " +
+                "Retry after 00:00 UTC (fetch fresh typed data from GET …/rating then)",
+              code: "trust_budget_spent",
+            },
+            503,
+          );
+        }
         if (check.related) {
           metrics.inc("xorv_rating_refusals_total", { reason: "related_wallets" });
           console.warn(`[broker] rating for ${job.id} refused: ${check.reasons.map((r) => r.kind).join(", ")}`);
@@ -2071,6 +2086,9 @@ export function createApp(deps: AppDeps) {
       onConnect: (providerId: string) => {
         const provider = registry.get(providerId);
         console.log(`[broker] node connected: ${provider?.label ?? providerId}`);
+        // Look up the payout wallet on Nansen in the background, now that the
+        // node can actually take jobs. The signal shows up once it lands.
+        if (provider) trust.watch(provider.address);
       },
       onDisconnect: (providerId: string) => {
         const provider = registry.get(providerId);
@@ -2089,7 +2107,14 @@ export function createApp(deps: AppDeps) {
         console.log(`[broker] reaped idle provider ${id}`);
       }
       // Keep live providers' Nansen signals fresh (a no-op until one is stale).
-      trust.refreshStale(registry.live().map((p) => p.address));
+      // Only providers holding a control channel: a registration that never
+      // connected is not worth paying Nansen for.
+      trust.refreshStale(
+        registry
+          .live()
+          .filter((p) => deps.getHub()?.isConnected(p.id))
+          .map((p) => p.address),
+      );
       // Receipts whose write failed (or that were restored from disk before
       // their batch landed) get another go, a bounded number of times.
       if (chain.mode() === "write") {

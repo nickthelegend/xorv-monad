@@ -35,6 +35,7 @@
  * credits and no payment happens.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import type { Network, PaymentRequired } from "@x402/core/types";
 import type { ClientEvmSigner } from "@x402/evm";
@@ -339,14 +340,30 @@ export function validateNansenRequest(path: string, body: unknown): string | nul
  * forgets today's spend, which the per-call cap and the payer's small balance
  * bound.
  */
+/**
+ * What a paid Nansen call is for. Provider signals are bought on a trigger
+ * anyone can pull (a node connecting with a fresh payout address), so they
+ * may not spend the slice of the daily budget kept for the rating guard:
+ * otherwise draining the budget with throwaway registrations switched the
+ * wash-rating guard off for the rest of the day.
+ */
+export type SpendPurpose = "signal" | "guard";
+
+/** The share of the daily cap, in basis points, only the rating guard may spend. */
+export const GUARD_RESERVE_BPS = 3_000n;
+
 export class SpendBudget {
   private day = "";
   private committed = 0n;
+  /** Units only a `guard` reservation may take. */
+  readonly guardReserveUnits: bigint;
 
   constructor(
     readonly dailyCapUnits: bigint,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    this.guardReserveUnits = (dailyCapUnits * GUARD_RESERVE_BPS) / 10_000n;
+  }
 
   private roll(): void {
     const today = utcDay(this.now());
@@ -356,10 +373,12 @@ export class SpendBudget {
     }
   }
 
-  tryReserve(units: bigint): boolean {
+  /** Reserve `units`; a `signal` reservation stops short of the guard's slice. */
+  tryReserve(units: bigint, purpose: SpendPurpose = "guard"): boolean {
     this.roll();
     if (units <= 0n) return true;
-    if (this.committed + units > this.dailyCapUnits) return false;
+    const ceiling = purpose === "guard" ? this.dailyCapUnits : this.dailyCapUnits - this.guardReserveUnits;
+    if (this.committed + units > ceiling) return false;
     this.committed += units;
     return true;
   }
@@ -427,6 +446,8 @@ export class NansenClient {
   private readonly slots: Slots;
   private readonly cache = new Map<string, CacheEntry>();
   private readonly inflight = new Map<string, Promise<CallResult<unknown>>>();
+  /** The purpose of the calls running in this async context (see `forPurpose`). */
+  private readonly purpose = new AsyncLocalStorage<SpendPurpose>();
   private cooldownUntil = 0;
   private usage: NansenUsage;
 
@@ -463,6 +484,14 @@ export class NansenClient {
       this.usage = { ...this.freshUsage(), recentPaid };
     }
     return this.usage;
+  }
+
+  /**
+   * Run `fn` with every paid call inside it drawing on `purpose`'s share of
+   * the daily budget. Calls made outside any purpose count as `signal`.
+   */
+  forPurpose<T>(purpose: SpendPurpose, fn: () => Promise<T>): Promise<T> {
+    return this.purpose.run(purpose, fn);
   }
 
   /** Today's counters, with spend read from the budget (reservations included). */
@@ -505,8 +534,16 @@ export class NansenClient {
         if (ceiling === undefined) return { abort: true, reason: `no price on record for ${path ?? "an unknown resource"}` };
         if (amount > ceiling) return { abort: true, reason: `${path} now costs ${amount} units, above the ${ceiling} on record` };
         if (amount > cap) return { abort: true, reason: `${amount} units is above the per-call cap of ${cap}` };
-        if (!this.budget.tryReserve(amount)) {
-          return { abort: true, reason: `the daily Nansen budget (${usdcString(this.budget.dailyCapUnits)} USDC) is spent` };
+        const purpose = this.purpose.getStore() ?? "signal";
+        if (!this.budget.tryReserve(amount, purpose)) {
+          return {
+            abort: true,
+            reason:
+              purpose === "guard"
+                ? `the daily Nansen budget (${usdcString(this.budget.dailyCapUnits)} USDC) is spent`
+                : `the daily Nansen budget for provider signals is spent ` +
+                  `(${usdcString(this.budget.guardReserveUnits)} of ${usdcString(this.budget.dailyCapUnits)} USDC is kept for the rating guard)`,
+          };
         }
         this.log(`nansen: reserved ${usdcString(amount)} USDC for ${path} → ${selectedRequirements.payTo}`);
         return;

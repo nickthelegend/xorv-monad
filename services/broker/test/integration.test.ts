@@ -2194,6 +2194,61 @@ describe("Nansen trust", () => {
     provider.close();
   }, 20_000);
 
+  it("buys no Nansen data for a registration that never opens its control channel", async () => {
+    // Registration is free and unauthenticated; each fresh payout address
+    // used to cost three paid lookups on the spot.
+    await h.stop();
+    h = await boot({ trust: fixtureTrust() });
+    const res = await fetch(`${h.base}/api/providers/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: "throwaway",
+        address: PAYEE_B,
+        endpoint: "http://localhost:1",
+        capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo", model: null, priceUsdMicros: 1_000, maxConcurrency: 1 }],
+        version: "0.2.0",
+        region: null,
+        nodeId: "node-throwaway",
+      }),
+    });
+    expect(res.status).toBe(200);
+    h.sweep();
+    await new Promise((r) => setTimeout(r, 50));
+    let net = (await (await fetch(`${h.base}/api/network`)).json()) as Json;
+    expect(net.nansen.callsToday).toBe(0);
+    // Opening the control channel is what buys the signal.
+    const provider = await connectProvider(h, { address: PAYEE_A });
+    await waitFor(async () => {
+      net = (await (await fetch(`${h.base}/api/network`)).json()) as Json;
+      return net.nansen.walletsScored === 1 ? true : undefined;
+    });
+    provider.close();
+  });
+
+  it("defers a rating, 503, when the wash-rating check can't run because the Nansen budget is spent", async () => {
+    await h.stop();
+    const trust = fixtureTrust();
+    vi.spyOn(trust, "checkRelated").mockImplementation(async (buyer, provider) => ({
+      checkedAt: Date.now(),
+      related: false,
+      reasons: [],
+      buyer,
+      provider,
+      mode: "fixture",
+      degraded: true,
+      budgetSpent: true,
+      errors: ["buyer firstFunder: payment refused: the daily Nansen budget (1.00 USDC) is spent"],
+    }));
+    h = await boot({ trust });
+    const { provider, jobId } = await paidJob();
+    const { res, body } = await rate(jobId, 100);
+    expect(res.status).toBe(503);
+    expect(body.code).toBe("trust_budget_spent");
+    expect(h.chain.ratings).toHaveLength(0);
+    provider.close();
+  });
+
   it("scores a provider's payout wallet on registration and serves the public view everywhere", async () => {
     await h.stop();
     h = await boot({ trust: fixtureTrust() });

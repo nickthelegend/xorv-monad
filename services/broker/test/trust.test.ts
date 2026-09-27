@@ -268,6 +268,24 @@ describe("paying Nansen over x402", () => {
     expect(nansen.calls.filter((c) => c.payment)).toHaveLength(1);
   });
 
+  it("keeps a slice of the budget that only the rating guard can spend", async () => {
+    // Provider signals are bought on a trigger anyone can pull (a node with a
+    // fresh payout address). Draining the budget that way used to leave the
+    // wash-rating guard unable to look anything up for the rest of the day.
+    const signer = privateKeyToAccount(generatePrivateKey());
+    const nansen = mockNansen();
+    // $0.03/day: $0.009 is the guard's, so provider signals stop at $0.021.
+    const client = new NansenClient({ mode: "live", signer, fetch: nansen.fetch, now: () => NOW, dailyCapUnits: 30_000n });
+    expect((await client.firstFunder(WALLET)).ok).toBe(true);
+    expect((await client.relatedWallets(WALLET)).ok).toBe(true);
+    const starved = await client.firstFunder(OTHER);
+    expect(!starved.ok && starved.error).toMatch(/daily Nansen budget for provider signals/);
+    expect(client.budget.spentToday()).toBe(20_000n);
+    const guarded = await client.forPurpose("guard", () => client.firstFunder(OTHER));
+    expect(guarded.ok).toBe(true);
+    expect(client.budget.spentToday()).toBe(30_000n);
+  });
+
   it("releases the reservation when signing fails", async () => {
     const nansen = mockNansen();
     const client = new NansenClient({ mode: "live", signer: refusingSigner, fetch: nansen.fetch, now: () => NOW });
@@ -323,6 +341,15 @@ describe("SpendBudget", () => {
     now += DAY;
     expect(budget.spentToday()).toBe(0n);
     expect(budget.tryReserve(30_000n)).toBe(true);
+  });
+
+  it("stops a signal reservation short of the guard's slice", () => {
+    const budget = new SpendBudget(100_000n, () => NOW);
+    expect(budget.guardReserveUnits).toBe(30_000n);
+    expect(budget.tryReserve(70_000n, "signal")).toBe(true);
+    expect(budget.tryReserve(1n, "signal")).toBe(false);
+    expect(budget.tryReserve(30_000n, "guard")).toBe(true);
+    expect(budget.tryReserve(1n, "guard")).toBe(false);
   });
 
   it("formats USDC units", () => {
@@ -763,6 +790,30 @@ describe("NansenTrust", () => {
     expect(trust.status()).toMatchObject({ ratingChecks: 2, ratingsRefused: 1 });
 
     expect((await trust.checkRelated(provider, provider)).reasons[0]!.kind).toBe("same-wallet");
+  });
+
+  it("says so when the rating check could not run because the budget is spent", async () => {
+    const signer = privateKeyToAccount(generatePrivateKey());
+    const trust = new NansenTrust({
+      client: new NansenClient({ mode: "live", signer, fetch: mockNansen().fetch, now: () => NOW, dailyCapUnits: 10_000n }),
+      smartMoney: false,
+      now: () => NOW,
+    });
+    // Four $0.01 lookups against a $0.01 day: the guard's slice runs out.
+    const check = await trust.checkRelated(WALLET, OTHER);
+    expect(check).toMatchObject({ related: false, degraded: true, budgetSpent: true });
+
+    const down = createNansenTrust(
+      { ...NANSEN_OFF, mode: "live", apiKey: "k" },
+      {
+        fetch: (async () => {
+          throw new Error("ECONNRESET");
+        }) as typeof fetch,
+        now: () => NOW,
+      },
+    );
+    // An outage is not a spent budget.
+    expect(await down.checkRelated(WALLET, OTHER)).toMatchObject({ degraded: true, budgetSpent: false });
   });
 
   it("bounds the rating check by a timeout and does not refuse on it", async () => {
