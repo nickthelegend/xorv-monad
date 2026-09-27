@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
@@ -278,9 +279,10 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     /// @dev    Two ways in:
     ///         - the buyer calls directly and pays the gas; `buyerSig` is ignored (pass empty bytes);
     ///         - anyone relays (in practice the broker, so rating is gasless for the buyer) with the
-    ///           buyer's EIP-712 signature over the Rating. SignatureChecker accepts an ECDSA signature
-    ///           from an EOA (or EIP-7702 account) and falls back to ERC-1271 for smart accounts, which
-    ///           covers passkey wallets backed by Monad's P256 precompile.
+    ///           buyer's EIP-712 signature over the Rating, checked by _isBuyerSignature: ECDSA from
+    ///           the buyer's own key first (an EOA, or an EIP-7702 account whatever it delegates to),
+    ///           then ERC-1271 for smart accounts, which covers passkey wallets backed by Monad's P256
+    ///           precompile.
     ///         The deadline bounds how long a signed rating can sit in a relayer's queue. It is not
     ///         checked on the direct path, where there is no signature to expire.
     ///
@@ -305,7 +307,7 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
 
         if (msg.sender != buyer) {
             if (block.timestamp > r.deadline) revert Expired();
-            if (!SignatureChecker.isValidSignatureNow(buyer, ratingDigest(r), buyerSig)) revert BadSignature();
+            if (!_isBuyerSignature(buyer, ratingDigest(r), buyerSig)) revert BadSignature();
         }
 
         // Now that the rater is known to be the buyer: is the buyer the provider? Checked against
@@ -355,6 +357,22 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
         if (agentId >= NO_AGENT_ID) revert AgentIdTooLarge();
         address wallet = identity.getAgentWallet(agentId);
         if (wallet != payTo) revert PayToNotAgentWallet(agentId, payTo, wallet);
+    }
+
+    /// @dev ECDSA first, then ERC-1271: the order the ERC-8004 Identity Registry uses for
+    ///      setAgentWallet, and the order the broker checks a signature in before relaying it.
+    ///      OpenZeppelin's SignatureChecker.isValidSignatureNow picks one by code size instead, and an
+    ///      EIP-7702 account has code (0xef0100 || delegate), so it would only ever get the ERC-1271
+    ///      call. Delegates that don't implement it, or that expect a wrapped hash (ERC-7739), would
+    ///      then refuse a plain signature from the account's own key, which pays with that same key
+    ///      (USDC's transferWithAuthorization uses ecrecover). Accepting it gives nothing away: that
+    ///      key can re-delegate the account at will. A contract with no key can't produce an ECDSA
+    ///      signature that recovers to its address, so it still goes through ERC-1271. For an
+    ///      address with no code, the ERC-1271 call returns no data and fails.
+    function _isBuyerSignature(address buyer, bytes32 digest, bytes calldata signature) private view returns (bool) {
+        (address recovered, ECDSA.RecoverError err,) = ECDSA.tryRecover(digest, signature);
+        if (err == ECDSA.RecoverError.NoError && recovered == buyer) return true;
+        return SignatureChecker.isValidERC1271SignatureNow(buyer, digest, signature);
     }
 
     /// @dev True when `account` is the agent's verified wallet, or owns or operates its NFT: the

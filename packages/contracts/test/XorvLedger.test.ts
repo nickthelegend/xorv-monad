@@ -5,6 +5,8 @@ import { network } from "hardhat";
 import {
   type LocalAccount,
   type WalletClient,
+  createWalletClient,
+  custom,
   getAddress,
   hashTypedData,
   keccak256,
@@ -35,7 +37,7 @@ import {
 // semantics and feedback storage are the registry's own code rather than a mock's idea of it.
 
 describe("XorvLedger", async function () {
-  const { viem, networkHelpers } = await network.create();
+  const { viem, networkHelpers, provider: hardhatProvider } = await network.create();
   const publicClient = await viem.getPublicClient();
   const chainId = await publicClient.getChainId();
   const [deployer, broker, provider, buyer, stranger, provider2] = await viem.getWalletClients();
@@ -601,6 +603,60 @@ describe("XorvLedger", async function () {
         [r.jobId, agentId, getAddress(wallet.address), 100n, rating.feedbackHash],
       );
       assert.equal((await reputation.read.getSummary([agentId, [ledger.address], "starred", ""]))[1], 100n);
+    });
+
+    it("accepts an EIP-7702 account's own key even when its delegate refuses it, and falls back to ERC-1271", async function () {
+      const { asBroker, ledger, agentId } = await loadRecorded();
+      // The delegate answers ERC-1271 for another key, as far as the account's own key is concerned
+      // the same as an implementation with no isValidSignature, or one that wants a wrapped hash.
+      const delegateSigner = privateKeyToAccount(generatePrivateKey());
+      const delegate = await viem.deployContract("ERC1271WalletMock", [delegateSigner.address]);
+
+      // A real EIP-7702 delegation (the simulated chain runs Osaka), self-sponsored.
+      const account = privateKeyToAccount(generatePrivateKey());
+      await networkHelpers.setBalance(account.address, 10n ** 18n);
+      const wallet = createWalletClient({ account, chain: publicClient.chain, transport: custom(hardhatProvider) });
+      const authorization = await wallet.signAuthorization({ contractAddress: delegate.address, executor: "self" });
+      await publicClient.waitForTransactionReceipt({
+        hash: await wallet.sendTransaction({ authorizationList: [authorization], to: delegateSigner.address }),
+      });
+      assert.equal(
+        (await publicClient.getCode({ address: account.address }))?.toLowerCase(),
+        `0xef0100${delegate.address.slice(2)}`.toLowerCase(),
+      );
+
+      const r = receiptFor("eip7702", agentId, { buyer: account.address });
+      const viaDelegate = receiptFor("eip7702-1271", agentId, { buyer: account.address });
+      await asBroker.write.recordJobs([[r, viaDelegate]]);
+
+      // The account's own key signs, exactly as it signed the USDC authorization that paid.
+      const rating = makeRating(r.jobId, { value: 88n });
+      const own = await signRating(account, chainId, ledger.address, rating);
+      // Asked through ERC-1271, the account says no: an ERC-1271-only check would refuse the rating.
+      const asAccount = await viem.getContractAt("ERC1271WalletMock", account.address);
+      assert.equal(await asAccount.read.isValidSignature([await ledger.read.ratingDigest([rating]), own]), "0xffffffff");
+      await viem.assertions.emitWithArgs(asBroker.write.rateJob([rating, own]), asBroker, "JobRated", [
+        r.jobId,
+        agentId,
+        getAddress(account.address),
+        88n,
+        rating.feedbackHash,
+      ]);
+
+      // What the delegate itself authorises still counts, through ERC-1271 at the account's address;
+      // anyone else's signature passes neither check.
+      const second = makeRating(viaDelegate.jobId);
+      const intruder = privateKeyToAccount(generatePrivateKey());
+      await viem.assertions.revertWithCustomError(
+        asBroker.write.rateJob([second, await signRating(intruder, chainId, ledger.address, second)]),
+        asBroker,
+        "BadSignature",
+      );
+      await viem.assertions.emit(
+        asBroker.write.rateJob([second, await signRating(delegateSigner, chainId, ledger.address, second)]),
+        asBroker,
+        "JobRated",
+      );
     });
 
     it("rejects signatures from anyone but the buyer, or over different content", async function () {
