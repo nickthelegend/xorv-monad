@@ -183,6 +183,16 @@ describe("validateRegistration", () => {
     }
   });
 
+  it("refuses a price that is not a whole number of micro-USD, at least 1", () => {
+    // 0.4 micro-USD rounds to a 0-unit USDC payment: a free "paid" job.
+    const priced = (priceUsdMicros: number) =>
+      validateRegistration({ ...base, capabilities: [{ ...base.capabilities[0]!, priceUsdMicros }] });
+    for (const price of [0.4, 0.5, 1.5, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect("error" in priced(price), String(price)).toBe(true);
+    }
+    expect("registration" in priced(1)).toBe(true);
+  });
+
   it("accepts a decimal agent id and nothing else", () => {
     const ok = validateRegistration({ ...base, agentId: "0042" });
     expect("registration" in ok && ok.agentId).toBe("42");

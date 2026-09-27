@@ -324,6 +324,9 @@ export class Registry {
       if (excluded.has(provider.id)) continue;
       for (const capability of provider.capabilities) {
         if (opts.adapter && capability.adapter !== opts.adapter) continue;
+        // Never quote a price that is not a whole, positive number of
+        // micro-USD (registration refuses one): it would ask for 0 USDC.
+        if (!Number.isInteger(capability.priceUsdMicros) || capability.priceUsdMicros < 1) continue;
         if (capability.priceUsdMicros > opts.maxPriceUsdMicros) continue;
         // A node that reported this adapter as unavailable on its last beat is
         // busy or broken; skip it rather than queue behind it.

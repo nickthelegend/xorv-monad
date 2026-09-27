@@ -217,6 +217,19 @@ describe("match", () => {
     expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(cheap.id);
   });
 
+  it("never matches a price that would ask for 0 USDC", () => {
+    // A fractional micro-USD price rounds to a 0-unit payment; it must not win
+    // quotes even if one got past registration.
+    registry.register(
+      registration({ nodeId: "free", address: addr(1), capabilities: [capability({ priceUsdMicros: 0.4 })] }),
+    );
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })).toBeNull();
+    const paid = registry.register(
+      registration({ nodeId: "paid", address: addr(2), capabilities: [capability({ priceUsdMicros: 5_000 })] }),
+    );
+    expect(registry.match({ maxPriceUsdMicros: 100_000 })!.provider.id).toBe(paid.id);
+  });
+
   it("breaks a price tie toward the better track record", () => {
     const good = registry.register(registration({ nodeId: "good", address: addr(1) }));
     const bad = registry.register(registration({ nodeId: "bad", address: addr(2) }));

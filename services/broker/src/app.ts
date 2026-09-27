@@ -2001,8 +2001,11 @@ export function validateRegistration(body: RegisterRequest | null): ParsedRegist
   }
   for (const cap of body.capabilities as Capability[]) {
     if (!cap?.id || !cap.adapter) return { error: "each capability needs an id and an adapter" };
-    if (!Number.isFinite(cap.priceUsdMicros) || cap.priceUsdMicros <= 0) {
-      return { error: `capability "${cap.id}" needs a positive priceUsdMicros` };
+    // A whole number of micro-USD, at least 1: a fraction like 0.4 rounds to
+    // a 0-unit USDC payment, and x402 would settle a free "paid" job, receipt
+    // and rating eligibility included, at the broker's gas cost.
+    if (!Number.isInteger(cap.priceUsdMicros) || cap.priceUsdMicros < 1) {
+      return { error: `capability "${cap.id}" needs a priceUsdMicros that is a whole number of at least 1` };
     }
   }
   return {
