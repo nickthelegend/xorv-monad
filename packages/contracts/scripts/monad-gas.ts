@@ -237,9 +237,15 @@ async function revertSelector(account: Address, data: Hex): Promise<string> {
 }
 const intruder = privateKeyToAccount(generatePrivateKey());
 const badSig = await revertSelector(broker, rateData(rateJobs.relayed.jobId, await sign(intruder, rateJobs.relayed.jobId)));
+// A payTo that is neither the agent's wallet nor the buyer (buyer == payTo is refused first, as SelfDealing).
+const notTheWallet = privateKeyToAccount(generatePrivateKey()).address;
 const badPayTo = await revertSelector(
   broker,
-  encodeFunctionData({ abi, functionName: "recordJobs", args: [[makeReceipt("monad-bad", { agentId, buyer: buyer.address, payTo: buyer.address })]] }),
+  encodeFunctionData({ abi, functionName: "recordJobs", args: [[makeReceipt("monad-bad", { agentId, buyer: buyer.address, payTo: notTheWallet })]] }),
+);
+const selfPaid = await revertSelector(
+  broker,
+  encodeFunctionData({ abi, functionName: "recordJobs", args: [[makeReceipt("monad-self", { agentId, buyer: payTo, payTo })]] }),
 );
 
 const gasPrice = await client.getGasPrice();
@@ -264,4 +270,5 @@ const expectRevert = (label: string, got: string, errorSignature: string) => {
 console.log();
 expectRevert("wrong signer", badSig, "BadSignature()");
 expectRevert("payTo mismatch", badPayTo, "PayToNotAgentWallet(uint256,address,address)");
+expectRevert("self-paid", selfPaid, "SelfDealing(bytes32)");
 console.log();
