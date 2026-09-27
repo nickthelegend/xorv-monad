@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { explorerAddress, explorerAgent, explorerTx, formatUsdc, publicClientFor, shortHex } from "@xorv/protocol/web";
 import { EASE, useEntrance } from "@/lib/motion";
@@ -17,6 +17,7 @@ import { receiptMatchesCiphertext } from "@/lib/private/result";
 import { checkResultAgainstReceipt, type ReceiptCheck, type ReceiptReader } from "@/lib/private/receipt-check";
 import { awaitingOnChain, followUpJob } from "@/lib/job-follow-up";
 import { cn } from "@/lib/utils";
+import { RoutingTrace } from "@/components/routing-trace";
 
 /**
  * Event glyphs.
@@ -448,9 +449,11 @@ function AiChecks({ job }: { job: Job }) {
             label="Routed"
             by={routing.by}
             model={routing.model}
-            verdict={routing.adapter ? `→ ${routing.adapter}` : "→ price match"}
+            verdict={routedTo(routing)}
             text={routing.reason}
-          />
+          >
+            <RoutingTrace routing={routing} className="mt-2" />
+          </Check>
         ) : null}
         {verification ? (
           <Check
@@ -474,6 +477,13 @@ function AiChecks({ job }: { job: Job }) {
   );
 }
 
+/** "→ kimi node · kimi" when the agent router picked the provider, "→ kimi" from an older one, "→ price match" on a fallback. */
+function routedTo(routing: NonNullable<Job["routing"]>): string {
+  if (!routing.adapter) return "→ price match";
+  const label = (routing as { providerLabel?: unknown }).providerLabel;
+  return typeof label === "string" && label ? `→ ${label} · ${routing.adapter}` : `→ ${routing.adapter}`;
+}
+
 function Check({
   label,
   by,
@@ -482,6 +492,7 @@ function Check({
   bad,
   text,
   link,
+  children,
 }: {
   label: string;
   by: string;
@@ -490,6 +501,7 @@ function Check({
   bad?: boolean;
   text: string;
   link?: { href?: string; label: string } | null;
+  children?: ReactNode;
 }) {
   return (
     <div className="py-3">
@@ -501,6 +513,7 @@ function Check({
         <span className={cn("text-[12px]", bad ? "text-fail" : "text-fg-2")}>{verdict}</span>
       </div>
       {text ? <p className="mt-1 text-[12px] leading-relaxed text-fg-3">{text}</p> : null}
+      {children}
       {link ? (
         <p className="mt-1 text-[11.5px] text-fg-4">{link.href ? <Ext href={link.href}>{link.label}</Ext> : link.label}</p>
       ) : null}

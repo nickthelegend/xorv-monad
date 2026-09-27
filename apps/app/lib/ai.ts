@@ -2,8 +2,10 @@
  * The broker's AI roles, as the app shows them.
  *
  * Three sponsor models take a turn on every job: Hunyuan screens the prompt,
- * Qwen routes "Auto" requests, Kimi scores the result and writes it to
- * ERC-8004. The protocol's wire types carry the essentials (`by`, `model`,
+ * Qwen routes "Auto" requests (a tool-using agent that reads each
+ * candidate's ERC-8004 reputation, XorvLedger receipts, Envio stats and
+ * Nansen trust before it picks, and leaves a trace of every lookup), Kimi
+ * scores the result and writes it to ERC-8004. The protocol's wire types carry the essentials (`by`, `model`,
  * the verdict); the broker sends a little more — a display label, the
  * router's difficulty call and whether it fell back to price, each role's
  * latency and why a role is off (`/api/network` → `aiRoles`). Those extras
@@ -102,15 +104,130 @@ export function aiRoles(info: NetworkInfo): AiRolesState {
   return out;
 }
 
-type Routing = JobRouting & { difficulty?: string | null; fallback?: string | null };
+type Routing = JobRouting & {
+  difficulty?: string | null;
+  fallback?: string | null;
+  providerId?: string | null;
+  providerLabel?: string | null;
+};
 type Screening = JobScreening & { category?: string; unavailable?: boolean };
 
 /** One line for the quote: who routed the job, where, and why — or that it fell back to price. */
 export function describeRouting(routing: Routing): string {
   const who = roleLabel(routing) ?? routing.by;
   if (routing.fallback || !routing.adapter) return `${who}: ${routing.reason}`;
-  const difficulty = routing.difficulty ? ` (${routing.difficulty})` : "";
-  return `Routed by ${who} to ${routing.adapter}${difficulty}: ${routing.reason}`;
+  const difficulty = routing.difficulty ? `, ${routing.difficulty}` : "";
+  // The agent router picks the provider; an older broker's router only picked the adapter.
+  if (typeof routing.providerLabel === "string" && routing.providerLabel) {
+    return `Routed by ${who} to ${routing.providerLabel} (${routing.adapter}${difficulty}): ${routing.reason}`;
+  }
+  return `Routed by ${who} to ${routing.adapter}${routing.difficulty ? ` (${routing.difficulty})` : ""}: ${routing.reason}`;
+}
+
+// ---------------------------------------------------------------------------
+// The router's agent trace
+// ---------------------------------------------------------------------------
+
+/** One tool call the router made, as the app shows it. */
+export interface TraceStep {
+  tool: string;
+  /** "ERC-8004 reputation", "XorvLedger receipts", … */
+  label: string;
+  /** The broker's one-line account of what the tool found. */
+  summary: string;
+  ms: number | null;
+  ok: boolean;
+  /** Explorer links (agent, receipt, wallet) — http(s) only. */
+  links: Array<{ label: string; url: string }>;
+}
+
+export interface RoutingTrace {
+  steps: TraceStep[];
+  turns: number | null;
+  toolCalls: number | null;
+  ms: number | null;
+  thinking: boolean | null;
+  fallback: string | null;
+}
+
+/** What each of the router's tools is called in the UI. */
+export const TOOL_LABELS: Record<string, string> = {
+  list_candidates: "Candidates",
+  erc8004_reputation: "ERC-8004 reputation",
+  recent_receipts: "XorvLedger receipts",
+  indexer_provider_stats: "Envio indexer",
+  nansen_trust: "Nansen trust",
+  select_provider: "Decision",
+};
+
+function num(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** Only links the browser should follow: absolute http(s) URLs. */
+export function safeLink(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The router's trace from a routing record, read defensively (an older
+ * broker sends none, and the record is JSON from the network): null when
+ * there are no steps to show.
+ */
+export function routingTrace(routing: unknown): RoutingTrace | null {
+  const r = record(routing);
+  if (!r || !Array.isArray(r.steps) || r.steps.length === 0) return null;
+  const steps: TraceStep[] = [];
+  for (const raw of r.steps.slice(0, 20)) {
+    const step = record(raw);
+    if (!step || typeof step.tool !== "string" || typeof step.summary !== "string") continue;
+    const links: TraceStep["links"] = [];
+    if (Array.isArray(step.links)) {
+      for (const l of step.links.slice(0, 4)) {
+        const link = record(l);
+        const url = safeLink(link?.url);
+        if (url && typeof link?.label === "string") links.push({ label: link.label, url });
+      }
+    }
+    steps.push({
+      tool: step.tool,
+      label: TOOL_LABELS[step.tool] ?? step.tool,
+      summary: step.summary,
+      ms: num(step.ms),
+      ok: step.ok !== false,
+      links,
+    });
+  }
+  if (steps.length === 0) return null;
+  return {
+    steps,
+    turns: num(r.turns),
+    toolCalls: num(r.toolCalls),
+    ms: num(r.ms),
+    thinking: typeof r.thinking === "boolean" ? r.thinking : null,
+    fallback: typeof r.fallback === "string" ? r.fallback : null,
+  };
+}
+
+/** "120 ms" / "2.4 s". */
+export function formatMs(ms: number): string {
+  return ms < 1_000 ? `${Math.round(ms)} ms` : `${(ms / 1_000).toFixed(1)} s`;
+}
+
+/** The trace's heading: "4 lookups in 3 turns · 2.4 s · thinking on". */
+export function describeTrace(trace: RoutingTrace): string {
+  const lookups = trace.toolCalls ?? trace.steps.filter((s) => s.tool !== "select_provider").length;
+  const parts = [`${lookups} lookup${lookups === 1 ? "" : "s"}`];
+  if (trace.turns !== null) parts[0] += ` in ${trace.turns} turn${trace.turns === 1 ? "" : "s"}`;
+  if (trace.ms !== null) parts.push(formatMs(trace.ms));
+  if (trace.thinking !== null) parts.push(trace.thinking ? "thinking on" : "thinking off");
+  return parts.join(" · ");
 }
 
 /** One line for the quote: who screened the prompt and what they concluded. */

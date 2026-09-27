@@ -1,6 +1,18 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { NetworkInfo } from "@xorv/protocol/web";
-import { aiRoles, describeLatency, describeRouting, describeScreening, roleLabel } from "@/lib/ai";
+import {
+  aiRoles,
+  describeLatency,
+  describeRouting,
+  describeScreening,
+  describeTrace,
+  roleLabel,
+  routingTrace,
+  safeLink,
+} from "@/lib/ai";
+import { RoutingTrace } from "@/components/routing-trace";
 
 function info(over: Record<string, unknown>): NetworkInfo {
   return { ai: { router: null, screener: null, verifier: null }, ...over } as unknown as NetworkInfo;
@@ -64,5 +76,96 @@ describe("the quote's AI lines", () => {
     expect(describeLatency({ calls: 3, ok: 2, failed: 1, timeouts: 1, lastMs: 9, avgMs: 1234, lastError: null })).toBe(
       "1.2 s avg · 3 calls · 1 failed",
     );
+  });
+});
+
+/** A routing record as the agent router leaves it on a quote and a job. */
+const AGENT_ROUTING = {
+  by: "qwen",
+  model: "qwen3.8-max",
+  adapter: "kimi" as const,
+  providerId: "prv_kimi",
+  providerLabel: "kimi node",
+  agentId: "7",
+  reason: "Kimi suits a short writing task, and agent #7 averages 92 from 5 on-chain buyer ratings.",
+  difficulty: "easy",
+  ms: 2_430,
+  turns: 3,
+  toolCalls: 3,
+  thinking: true,
+  candidates: 3,
+  steps: [
+    { tool: "list_candidates", args: {}, summary: "listed 3 live options from 3 providers under $0.0500 (echo, qwen, kimi)", ms: 0, ok: true },
+    {
+      tool: "erc8004_reputation",
+      args: { agentId: "7" },
+      summary: "read agent #7's ERC-8004 reputation on Monad (avg 92 from 5 buyer ratings; agent wallet is the payout address)",
+      ms: 412,
+      ok: true,
+      links: [
+        { label: "agent #7", url: "https://testnet.monadscan.com/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/7" },
+        { label: "evil", url: "javascript:alert(1)" },
+      ],
+    },
+    {
+      tool: "recent_receipts",
+      args: { providerId: "prv_kimi" },
+      summary: "checked 7 receipts on XorvLedger via Envio: 6 delivered, 1 failed",
+      ms: 95,
+      ok: true,
+      links: [{ label: "latest receipt", url: `https://testnet.monadscan.com/tx/0x${"ab".repeat(32)}` }],
+    },
+    { tool: "nansen_trust", args: { providerId: "prv_kimi" }, summary: "couldn't read the Nansen trust signal: timed out after 3000ms", ms: 3_000, ok: false },
+    { tool: "select_provider", args: { providerId: "prv_kimi", adapter: "kimi" }, summary: "picked kimi node — kimi at $0.0050, agent #7", ms: 0, ok: true },
+  ],
+};
+
+describe("the router's agent trace", () => {
+  it("names the provider the agent router picked", () => {
+    expect(describeRouting(AGENT_ROUTING)).toBe(
+      "Routed by Qwen 3.8 Max to kimi node (kimi, easy): Kimi suits a short writing task, and agent #7 averages 92 from 5 on-chain buyer ratings.",
+    );
+  });
+
+  it("reads the trace defensively and keeps only http(s) links", () => {
+    const trace = routingTrace(AGENT_ROUTING)!;
+    expect(trace.steps.map((s) => s.label)).toEqual([
+      "Candidates",
+      "ERC-8004 reputation",
+      "XorvLedger receipts",
+      "Nansen trust",
+      "Decision",
+    ]);
+    expect(trace.steps[1]!.links).toEqual([
+      { label: "agent #7", url: "https://testnet.monadscan.com/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/7" },
+    ]);
+    expect(trace.steps[3]!.ok).toBe(false);
+    expect(describeTrace(trace)).toBe("3 lookups in 3 turns · 2.4 s · thinking on");
+    expect(safeLink("javascript:alert(1)")).toBeNull();
+    expect(safeLink("/relative")).toBeNull();
+    // An older broker's record, or a router that didn't run: nothing to show.
+    expect(routingTrace({ by: "qwen", model: "m", adapter: "kimi", reason: "r" })).toBeNull();
+    expect(routingTrace(null)).toBeNull();
+    expect(routingTrace({ steps: [{ tool: 7 }, "junk"] })).toBeNull();
+  });
+
+  it("renders every lookup with its summary, timing and explorer links", () => {
+    const html = renderToStaticMarkup(createElement(RoutingTrace, { routing: AGENT_ROUTING }));
+    expect(html).toContain("How Qwen 3.8 Max chose");
+    expect(html).toContain("3 lookups in 3 turns · 2.4 s · thinking on");
+    expect(html).toContain("read agent #7&#x27;s ERC-8004 reputation on Monad (avg 92 from 5 buyer ratings; agent wallet is the payout address)");
+    expect(html).toContain("checked 7 receipts on XorvLedger via Envio");
+    expect(html).toContain('href="https://testnet.monadscan.com/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/7"');
+    expect(html).toContain(`href="https://testnet.monadscan.com/tx/0x${"ab".repeat(32)}"`);
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("412 ms");
+    expect(html).toContain("picked kimi node");
+    expect(html.match(/<li/g)).toHaveLength(5);
+
+    const fallback = renderToStaticMarkup(
+      createElement(RoutingTrace, { routing: { ...AGENT_ROUTING, adapter: null, fallback: "timeout", steps: AGENT_ROUTING.steps.slice(0, 2) } }),
+    );
+    expect(fallback).toContain("wasn’t used (timeout); the matcher chose on price, then reputation");
+    expect(renderToStaticMarkup(createElement(RoutingTrace, { routing: { by: "qwen", adapter: "kimi" } }))).toBe("");
   });
 });

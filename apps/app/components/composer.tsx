@@ -13,6 +13,7 @@ import { CHAIN_CONFIG, IS_TESTNET, NETWORK } from "@/lib/network";
 import { PaymentError, classifyPaymentError, payQuote, payableQuote, type PaymentFailureKind } from "@/lib/x402-pay";
 import { EASE, useEntrance } from "@/lib/motion";
 import { describeRouting, describeScreening, roleLabel } from "@/lib/ai";
+import { RoutingTrace } from "@/components/routing-trace";
 import { cn } from "@/lib/utils";
 import { usePrivateKeys } from "@/components/private-keys";
 import { LockGlyph } from "@/components/passkey-panel";
@@ -448,9 +449,12 @@ export function Composer() {
                     </p>
                   ) : null}
                   {quote.routing ? (
-                    <p>
-                      {describeRouting(quote.routing)} <span className="mono text-fg-4">· {quote.routing.model}</span>
-                    </p>
+                    <>
+                      <p>
+                        {describeRouting(quote.routing)} <span className="mono text-fg-4">· {quote.routing.model}</span>
+                      </p>
+                      <RoutingTrace routing={quote.routing} className="pt-1" />
+                    </>
                   ) : null}
                 </div>
               ) : null}
