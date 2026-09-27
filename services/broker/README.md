@@ -6,14 +6,15 @@ below). They are part of the broker's core loop, not optional adapters a buyer
 has to go looking for:
 
 ```
-POST /api/quotes ─► Hunyuan screens the prompt ─► Qwen routes "Auto" ─► matcher ─► frozen quote
+POST /api/quotes ─► Hunyuan screens the prompt ─► Qwen reads Monad and picks a provider ("Auto") ─► frozen quote
+                                                  └► no router / fallback: matcher (price, then reputation)
 job completed    ─► Kimi scores the result ─► ERC-8004 giveFeedback from the verifier EOA
 ```
 
 | Role | Model | Runs | What it decides | Where you see it |
 |---|---|---|---|---|
 | Screener | Tencent Hunyuan `hy4-preview` (TokenHub) | every quote, before a provider can see the prompt | `allow` / `block` + category + reason. A block is **HTTP 422** and no quote is issued | quote `screening`, job page "Screened by", `/api/network` |
-| Router | Alibaba Qwen 3.8 Max `qwen3.8-max` (Model Studio, thinking off) | quotes with no adapter or `"auto"`, when at least two adapters are live under the ceiling | which adapter runs the job, why, and how hard it is | quote `routing` ("Routed by Qwen 3.8 Max: …"), composer's **Auto** option, job page |
+| Router | Alibaba Qwen 3.8 Max `qwen3.8-max` (Model Studio, thinking on, tool calling) | quotes with no adapter or `"auto"`, when at least two live options fit under the ceiling | which **provider** (and adapter) runs the job, after reading its ERC-8004 reputation, XorvLedger receipts, Envio stats and Nansen trust; why; how hard | quote `routing` with the agent trace (`steps`), the quote card and job page ("How Qwen 3.8 Max chose"), composer's **Auto** option |
 | Verifier | Moonshot Kimi K3 `kimi-k3` (`reasoning_effort: "low"`) | every completed job that isn't private | score 0–100, pass, rationale, flags | job `verification`, the provider's ERC-8004 reputation, `/verifications/<jobId>.json` |
 
 ## How each role is kept honest
@@ -25,24 +26,63 @@ job completed    ─► Kimi scores the result ─► ERC-8004 giveFeedback from
   can't answer, `XORV_SCREENER_FAIL=open` (default) quotes anyway and the record
   says *"not screened: … allowed because XORV_SCREENER_FAIL=open"*; `closed`
   refuses to quote (503) until the screen is back.
-- **Router** (`src/ai/router.ts`) sees the prompt and a compact table of the live
-  candidates under the buyer's ceiling — adapter, model, price, success rate,
-  mean buyer rating, mean Kimi score, ERC-8004 identity — and answers
-  `{adapter, reason, difficulty}`. The pick must be one of those candidates; the
-  price matcher still picks the node for it, so the router can never steer a job
-  to a particular provider or above the ceiling. Timeout, provider error, bad JSON
-  or an off-table pick → the deterministic matcher, recorded as
-  `routing.fallback` with the reason ("… matched on price instead").
+- **Router** (`src/ai/router.ts`) is a bounded, tool-using agent. It reads the
+  prompt, then calls tools (`src/ai/router-tools.ts`, real sources wired in
+  `src/ai/router-data.ts`) before it answers:
+
+  | Tool | Reads |
+  |---|---|
+  | `list_candidates` | the live, matchable providers under the buyer's ceiling, in matcher order: providerId, label, adapter, model, price, agentId, liveness, success rate, mean buyer rating and Kimi score |
+  | `erc8004_reputation(agentId)` | the ERC-8004 Reputation Registry's `getSummary` for the XorvLedger client (buyer ratings, tag `starred`) and the verifier client (`xorv-verified`), plus the Identity Registry's `getAgentWallet` against the payout address — over Monad RPC |
+  | `recent_receipts(providerId)` | the provider's XorvLedger `JobRecorded` / `JobRated` events through the ledger reader (Envio first, bounded RPC scan otherwise) |
+  | `indexer_provider_stats(providerId)` | the Envio `Provider` and `Agent` rows (jobs, success rate, avg rating, verified score, USDC earned); says so when `XORV_INDEXER_URL` is unset |
+  | `nansen_trust(providerId)` | the public view of the payout wallet's cached Nansen signal (score, band, age, activity, risk flags) — never the internal smart-money data |
+  | `select_provider({providerId, adapter?, reason, difficulty?})` | the answer |
+
+  Bounds: at most 4 model turns and 6 lookups inside one 15 s budget; each tool
+  has a 3 s timeout and a 30 s cache; the last turn offers only
+  `select_provider`. Each turn is one non-streaming call with
+  `enable_thinking: true` and `thinking_budget: 256` — Model Studio documents
+  non-streaming output with thinking on for the commercial `qwen3.8-max` (the
+  stream-only rule is for the open-source Qwen3 builds), and `tool_choice`
+  stays `"auto"` because Qwen refuses `"required"` in thinking mode. The pick
+  must be a live candidate under the ceiling (providerId, and adapter when
+  given); a made-up one gets one retry. Timeout, provider error, no pick, or a
+  pick that stays invalid → the deterministic matcher, recorded as
+  `routing.fallback` with a templated reason ("… matched on price instead").
+
+  The record keeps the old fields (`by`, `model`, `adapter`, `reason`,
+  `difficulty`) and adds `providerId`, `providerLabel`, `agentId`, `turns`,
+  `toolCalls`, `thinking` and `steps` — one per tool call, with the validated
+  ids, a one-line summary in the broker's words ("read agent #12's ERC-8004
+  reputation on Monad (avg 92 from 5 buyer ratings)") and explorer links.
+  Nothing the model writes gets into `steps` (an id it made up is recorded as
+  `(not a candidate)`), so a private job's public record shows the trace and
+  still withholds the model's reason.
+- **Matcher** (`src/registry.ts`), whenever the router doesn't choose (one
+  option, router off, adapter named, fallback): cheapest first, then a rank of
+  success rate nudged by reputation (±0.2, `REPUTATION_TIEBREAK_WEIGHT`) and
+  Nansen wallet trust (±0.1). Reputation is buyer ratings plus Kimi scores,
+  shrunk toward a neutral 50 worth three ratings, from the Envio indexer
+  (`Provider.avgRating`, `Agent.verifiedScore`) when configured and from the
+  broker's own jobs otherwise (`src/ai/reputation-book.ts`: one batched query
+  a minute, never on the request path).
 - **Verifier** (`src/ai/verifier.ts`) runs after the buyer already has the result
   and never blocks the job. Private jobs (`request.encryptTo`) are skipped — the
   broker only holds their ciphertext. Prompt and result are fenced as untrusted
   data; a result the model flags as `prompt_injection` never passes.
 
-All three share `src/ai/client.ts`: one call over the protocol's `chatJson`
-(OpenAI-compatible, JSON mode), a hard per-role deadline (screen 5 s, route 6 s,
-verify 20 s) raced against the request, strict validation, per-role latency and
-failure counters, and key hygiene — keys go only to each preset's base URL and are
+All three share `src/ai/client.ts`: calls over the protocol's `chatJson`
+(OpenAI-compatible, JSON mode) and `chatTurn` (one tool-calling turn, for the
+router), a hard deadline (screen 8 s, route 15 s for the whole loop, verify 20 s)
+raced against the request, strict validation, per-role latency and failure
+counters, and key hygiene — keys go only to each preset's base URL and are
 scrubbed from any error text before it is logged or served.
+
+The screen asks TokenHub for `reasoning_effort: "low"` (hy4-preview defaults to
+`high`; `XORV_SCREENER_REASONING=high` or `provider` changes that). The
+self-hosted model's `chat_template_kwargs` `no_think` switch is a vLLM/SGLang
+option, not a TokenHub one.
 
 ## The verifier's on-chain feedback (ERC-8004)
 
@@ -81,6 +121,11 @@ giveFeedback(agentId, score, 0, "xorv-verified", <adapter>, <XORV_PUBLIC_URL>/ap
 |---|---|---|
 | `XORV_SCREENER` / `XORV_ROUTER` / `XORV_VERIFIER` | `auto` | `auto` = on exactly when the key is set; the provider name = on, warn at boot if the key is missing; `off` |
 | `XORV_SCREENER_FAIL` | `open` | what a quote does when the screen can't answer |
+| `XORV_SCREENER_TIMEOUT_MS` | `8000` | the screen's deadline (500–60000) |
+| `XORV_SCREENER_REASONING` | `low` | TokenHub `reasoning_effort` for the screen: `low`, `high`, or `provider` (send none) |
+| `XORV_ROUTER_TIMEOUT_MS` | `15000` | the router's whole budget: every turn and tool call (1000–120000) |
+| `XORV_ROUTER_MAX_TURNS` / `XORV_ROUTER_MAX_TOOLS` | `4` / `6` | model turns and lookups per route (`select_provider` not counted) |
+| `XORV_ROUTER_THINKING` / `XORV_ROUTER_THINKING_BUDGET` | `on` / `256` | Qwen thinking while routing, and its reasoning tokens per turn |
 | `XORV_VERIFIER_KEY` | operator key | signs the verifier's `giveFeedback`; unset and no operator key = scores stay off-chain |
 | `TOKENHUB_API_KEY` / `XORV_HUNYUAN_API_KEY` | — | Hunyuan (screener) |
 | `DASHSCOPE_API_KEY` / `XORV_QWEN_API_KEY` | — | Qwen (router); keys are region-bound, default endpoint is the international one |
@@ -91,13 +136,14 @@ A missing key never stops the broker: the role is off and says why.
 `pnpm --filter @xorv/broker setup` and the boot banner list each role;
 `GET /api/network` reports enabled roles under `ai` (the protocol's `AiRoleInfo`,
 `null` when off) and every role's full state under `aiRoles` — enabled, provider,
-model, the reason it's off, latency, the screen's fail mode, and where verifier
-feedback goes. Prometheus: `xorv_ai_screen_total`, `xorv_ai_route_total`,
+model, the reason it's off, latency, the screen's fail mode and reasoning effort,
+the router's loop bounds (`agent`), and where verifier feedback goes. Prometheus: `xorv_ai_screen_total`, `xorv_ai_route_total`,
 `xorv_ai_verify_total`, `xorv_ai_feedback_total`, `xorv_ai_latency_ms{role}`.
 
 What the models see: Hunyuan and Qwen read the buyer's prompt (Qwen at most its
-first 6,000 characters); Kimi reads the prompt and the result of non-private jobs.
-Nothing else leaves the broker.
+first 6,000 characters), and Qwen reads the tool results above — public data
+about the live providers; Kimi reads the prompt and the result of non-private
+jobs. Nothing else leaves the broker.
 
 ## Nansen trust signals
 
@@ -163,10 +209,14 @@ Prometheus: `xorv_rating_refusals_total{reason="related_wallets"}`.
 
 `test/ai.test.ts` (each role against a stubbed provider: happy path, malformed
 JSON, timeouts — including a `fetch` that ignores its abort signal — HTTP errors,
-off-table router picks, out-of-range scores, key redaction, the feedback file and
-its hash, and a real viem broadcast of `giveFeedback` against a stub RPC checking
-the `estimateGas` + 15% limit and the calldata) and the "AI roles" block in
-`test/integration.test.ts` (the real quote and completion paths).
+out-of-range scores, key redaction, the env settings, the feedback file and its
+hash, and a real viem broadcast of `giveFeedback` against a stub RPC checking the
+`estimateGas` + 15% limit and the calldata), `test/router.test.ts` (a scripted
+Qwen through the tool loop: parallel reads, each tool's data mapping and
+summary, invalid picks and the retry, timeouts, the turn and lookup caps, a
+private prompt kept out of the trace; the data sources over stubbed chain,
+ledger and indexer; the reputation book and the matcher tie-break) and the "AI
+roles" block in `test/integration.test.ts` (the real quote and completion paths).
 `test/trust.test.ts` replays the 402s Nansen actually served (`test/fixtures/nansen/`,
 all eight `accepts` rows) through a mock `fetch` with a throwaway signer: only the
 Monad USDC row is paid, price rises, other tokens, swapped payees and mismatched
