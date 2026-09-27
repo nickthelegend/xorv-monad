@@ -428,6 +428,128 @@ export function parseJsonObject(text: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/** A function the model may call, in the OpenAI `tools` shape. */
+export interface ChatTool {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    /** JSON Schema for the arguments object. */
+    parameters: Record<string, unknown>;
+  };
+}
+
+/** One tool call the model asked for. */
+export interface ChatToolCall {
+  id: string;
+  name: string;
+  /** The arguments as the JSON text the model wrote (parse and validate before use). */
+  arguments: string;
+}
+
+export interface ChatTurnResult {
+  /** The answer text; "" when the model only called tools. */
+  content: string;
+  /**
+   * The model's thinking (`reasoning_content`), when the provider returned
+   * any. Kept apart from `message`, so a caller never sends it back or stores
+   * it by accident.
+   */
+  reasoning: string;
+  toolCalls: ChatToolCall[];
+  finishReason: string | null;
+  /** The model that answered (from the response, falling back to the one asked for). */
+  model: string;
+  usage: LlmUsage | null;
+  latencyMs: number;
+  /** The assistant message to append to the history before the tool results: content and tool calls, no thinking. */
+  message: ChatMessage;
+}
+
+/**
+ * One non-streaming chat turn that may call tools — the step of an agent loop.
+ *
+ * Sends `tools` with `tool_choice: "auto"` (Qwen does not accept
+ * `"required"` while thinking) and no `response_format`: the structure lives
+ * in the tools' schemas, and JSON mode is unreliable in thinking mode.
+ * Vendor switches (`enable_thinking`, `thinking_budget`) go in `body`; the
+ * preset's fast-JSON defaults are deliberately not applied, since a caller
+ * that wants tools usually wants the model to think. Tool arguments come back
+ * as text — some providers send an object instead, which is re-serialized so
+ * the history stays in the wire shape.
+ */
+export async function chatTurn(
+  opts: CallOptions & {
+    messages: ChatMessage[];
+    tools?: ChatTool[];
+    toolChoice?: "auto" | "none";
+  },
+): Promise<ChatTurnResult> {
+  const preset = presetOf(opts.preset);
+  const model = opts.model ?? preset.model;
+  const started = Date.now();
+  const tools = opts.tools && opts.tools.length > 0 ? opts.tools : null;
+  const res = await postChat(
+    preset,
+    {
+      model,
+      messages: opts.messages,
+      ...(tools ? { tools, tool_choice: opts.toolChoice ?? "auto" } : {}),
+      ...opts.body,
+      stream: false,
+    },
+    { ...opts, timeoutMs: opts.timeoutMs ?? CHAT_JSON_TIMEOUT_MS },
+    "application/json",
+  );
+  const body = (await res.json()) as Record<string, unknown>;
+  if (body.error) {
+    const { message, code } = errorMessage(body);
+    throw new LlmError(`${preset.label} error: ${message ?? "unknown"}`, { code });
+  }
+  const choices = Array.isArray(body.choices) ? body.choices : [];
+  const choice = (choices[0] ?? {}) as { message?: Record<string, unknown>; finish_reason?: unknown };
+  const message = choice.message ?? {};
+  const content = messageText(message.content);
+  const reasoning = messageText(message.reasoning_content ?? message.reasoning);
+  const toolCalls: ChatToolCall[] = [];
+  if (Array.isArray(message.tool_calls)) {
+    (message.tool_calls as Array<Record<string, unknown>>).forEach((call, index) => {
+      const fn = (call?.function ?? {}) as { name?: unknown; arguments?: unknown };
+      if (typeof fn.name !== "string" || !fn.name) return;
+      const args =
+        typeof fn.arguments === "string"
+          ? fn.arguments
+          : fn.arguments && typeof fn.arguments === "object"
+            ? JSON.stringify(fn.arguments)
+            : "{}";
+      toolCalls.push({ id: typeof call.id === "string" && call.id ? call.id : `call_${index}`, name: fn.name, arguments: args });
+    });
+  }
+  if (!content.trim() && toolCalls.length === 0) throw new LlmError(`${preset.label} returned an empty answer`);
+  return {
+    content,
+    reasoning,
+    toolCalls,
+    finishReason: typeof choice.finish_reason === "string" ? choice.finish_reason : null,
+    model: typeof body.model === "string" ? body.model : model,
+    usage: body.usage && typeof body.usage === "object" ? normalizeUsage(body.usage as Record<string, unknown>) : null,
+    latencyMs: Date.now() - started,
+    message: {
+      role: "assistant",
+      content: content || null,
+      ...(toolCalls.length > 0
+        ? {
+            tool_calls: toolCalls.map((c) => ({
+              id: c.id,
+              type: "function",
+              function: { name: c.name, arguments: c.arguments },
+            })),
+          }
+        : {}),
+    },
+  };
+}
+
 /**
  * One non-streaming chat call that must come back as a JSON object — the shape
  * of every broker core-loop role (route, screen, verify).

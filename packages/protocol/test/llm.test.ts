@@ -13,11 +13,13 @@ import {
   LLM_PRESETS,
   LlmError,
   chatJson,
+  chatTurn,
   isLlmPresetKind,
   normalizeUsage,
   parseJsonObject,
   resolvePreset,
   streamChat,
+  type ChatTool,
   type LlmDelta,
   type ResolvedLlmPreset,
 } from "../src/llm.js";
@@ -462,6 +464,98 @@ describe("chatJson", () => {
     const pending = chatJson({ preset: QWEN, system: "s", user: "u", signal: controller.signal, fetch: hanging });
     controller.abort();
     await expect(pending).rejects.toThrow(/aborted by caller/);
+  });
+});
+
+describe("chatTurn", () => {
+  const TOOLS: ChatTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "lookup",
+        description: "Look something up.",
+        parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      },
+    },
+  ];
+  const reply = (message: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+    model: "qwen3.8-max-0902",
+    choices: [{ index: 0, message: { role: "assistant", ...message }, finish_reason: "tool_calls" }],
+    usage: { prompt_tokens: 30, completion_tokens: 9, total_tokens: 39, completion_tokens_details: { reasoning_tokens: 6 } },
+    ...extra,
+  });
+
+  it("sends tools with tool_choice auto, no JSON mode, and the caller's thinking switches", async () => {
+    const captured: Captured[] = [];
+    const turn = await chatTurn({
+      preset: QWEN,
+      messages: [
+        { role: "system", content: "You pick." },
+        { role: "user", content: "Pick one." },
+      ],
+      tools: TOOLS,
+      body: { enable_thinking: true, thinking_budget: 256 },
+      fetch: jsonFetch(
+        reply({
+          content: "",
+          reasoning_content: "I should look up a first.",
+          tool_calls: [
+            { id: "call_a", type: "function", function: { name: "lookup", arguments: '{"id":"a"}' } },
+            { index: 1, type: "function", function: { name: "lookup", arguments: { id: "b" } } },
+          ],
+        }),
+        captured,
+      ),
+    });
+    const body = captured[0]!.body;
+    expect(body).toMatchObject({ model: "qwen3.8-max", tool_choice: "auto", enable_thinking: true, thinking_budget: 256, stream: false });
+    expect(body.tools).toEqual(TOOLS);
+    expect(body.response_format).toBeUndefined();
+
+    expect(turn.toolCalls).toEqual([
+      { id: "call_a", name: "lookup", arguments: '{"id":"a"}' },
+      // A provider that sends the arguments as an object (and no id) still yields the wire shape.
+      { id: "call_1", name: "lookup", arguments: '{"id":"b"}' },
+    ]);
+    expect(turn.reasoning).toBe("I should look up a first.");
+    expect(turn.finishReason).toBe("tool_calls");
+    expect(turn.model).toBe("qwen3.8-max-0902");
+    expect(turn.usage).toMatchObject({ reasoningTokens: 6 });
+    // The history message carries the calls, never the thinking.
+    expect(turn.message).toEqual({
+      role: "assistant",
+      content: null,
+      tool_calls: [
+        { id: "call_a", type: "function", function: { name: "lookup", arguments: '{"id":"a"}' } },
+        { id: "call_1", type: "function", function: { name: "lookup", arguments: '{"id":"b"}' } },
+      ],
+    });
+    expect(JSON.stringify(turn.message)).not.toContain("look up a first");
+  });
+
+  it("returns a plain answer, omits tools when there are none, and does not apply the fast-JSON body", async () => {
+    const captured: Captured[] = [];
+    const turn = await chatTurn({
+      preset: QWEN,
+      messages: [{ role: "user", content: "hi" }],
+      fetch: jsonFetch(reply({ content: "hello" }), captured),
+    });
+    expect(turn).toMatchObject({ content: "hello", toolCalls: [], message: { role: "assistant", content: "hello" } });
+    expect(captured[0]!.body.tools).toBeUndefined();
+    expect(captured[0]!.body.tool_choice).toBeUndefined();
+    expect(captured[0]!.body.enable_thinking).toBeUndefined();
+  });
+
+  it("throws on an empty answer and on provider errors", async () => {
+    await expect(
+      chatTurn({ preset: QWEN, messages: [{ role: "user", content: "u" }], fetch: jsonFetch(reply({ content: "" })) }),
+    ).rejects.toThrow(/empty answer/);
+    await expect(
+      chatTurn({ preset: QWEN, messages: [{ role: "user", content: "u" }], fetch: jsonFetch({ error: { message: "tools not supported" } }) }),
+    ).rejects.toThrow(/tools not supported/);
+    await expect(
+      chatTurn({ preset: QWEN, messages: [{ role: "user", content: "u" }], fetch: jsonFetch("nope", [], 429) }),
+    ).rejects.toThrow(/→ 429/);
   });
 });
 
