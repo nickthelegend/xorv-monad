@@ -52,7 +52,13 @@ describe("XorvLedger", async function () {
     // registry's agentWallet defaults to that same address.
     const agentId = await registerAgent(viem, identity, provider!, "https://broker.xorv.xyz/agents/node-7f3a.json");
     const agentId2 = await registerAgent(viem, identity, provider2!, "https://broker.xorv.xyz/agents/node-9c01.json");
-    const ledger = await viem.deployContract("XorvLedger", [identity.address, reputation.address, broker!.account.address]);
+    // The deployer names itself owner here, so admin calls can use the default account.
+    const ledger = await viem.deployContract("XorvLedger", [
+      identity.address,
+      reputation.address,
+      broker!.account.address,
+      deployer!.account.address,
+    ]);
     const asBroker = await viem.getContractAt("XorvLedger", ledger.address, { client: { wallet: broker! } });
     return { identity, reputation, ledger, asBroker, agentId, agentId2 };
   }
@@ -110,7 +116,7 @@ describe("XorvLedger", async function () {
   }
 
   describe("deployment", function () {
-    it("wires the registries, makes the deployer owner and emits both roles", async function () {
+    it("wires the registries, sets the named owner and broker, and emits both roles", async function () {
       const { identity, reputation, ledger } = await load();
       assert.equal(await ledger.read.identity(), getAddress(identity.address));
       assert.equal(await ledger.read.reputation(), getAddress(reputation.address));
@@ -143,13 +149,52 @@ describe("XorvLedger", async function () {
       assert.equal(verifyingContract, getAddress(ledger.address));
     });
 
+    it("takes the owner as an argument: the account that paid for the deployment holds no role", async function () {
+      // The broker's operator key may pay for the deployment; it must not end up owning the ledger,
+      // or a leak of that key could take ownership before anyone rotates the broker out.
+      const { identity, reputation } = await load();
+      const ledger = await viem.deployContract(
+        "XorvLedger",
+        [identity.address, reputation.address, broker.account.address, stranger.account.address],
+        { client: { wallet: broker } },
+      );
+      assert.equal(await ledger.read.owner(), getAddress(stranger.account.address));
+      const ownership = await ledger.getEvents.OwnershipTransferred({}, { fromBlock: 0n });
+      assert.deepEqual(
+        ownership.map((e) => [e.args.previousOwner, e.args.newOwner]),
+        [[zeroAddress, getAddress(stranger.account.address)]],
+      );
+
+      for (const caller of [broker, deployer]) {
+        await viem.assertions.revertWithCustomError(
+          ledger.write.transferOwnership([caller.account.address], { account: caller.account }),
+          ledger,
+          "NotOwner",
+        );
+        await viem.assertions.revertWithCustomError(
+          ledger.write.setBroker([caller.account.address], { account: caller.account }),
+          ledger,
+          "NotOwner",
+        );
+      }
+      // The owner rotates the broker out: the old key can no longer write.
+      await ledger.write.setBroker([provider2.account.address], { account: stranger.account });
+      await viem.assertions.revertWithCustomError(
+        ledger.write.heartbeat([PROVIDER_ID, 0, 1, 1], { account: broker.account }),
+        ledger,
+        "NotBroker",
+      );
+    });
+
     it("refuses zero addresses in the constructor", async function () {
       const { identity, reputation } = await load();
       const selector = toFunctionSelector("ZeroAddress()");
+      const [b, o] = [broker.account.address, deployer.account.address];
       for (const args of [
-        [zeroAddress, reputation.address, broker.account.address],
-        [identity.address, zeroAddress, broker.account.address],
-        [identity.address, reputation.address, zeroAddress],
+        [zeroAddress, reputation.address, b, o],
+        [identity.address, zeroAddress, b, o],
+        [identity.address, reputation.address, zeroAddress, o],
+        [identity.address, reputation.address, b, zeroAddress],
       ] as const) {
         // A reverted deployment has no contract to decode against, so match the error by name
         // or by its selector, whichever the client surfaced.
@@ -684,6 +729,7 @@ describe("XorvLedger", async function () {
         await ledger.read.identity(),
         await ledger.read.reputation(),
         broker.account.address,
+        deployer.account.address,
       ]);
       const forOtherLedger = await signRating(buyer, chainId, otherLedger.address, rating);
       await viem.assertions.revertWithCustomError(asBroker.write.rateJob([rating, forOtherLedger]), asBroker, "BadSignature");

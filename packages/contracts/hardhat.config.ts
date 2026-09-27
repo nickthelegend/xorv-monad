@@ -9,6 +9,7 @@ import hardhatViemAssertions from "@nomicfoundation/hardhat-viem-assertions";
 import { configVariable, defineConfig } from "hardhat/config";
 
 import { DEFAULT_FORK_RPC_URL, MONAD_DEPLOYMENTS, rpcUrlFor } from "./scripts/lib/networks.js";
+import { deployerKeyVariable } from "./scripts/lib/owner.js";
 
 // The broker's settings live in the repo-root .env, so the deployer can reuse XORV_OPERATOR_KEY and
 // XORV_BROKER_ADDRESS from there. A package-local .env is read first and wins; real environment
@@ -20,14 +21,18 @@ for (const file of ["./.env", "../../.env"]) {
     // No such file: nothing to load.
   }
 }
+// `.env.example` ships the keys as blank lines. Hardhat treats a variable that is set, even to "", as
+// final and never asks the keystore, so a blank line here would hide a keystore XORV_DEPLOYER_KEY.
+for (const name of ["XORV_DEPLOYER_KEY", "XORV_OPERATOR_KEY"]) {
+  if (process.env[name]?.trim() === "") delete process.env[name];
+}
 
 // Keys are never in this file. They're Hardhat configuration variables, resolved only when a live
-// network is actually used (tests never touch them), from the environment or the encrypted Hardhat
-// keystore (`pnpm hardhat keystore set XORV_DEPLOYER_KEY`). A dedicated deployer key is preferred;
-// when only the broker's XORV_OPERATOR_KEY is present in the environment, that one deploys.
-const deployerKey = configVariable(
-  !process.env.XORV_DEPLOYER_KEY && process.env.XORV_OPERATOR_KEY ? "XORV_OPERATOR_KEY" : "XORV_DEPLOYER_KEY",
-);
+// network is actually used (tests never touch them). XORV_DEPLOYER_KEY comes from the environment or
+// the encrypted Hardhat keystore (`pnpm hardhat keystore set XORV_DEPLOYER_KEY`); only when it is in
+// neither does the broker's XORV_OPERATOR_KEY deploy. Either way the deployer only pays: the ledger's
+// owner is XORV_LEDGER_OWNER (scripts/deploy.ts, scripts/lib/owner.ts).
+const deployerKey = deployerKeyVariable();
 
 // Monadscan is run by Etherscan, so one Etherscan V2 key (chainid 10143 / 143) covers it. Without a
 // key, Etherscan verification is switched off and Sourcify (MonadVision) alone is used.

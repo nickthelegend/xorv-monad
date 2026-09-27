@@ -26,8 +26,8 @@ describe("gas report (Hardhat simulated chain, Ethereum gas schedule)", async fu
   const { viem } = await network.create();
   const publicClient = await viem.getPublicClient();
   const chainId = await publicClient.getChainId();
-  const [, broker, provider, buyer] = await viem.getWalletClients();
-  if (!broker || !provider || !buyer) throw new Error("need 4 accounts");
+  const [owner, broker, provider, buyer] = await viem.getWalletClients();
+  if (!owner || !broker || !provider || !buyer) throw new Error("need 4 accounts");
 
   it("measures deploy, registerProvider, heartbeat, recordJobs(1/5/20) and rateJob", async function () {
     const rows: Row[] = [];
@@ -40,13 +40,14 @@ describe("gas report (Hardhat simulated chain, Ethereum gas schedule)", async fu
     const deployData = encodeDeployData({
       abi: artifact.default.abi,
       bytecode: artifact.default.bytecode as `0x${string}`,
-      args: [identity.address, reputation.address, broker.account.address],
+      args: [identity.address, reputation.address, broker.account.address, owner.account.address],
     });
     const deployEstimate = await publicClient.estimateGas({ account: broker.account.address, data: deployData });
     const { contract: ledger, deploymentTransaction } = await viem.sendDeploymentTransaction("XorvLedger", [
       identity.address,
       reputation.address,
       broker.account.address,
+      owner.account.address,
     ]);
     rows.push({ call: "deploy XorvLedger", gasUsed: await gasOf(deploymentTransaction.hash), estimate: deployEstimate });
 

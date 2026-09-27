@@ -83,6 +83,8 @@ export interface DeploymentRecord {
   blockNumber: number;
   identity: Address;
   reputation: Address;
+  /** The broker and owner the ledger was constructed with (scripts/verify.ts passes both back as
+   *  constructor arguments), not whoever holds the roles after a later setBroker/transferOwnership. */
   broker: Address;
   owner: Address;
   deployedAt: string;

@@ -55,6 +55,7 @@ export const XORV_LEDGER_ABI = [
       { name: "identity_", type: "address" },
       { name: "reputation_", type: "address" },
       { name: "broker_", type: "address" },
+      { name: "owner_", type: "address" },
     ],
   },
   {

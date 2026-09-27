@@ -37,7 +37,7 @@ if (record.chainId !== monad.chainId) {
 
 const common = {
   address: record.address,
-  constructorArgs: [record.identity, record.reputation, record.broker],
+  constructorArgs: [record.identity, record.reputation, record.broker, record.owner],
   contract: "contracts/XorvLedger.sol:XorvLedger",
 };
 

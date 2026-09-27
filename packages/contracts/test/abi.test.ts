@@ -16,7 +16,7 @@ import { ABI_PATH, formatAbi } from "../scripts/lib/abi-file.js";
 const SPEC_ABI = parseAbi([
   "struct JobReceipt { bytes32 jobId; uint256 agentId; address buyer; address payTo; uint256 amount; bytes32 paymentTx; bytes32 requestHash; bytes32 resultHash; uint32 durationMs; bool ok; }",
   "struct Rating { bytes32 jobId; int128 value; string tag2; string endpoint; string feedbackURI; bytes32 feedbackHash; uint256 deadline; }",
-  "constructor(address identity_, address reputation_, address broker_)",
+  "constructor(address identity_, address reputation_, address broker_, address owner_)",
   "function NO_AGENT() view returns (uint256)",
   "function RATING_TYPEHASH() view returns (bytes32)",
   "function identity() view returns (address)",

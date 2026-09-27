@@ -6,9 +6,20 @@
  *   pnpm --filter @xorv/contracts exec hardhat run scripts/deploy.ts   # dry run, in-process chain
  *
  * Constructor arguments are the network's canonical ERC-8004 Identity and Reputation registries
- * (scripts/lib/networks.ts) and the broker: XORV_BROKER_ADDRESS, or the deployer when unset. The
- * deployer key comes from XORV_DEPLOYER_KEY (falling back to XORV_OPERATOR_KEY), via the env or the
- * Hardhat keystore. The deployer becomes the ledger's owner.
+ * (scripts/lib/networks.ts), the broker (XORV_BROKER_ADDRESS, or the deployer when unset) and the
+ * owner (XORV_LEDGER_OWNER, or the deployer when unset). The deployer key is XORV_DEPLOYER_KEY from
+ * the env or the Hardhat keystore, or XORV_OPERATOR_KEY when it is in neither; it only pays.
+ *
+ * The owner can do two things: setBroker (rotate the broker key) and transferOwnership (single step).
+ * That is the recovery plan for a leaked broker key, so on a real Monad network the script refuses an
+ * owner that is the broker or the operator key (XORV_ALLOW_OWNER_IS_BROKER=1 overrides): whoever leaks
+ * that key could transfer ownership to themselves first. Keep the owner key offline. To rotate:
+ *   - broker key leaked or retired: from the owner, setBroker(<new broker address>); then give the
+ *     broker the new key (XORV_OPERATOR_KEY) and restart it. Receipts the old key wrote stay valid.
+ *   - owner key moving: from the owner, transferOwnership(<new owner>). There is no accept step and
+ *     zero is refused, so check the address: a typo hands the ledger to nobody.
+ * Both are plain calls from the owner's wallet: Monadscan's "Write Contract" tab once the source is
+ * verified, or any client with the ABI (packages/contracts/abi/XorvLedger.json).
  *
  * Writes deployments/<network>.json and prints the env lines the broker and the Envio indexer need.
  * Refuses to replace an existing Monad deployment unless XORV_REDEPLOY=1: a new address orphans every
@@ -30,6 +41,7 @@ import { network } from "hardhat";
 import { type Address, encodeDeployData, formatEther, getAddress, isAddress, parseAbi } from "viem";
 
 import { deployErc8004 } from "./lib/erc8004-local.js";
+import { chooseLedgerOwner, operatorAddress } from "./lib/owner.js";
 import {
   type DeploymentRecord,
   type MonadDeployment,
@@ -60,14 +72,22 @@ if (deployer === undefined) {
   );
 }
 const deployerAddress = getAddress(deployer.account.address);
-const publicClient = await viem.getPublicClient();
-const chainId = await publicClient.getChainId();
 
 const brokerEnv = process.env.XORV_BROKER_ADDRESS?.trim();
 if (brokerEnv && !isAddress(brokerEnv, { strict: false })) {
   throw new Error(`XORV_BROKER_ADDRESS is not an address: ${brokerEnv}`);
 }
 const broker: Address = brokerEnv ? getAddress(brokerEnv) : deployerAddress;
+// Settle the roles before estimating or sending anything: a hot owner on monadTestnet / monad stops here.
+const { owner: ownerAddress, source: ownerSource, warning: ownerWarning } = chooseLedgerOwner({
+  env: process.env,
+  deployer: deployerAddress,
+  broker,
+  live: monad !== undefined,
+});
+
+const publicClient = await viem.getPublicClient();
+const chainId = await publicClient.getChainId();
 
 // Not a Monad network by name, but a Monad chain by id with the canonical Identity Registry deployed:
 // a fork. (A bare local chain that merely borrows the chain id has no code there and falls through
@@ -123,7 +143,7 @@ if (canonical !== undefined) {
   reputation = getAddress(local.reputation.address);
 }
 
-const args = [identity, reputation, broker] as const;
+const args = [identity, reputation, broker, ownerAddress] as const;
 
 // Monad bills the gas limit, so size it from an estimate of this exact deployment plus a margin.
 const artifact = await import("../artifacts/contracts/XorvLedger.sol/XorvLedger.json", { with: { type: "json" } });
@@ -141,8 +161,13 @@ console.log(`Deployer   ${deployerAddress}  balance ${formatEther(balance)} MON`
 console.log(`Identity   ${identity}`);
 console.log(`Reputation ${reputation}`);
 console.log(`Broker     ${broker}${brokerEnv ? "" : "  (deployer; set XORV_BROKER_ADDRESS to use another EOA)"}`);
+console.log(`Owner      ${ownerAddress}${ownerSource === "deployer" ? "  (deployer; set XORV_LEDGER_OWNER to name another)" : ""}`);
+if (deployerAddress === operatorAddress(process.env)) {
+  console.log("           (deploying with XORV_OPERATOR_KEY: no XORV_DEPLOYER_KEY in the env or the keystore)");
+}
 console.log(`Gas        estimate ${estimate}, limit ${gas}, price ${formatEther(gasPrice, "gwei")} gwei, max ${formatEther(maxCost)} MON`);
 
+if (ownerWarning !== undefined) console.warn(`! ${ownerWarning}`);
 if (balance < maxCost) {
   throw new Error(`Deployer holds ${formatEther(balance)} MON but the deployment can cost ${formatEther(maxCost)} MON.`);
 }
@@ -162,6 +187,9 @@ if (address !== getAddress(ledger.address)) {
 }
 
 const [owner, onchainBroker] = await Promise.all([ledger.read.owner(), ledger.read.broker()]);
+if (getAddress(owner) !== ownerAddress || getAddress(onchainBroker) !== broker) {
+  throw new Error(`Deployed ledger reports owner ${owner} and broker ${onchainBroker}, expected ${ownerAddress} and ${broker}.`);
+}
 const record: DeploymentRecord = {
   contract: "XorvLedger",
   network: networkName,
@@ -193,6 +221,10 @@ if (monad !== undefined) {
   console.log(`Explorer   ${monad.explorerUrl}/address/${address}`);
   console.log(`Verify     pnpm --filter @xorv/contracts verify:${networkName === "monad" ? "mainnet" : "testnet"}`);
 }
+console.log(
+  `Rotate     from the owner ${record.owner}: setBroker(<new broker>) if the broker key leaks, ` +
+    "transferOwnership(<new owner>) to move the owner (single step, check the address).",
+);
 
 // Paste into the repo-root .env (broker) and the indexer's env. The from/start block is the deploy
 // block: nothing can be emitted by the ledger before it, so scans and HyperSync start there.

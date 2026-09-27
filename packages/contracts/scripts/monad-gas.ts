@@ -79,11 +79,12 @@ const mappingSlot = (key: Hex, keyType: "bytes32" | "uint256" | "address", slot:
 // from it returns runtime code with exactly that address baked into EIP712's cached domain.
 const deployer = privateKeyToAccount(generatePrivateKey()).address;
 const broker = deployer;
+const owner = privateKeyToAccount(generatePrivateKey()).address;
 const ledger = getContractAddress({ from: deployer, nonce: 0n });
 const deployData = encodeDeployData({
   abi,
   bytecode: ledgerArtifact.bytecode as Hex,
-  args: [net.identity, net.reputation, broker],
+  args: [net.identity, net.reputation, broker, owner],
 });
 const deployGas = await client.estimateGas({ account: deployer, data: deployData });
 const ledgerRuntime = (await client.request({ method: "eth_call", params: [{ from: deployer, data: deployData }, "latest"] })) as Hex;

@@ -94,7 +94,9 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     IIdentityRegistry8004 public immutable identity;
     IReputationRegistry8004 public immutable reputation;
 
-    /// @notice Can rotate the broker and hand over ownership. Nothing else.
+    /// @notice Can rotate the broker and hand over ownership. Nothing else. Named at deployment, and
+    ///         meant to be a key the broker's host doesn't hold: it is how a leaked broker key gets
+    ///         rotated out, which only works if the leak can't also take ownership.
     address public owner;
     /// @notice The broker's hot EOA: the only writer of registrations, heartbeats and receipts.
     address public broker;
@@ -149,15 +151,20 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
 
     /// @param identity_   ERC-8004 Identity Registry on this chain.
     /// @param reputation_ ERC-8004 Reputation Registry on this chain.
-    /// @param broker_     The broker EOA allowed to write. The deployer becomes the owner.
-    constructor(address identity_, address reputation_, address broker_) {
-        if (identity_ == address(0) || reputation_ == address(0) || broker_ == address(0)) revert ZeroAddress();
+    /// @param broker_     The broker EOA allowed to write.
+    /// @param owner_      The owner. An argument rather than msg.sender, so the deployment can be paid
+    ///                    for by any key (the broker's operator key included) without that key ending
+    ///                    up in charge; the deployer holds no role unless it is named here.
+    constructor(address identity_, address reputation_, address broker_, address owner_) {
+        if (
+            identity_ == address(0) || reputation_ == address(0) || broker_ == address(0) || owner_ == address(0)
+        ) revert ZeroAddress();
         identity = IIdentityRegistry8004(identity_);
         reputation = IReputationRegistry8004(reputation_);
-        owner = msg.sender;
+        owner = owner_;
         broker = broker_;
         // Emitted so an indexer starting at the deploy block learns both roles from events alone.
-        emit OwnershipTransferred(address(0), msg.sender);
+        emit OwnershipTransferred(address(0), owner_);
         emit BrokerSet(broker_);
     }
 
@@ -165,8 +172,9 @@ contract XorvLedger is EIP712("XorvLedger", "1") {
     // Admin
     // ---------------------------------------------------------------------------------------------
 
-    /// @notice Rotate the broker key (e.g. after a leak). Zero is refused: an unset writer would
-    ///         look like a pause but silently drop every receipt the broker tries to publish.
+    /// @notice Rotate the broker key (e.g. after a leak: call this from the owner with the new key's
+    ///         address, then give the broker that key). Zero is refused: an unset writer would look
+    ///         like a pause but silently drop every receipt the broker tries to publish.
     function setBroker(address broker_) external onlyOwner {
         if (broker_ == address(0)) revert ZeroAddress();
         broker = broker_;
