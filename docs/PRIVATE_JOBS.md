@@ -110,10 +110,21 @@ The record holds job id, prompt, title, price, provider, timestamp and the `encr
 - **Only in order.** The broker accepts exactly `current + 1`. A replayed or rolled-back
   write gets 409. So does a concurrent write from another device, which re-reads, merges
   (union by job id) and retries.
-- **Limits:** 176 KiB of ciphertext (≈240 KB base64url, inside the broker's 256 KB body
-  limit), 10,000 vaults per broker, and 20 writes a minute per client. The responses are
-  400 (malformed), 403 (wrong key or signature), 409 (stale version), 413 (too large) and
-  507 (broker full).
+- **Limits:** 176 KiB of ciphertext per vault (≈240 KB base64url, inside the broker's 256 KB
+  body limit), 10,000 vaults per broker, 1 GiB of vault ciphertext in total (128 MiB when the
+  broker runs without a durable store), 20 writes a minute and 10 new vaults an hour per client.
+  The responses are 400 (malformed), 403 (wrong key or signature), 409 (stale version), 413 (too
+  large), 429 (too many writes or new vaults) and 507 (broker full). A full broker still accepts
+  writes to vaults it already holds.
+- **On disk, not in memory.** The broker keeps only each vault's metadata (id, version, key, size)
+  in memory and reads the ciphertext from SQLite when the vault is fetched. With Mongo configured,
+  boot merges the two stores per vault and the higher version wins, so a restart never restores an
+  older copy.
+- **Fitted to the cap, not failed at it.** Every write re-encrypts the whole history, so the
+  client fits the merged history to the 176 KiB budget before encrypting (`fitVaultToBudget`): the
+  oldest entries go first, the entries this write adds are never dropped, and only if those alone
+  are too big are their stored prompts shortened, with a visible marker. `/private` tells the
+  buyer what was given up.
 
 ## 4. What is persisted, and where
 
@@ -122,7 +133,7 @@ The record holds job id, prompt, title, price, provider, timestamp and the `encr
 | Buyer's browser | **Nothing.** No keys, PRF outputs or credential id in localStorage, sessionStorage, IndexedDB or cookies. Keys live in a React context: the PRF output is zeroed as soon as its key is derived, `lock()` zeroes every key and ends the Mera signing session, and a reload or a 30-minute timer locks. `apps/app/test/private-keyring.test.ts` scans the private-job code to keep this true. | — |
 | Passkey manager | The passkey itself, synced across the buyer's devices by the OS or password manager. | Yes, but it never leaves the authenticator. |
 | Broker (SQLite / Mongo) | The job, with its prompt (screening, routing and reassignment need it), `encryptTo`, the **sealed envelope** as `result`, and coarse status events. Vaults: ciphertext, nonce, version and the vault's public key. | The prompt, yes: see §5. The result and history, no: ciphertext. |
-| Public API (`/api/jobs`, SSE stream) | `private: true`, price, provider, payment and status. `prompt: ""`, `title: null`, `result` is the envelope, events are status lines only, and `encryptTo` is never served. | No. |
+| Public API (`/api/jobs`, SSE stream) | `private: true`, price, provider, payment and status. `prompt: ""`, `title: null`, `result` is the envelope, events are status lines only, and `encryptTo` is never served. The Hunyuan screen's and the Qwen router's records keep their verdict, adapter, model and timings, but their free-text `reason` reads "withheld for a private job" (it would paraphrase the prompt). | No. |
 | Monad (XorvLedger receipt) | `resultHash = keccak256(envelope)`, `requestHash = keccak256(prompt)`, payment and provider. | No for the result, which is ciphertext. For `requestHash`, see §5. |
 | Provider machine | The prompt and the answer in the operator's own live view, since they ran the job. Only the envelope is reported. | By necessity. |
 
@@ -132,7 +143,7 @@ The record holds job id, prompt, title, price, provider, timestamp and the `encr
 |---|---|---|
 | **The provider** who runs the job | The prompt and the answer. A job cannot run otherwise. | Other jobs' answers and the buyer's history. |
 | **The broker** operator or a DB leak | The prompt, the buyer's payer address and inbox public key, timing, price and result *length* (AES-GCM does not hide length). | The answer, the history and any key. |
-| **AI roles** (Hunyuan screen, Qwen router) | The prompt, which they need before a provider is chosen. | The answer. The Kimi **verifier is skipped** for private jobs because it would need the plaintext. |
+| **AI roles** (Hunyuan screen, Qwen router) | The prompt, which they need before a provider is chosen. Their written reasons reach only the buyer's own quote response. | The answer. The Kimi **verifier is skipped** for private jobs because it would need the plaintext. |
 | **The public** (job list, API, SSE) | That a private job ran, with its price, provider, status and the envelope. | The prompt, title, answer and the buyer's inbox key. Each envelope's ephemeral key is fresh, so envelopes aren't linkable by recipient. |
 | **Chain observers** | The receipt: `keccak256(envelope)` and `keccak256(prompt)`. | The answer. |
 | **Someone with a share link** | That one result. | Anything else. |
@@ -151,6 +162,19 @@ Enforced in code (each is a test):
 - The node refuses to run a private job whose `encryptTo` it cannot seal to. The broker
   refuses such a key at quote time, before anyone is reserved or paid. Low-order X25519
   points, which would seal to everyone, are rejected too.
+- Public views of a private job withhold the router's and screener's free-text reasons
+  (`services/broker/src/public.ts`, `PRIVATE_AI_REASON`).
+- The job page claims "the receipt commits to this ciphertext" only after it has read the job's
+  receipt transaction over the browser's own RPC, found the `JobRecorded` event for this job id
+  and matched the envelope against that event's `resultHash`. Until then it says only that the
+  envelope matches the hash the broker reports; a mismatch is shown as one
+  (`apps/app/lib/private/receipt-check.ts`). A broker that swapped the envelope and recomputed its
+  own hash therefore can't pass off forged text: anyone can seal to the public inbox key.
+- A malformed envelope is shown as unreadable instead of crashing the page.
+- Lock, the auto-lock and a new passkey drop every unsaved history entry (prompts included), and an
+  unsaved entry is only ever retried into the vault it belongs to (`apps/app/lib/private/pending.ts`).
+  The vault client keeps its rollback watermark per vault id, so a second passkey in the same tab
+  gets its own.
 
 Stated limits:
 
@@ -189,8 +213,8 @@ is a phone or a **fresh browser profile** signed in to the same passkey manager.
    says *Private — sealed to your inbox key `a1b2·…`*.
 3. **Pay** with the Privy wallet. On the job page, the execution log shows only
    *working privately · N steps*. The result arrives as an envelope and **decrypts in the
-   tab**. In the receipt panel, show *✓ the sealed envelope hashes to this value*, then open
-   the XorvLedger receipt on MonadScan.
+   tab**. In the receipt panel, show *✓ the sealed envelope hashes to the resultHash in this
+   job's XorvLedger receipt on Monad*, then open that receipt on MonadScan.
 4. **Show the ciphertext.** Run `curl $BROKER/api/jobs/<id> | jq .job` and show
    `private: true`, `prompt: ""` and `result` as the envelope. On the public job list, the
    job reads *Private · sealed to the buyer's passkey*.
@@ -217,7 +241,9 @@ is a phone or a **fresh browser profile** signed in to the same passkey manager.
 | Broker tests | `services/broker/test/private-jobs.test.ts` |
 | Mera ceremonies (create, evaluate a namespace, PRF support, errors) | `apps/app/lib/private/passkey.ts` |
 | In-memory keyring (Mera Ed25519 signing session, zeroing, pinning) | `apps/app/lib/private/keyring.ts` |
-| Vault client (merge and retry on 409, rollback check) | `apps/app/lib/private/vault-client.ts` |
-| Job-page decrypt decisions, share links, receipt check | `apps/app/lib/private/result.ts` |
+| Vault client (merge and retry on 409, rollback check per vault id, fitting to the 176 KiB cap) | `apps/app/lib/private/vault-client.ts` |
+| Unsaved history entries, per vault, dropped on Lock | `apps/app/lib/private/pending.ts` |
+| Job-page decrypt decisions, share links | `apps/app/lib/private/result.ts` |
+| The envelope checked against the `resultHash` in the job's XorvLedger receipt on Monad | `apps/app/lib/private/receipt-check.ts` |
 | UI: keyring provider, passkey panel, composer switch, sealed result, history page | `apps/app/components/private-keys.tsx`, `apps/app/components/passkey-panel.tsx`, `apps/app/components/composer.tsx`, `apps/app/components/private-result.tsx`, `apps/app/components/private-history.tsx`, `apps/app/app/private/page.tsx` |
-| App tests (real Mera plus a fake *synced* authenticator: the cross-device test, pinning, zeroing, 409 merge, rollback, share links, storage scan) | `apps/app/test/private-keyring.test.ts`, `apps/app/test/support/fake-authenticator.ts` |
+| App tests (real Mera plus a fake *synced* authenticator: the cross-device test, pinning, zeroing, 409 merge, rollback, share links, storage scan, trimming to the cap; the on-chain receipt check; unsaved entries per vault) | `apps/app/test/private-keyring.test.ts`, `apps/app/test/support/fake-authenticator.ts`, `apps/app/test/receipt-check.test.ts`, `apps/app/test/private-pending.test.ts` |
