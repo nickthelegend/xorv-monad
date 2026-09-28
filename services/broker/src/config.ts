@@ -76,8 +76,7 @@ export interface BrokerConfig {
   verifierAccount?: PrivateKeyAccount | null;
   /**
    * `self`, `hosted`, or a facilitator URL. Null when `XORV_FACILITATOR` is
-   * unset, which means "self if there is a key to self-host with, hosted
-   * otherwise" — see `resolveFacilitator` in facilitator.ts.
+   * unset, which means hosted — see `resolveFacilitator` in facilitator.ts.
    */
   facilitatorMode: string | null;
   /** XorvLedger address; null runs the broker with no ledger at all. */

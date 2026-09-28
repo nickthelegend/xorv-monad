@@ -147,9 +147,16 @@ describe("resolveFacilitator", () => {
     expect(choice.unavailableReason).toMatch(/XORV_FACILITATOR_KEY/);
   });
 
-  it("self-hosts with a key", () => {
+  it("stays hosted when a key exists but self-hosting was not asked for", () => {
     const account = privateKeyToAccount(generatePrivateKey());
     const choice = resolveFacilitator({ network: "eip155:10143", facilitatorMode: null, facilitatorAccount: account });
+    expect(choice.mode).toBe("hosted");
+    expect(choice.url).toBe("https://x402-facilitator.molandak.org");
+  });
+
+  it("self-hosts when asked, with a key", () => {
+    const account = privateKeyToAccount(generatePrivateKey());
+    const choice = resolveFacilitator({ network: "eip155:10143", facilitatorMode: "self", facilitatorAccount: account });
     expect(choice.mode).toBe("self");
     expect(choice.address).toBe(account.address);
     expect(choice.notice).toBeNull();

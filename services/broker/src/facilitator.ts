@@ -2,17 +2,18 @@
  * Which x402 facilitator settles this broker's payments.
  *
  * The facilitator is whoever submits a buyer's signed EIP-3009 authorization
- * and pays the MON gas for it. Self-hosting it (the default when there is a
- * key) keeps settlement independent of anyone else's uptime; the hosted one
- * Monad's docs use needs no key at all, which is what lets a fresh checkout
- * take real payments before its operator has funded anything.
+ * and pays the MON gas for it. The default is the public facilitator Monad's
+ * docs use (x402-facilitator.molandak.org): it pays settlement gas itself, so
+ * the broker needs no MON for payments and a fresh checkout takes real
+ * payments before its operator has funded anything. Self-hosting
+ * (`XORV_FACILITATOR=self` with a funded key) is the opt-in for an operator who
+ * wants settlement independent of anyone else's uptime.
  *
  * The one thing this refuses to do is change an *explicit* choice silently.
  * `XORV_FACILITATOR=self` with no key to self-host with does not quietly
  * become "hosted" — which party moves settlement gas, and sees every payment,
- * is a decision. The paid route answers 503 with the fix instead. Only when
- * nothing was configured at all does the broker pick hosted, and it says so at
- * boot.
+ * is a decision. The paid route answers 503 with the fix instead. When nothing
+ * was configured, the broker uses the hosted facilitator and says so at boot.
  */
 
 import type { FacilitatorClient } from "@x402/core/server";
@@ -51,7 +52,9 @@ export function resolveFacilitator(
 
   const cfg = networkConfig(config.network);
   const explicit = config.facilitatorMode;
-  const mode = explicit ?? (config.facilitatorAccount ? "self" : "hosted");
+  // Hosted unless self-hosting was asked for: a key alone is not a request to
+  // spend its MON on every buyer's settlement.
+  const mode = explicit ?? "hosted";
 
   if (mode === "self" && !config.facilitatorAccount) {
     return {
@@ -82,8 +85,8 @@ export function resolveFacilitator(
     unavailableReason: null,
     notice:
       explicit === null && choice.mode === "hosted"
-        ? `no facilitator key configured — settling through the hosted facilitator (${choice.url}). ` +
-          "Set XORV_FACILITATOR_KEY to self-host settlement."
+        ? `settling through the hosted facilitator (${choice.url}), which pays settlement gas. ` +
+          "Set XORV_FACILITATOR=self and a funded XORV_FACILITATOR_KEY to self-host settlement."
         : null,
   };
 }
