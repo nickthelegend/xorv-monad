@@ -552,8 +552,8 @@ named next to it; do not remove the rows. `<broker>` is the broker's public URL 
 | XorvLedger owner | [`0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49`](https://testnet.monadscan.com/address/0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49) | `owner` in the same file (`XORV_LEDGER_OWNER`, a key the broker's host doesn't hold) |
 | Broker operator EOA (ledger writes, rating relay, verifier) | [`0x45d6510E68308566B7e1d7cA578707a59dC15752`](https://testnet.monadscan.com/address/0x45d6510E68308566B7e1d7cA578707a59dC15752) | `broker` in the same file; `pnpm setup:monad` prints it with its balance |
 | Facilitator | Monad's public facilitator, `https://x402-facilitator.molandak.org` (the default; it pays settlement gas) | `curl -s <broker>/api/network | jq .facilitator` |
-| Example x402 settlement (buyer → provider USDC) | **TODO(deploy)** | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` |
-| Example `recordJobs` receipt | **TODO(deploy)** | `… \| jq -r .job.receiptTxHash` |
+| Example x402 settlement (buyer → provider USDC) | [`0x579205fe…`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7) (0.01 USDC, gas paid by the public facilitator) | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` |
+| Example `recordJobs` receipt | [`0xbddafbf6…`](https://testnet.monadscan.com/tx/0xbddafbf69499df11f5c0289b4cefb6491cd0b168fd799bae2c77145dd855c6c7) (`JobRecorded`) | `… \| jq -r .job.receiptTxHash` |
 | Example `rateJob` → ERC-8004 feedback | **TODO(deploy)** | `… \| jq -r .job.rating.txHash` |
 | Example Kimi `giveFeedback` (`xorv-verified`) | **TODO(deploy)** | `… \| jq -r .job.verification.feedbackTxHash` |
 | Example Privy server-wallet payment (MCP agent) | **TODO(deploy)** | the `Payment:` link `xorv_run_job` prints |
