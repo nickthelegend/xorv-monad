@@ -175,16 +175,24 @@ if (monad !== undefined && balance - maxCost < MONAD_RESERVE_WEI) {
   console.warn("! Deployer will be under Monad's 10 MON reserve balance after this; the tx may revert after inclusion.");
 }
 
-const { contract: ledger, deploymentTransaction } = await viem.sendDeploymentTransaction("XorvLedger", [...args], { gas });
-console.log(`Sent       ${deploymentTransaction.hash}`);
-const receipt = await publicClient.waitForTransactionReceipt({ hash: deploymentTransaction.hash });
+// Send through the wallet client and poll for the receipt, rather than hardhat-viem's
+// sendDeploymentTransaction: that one calls eth_getTransactionByHash the instant the hash comes
+// back, and Monad's public RPC is load-balanced, so the node it asks has often not seen the
+// transaction yet. The first live testnet deploy died there with TransactionNotFoundError although
+// the deployment had landed. waitForTransactionReceipt keeps polling through "not found yet".
+const hash = await deployer.deployContract({
+  abi: artifact.default.abi,
+  bytecode: artifact.default.bytecode as `0x${string}`,
+  args,
+  gas,
+});
+console.log(`Sent       ${hash}`);
+const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 180_000, pollingInterval: 1_000 });
 if (receipt.status !== "success" || receipt.contractAddress == null) {
   throw new Error(`Deployment transaction ${receipt.transactionHash} failed (status ${receipt.status}).`);
 }
 const address = getAddress(receipt.contractAddress);
-if (address !== getAddress(ledger.address)) {
-  throw new Error(`Receipt address ${address} differs from the expected ${ledger.address}.`);
-}
+const ledger = await viem.getContractAt("XorvLedger", address);
 
 const [owner, onchainBroker] = await Promise.all([ledger.read.owner(), ledger.read.broker()]);
 if (getAddress(owner) !== ownerAddress || getAddress(onchainBroker) !== broker) {
