@@ -14,7 +14,7 @@ Monad's **ERC-8004** registries.
 
 **Demo video:** **TODO(deploy)** <!-- record RECORDING.md, paste the link --> ·
 **App:** **TODO(deploy)** <!-- the apps/app Vercel URL, DEPLOY.md §5 --> ·
-**XorvLedger:** **TODO(deploy)** <!-- `address` in packages/contracts/deployments/monadTestnet.json, from `pnpm deploy:ledger` -->
+**XorvLedger:** [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) (Monad testnet, [verified on Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD))
 
 </div>
 
@@ -103,7 +103,7 @@ binary. Its 52 tests run in a Linux container with the one command in
 | MetaMask plugin manifest accepted by MetaMask's own `PluginManifestSchema`; `providers` and `quote` run inside Agent Wallet 7.0.0 | `packages/mm-plugin/test/manifest.test.ts`, example session in [`packages/mm-plugin/README.md`](packages/mm-plugin/README.md#example-session) |
 | Private job keys reproduced on a second (simulated, synced) authenticator | `apps/app/test/private-keyring.test.ts` |
 | Nansen x402 payments: only the Monad mainnet USDC row of Nansen's real 402s is paid, at the captured price, under a per-call cap and a daily budget; a related-wallet rating refused with 403 and nothing relayed | `services/broker/test/trust.test.ts` (replays the captured 402s), "Nansen trust" in `services/broker/test/integration.test.ts` |
-| **XorvLedger deployed on Monad testnet** | **Not yet. TODO(deploy)**: the `address` and `txHash` that `pnpm deploy:ledger` writes to `packages/contracts/deployments/monadTestnet.json` |
+| **XorvLedger deployed on Monad testnet** | ✅ [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD), deploy tx [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) in block 66379818, source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD); wired to the canonical ERC-8004 registries (`packages/contracts/deployments/monadTestnet.json`) |
 | **A job paid, receipted, rated and verified on Monad testnet** | **Not yet. TODO(deploy)**: `payment.txHash`, `receiptTxHash`, `rating.txHash` and `verification.feedbackTxHash` from `curl -s <broker>/api/jobs/<job>` |
 | **An MCP agent paying from a policy-bounded Privy server wallet on Monad testnet** | **Not yet. TODO(deploy)**: the `Payment:` link `xorv_run_job` prints |
 | **Envio indexer live on Envio Cloud** | **Not yet. TODO(deploy)**: the endpoint from `envio-cloud deployment endpoint <indexer> <commit>`, deployed between Oct 10 and 13 (see [SUBMISSION.md](SUBMISSION.md#before-you-submit)) |
@@ -541,16 +541,16 @@ stops the broker. `GET /api/network` reports each role's state.
 
 ## Deployments
 
-Nothing is deployed yet. Every **TODO(deploy)** row is filled after deploying, from the source named
-next to it; do not remove the rows. `<broker>` is the broker's public URL and `<job>` a job id.
+XorvLedger is live on Monad testnet. Every remaining **TODO(deploy)** row is filled from the source
+named next to it; do not remove the rows. `<broker>` is the broker's public URL and `<job>` a job id.
 
 | | Monad testnet (`eip155:10143`) | Where the value comes from |
 |---|---|---|
-| XorvLedger | **TODO(deploy)** | `address` in `packages/contracts/deployments/monadTestnet.json`, written by `pnpm deploy:ledger` |
-| XorvLedger deploy tx | **TODO(deploy)** | `txHash` in the same file |
-| XorvLedger owner | **TODO(deploy)** | `owner` in the same file (`XORV_LEDGER_OWNER`, a key the broker's host doesn't hold) |
-| Broker operator EOA (ledger writes, rating relay, verifier) | **TODO(deploy)** | `broker` in the same file; `pnpm setup:monad` prints it with its balance |
-| Facilitator | **TODO(deploy)** | `curl -s <broker>/api/network`: the self-hosted EOA's address, or `https://x402-facilitator.molandak.org` |
+| XorvLedger | [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) ([Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD)) | `address` in `packages/contracts/deployments/monadTestnet.json`, written by `pnpm deploy:ledger` |
+| XorvLedger deploy tx | [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) (block 66379818) | `txHash` in the same file |
+| XorvLedger owner | [`0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49`](https://testnet.monadscan.com/address/0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49) | `owner` in the same file (`XORV_LEDGER_OWNER`, a key the broker's host doesn't hold) |
+| Broker operator EOA (ledger writes, rating relay, verifier) | [`0x45d6510E68308566B7e1d7cA578707a59dC15752`](https://testnet.monadscan.com/address/0x45d6510E68308566B7e1d7cA578707a59dC15752) | `broker` in the same file; `pnpm setup:monad` prints it with its balance |
+| Facilitator | Monad's public facilitator, `https://x402-facilitator.molandak.org` (the default; it pays settlement gas) | `curl -s <broker>/api/network | jq .facilitator` |
 | Example x402 settlement (buyer → provider USDC) | **TODO(deploy)** | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` |
 | Example `recordJobs` receipt | **TODO(deploy)** | `… \| jq -r .job.receiptTxHash` |
 | Example `rateJob` → ERC-8004 feedback | **TODO(deploy)** | `… \| jq -r .job.rating.txHash` |

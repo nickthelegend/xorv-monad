@@ -97,14 +97,14 @@ ledger stores one slot per job; reads go through Envio because the public RPC ca
 
 ## Deployed contracts and transactions
 
-Nothing here is deployed yet. Replace each **TODO(deploy)** with the real value, as an explorer link,
+XorvLedger is deployed and verified. Replace each remaining **TODO(deploy)** with the real value, as an explorer link,
 from the command next to it. `<broker>` is the broker's public URL and `<job>` a job id from the
 deployed app.
 
 | | Monad testnet (`eip155:10143`) | Where the value comes from |
 |---|---|---|
-| `XorvLedger` | **TODO(deploy)** | `address` in `packages/contracts/deployments/monadTestnet.json`, written by `XORV_BROKER_ADDRESS=<operator> XORV_LEDGER_OWNER=<cold owner> pnpm deploy:ledger`; link as `https://testnet.monadscan.com/address/<address>` |
-| Deploy transaction | **TODO(deploy)** | `txHash` in the same file |
+| `XorvLedger` | [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) — source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) | `packages/contracts/deployments/monadTestnet.json` |
+| Deploy transaction | [`0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) (block 66379818) | same file |
 | x402 settlement (buyer → provider USDC) | **TODO(deploy)** | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` (or the `Paid:` line of `xorv run`) |
 | `recordJobs` receipt | **TODO(deploy)** | `… \| jq -r .job.receiptTxHash`, a few seconds after the job finishes |
 | `rateJob` → ERC-8004 `giveFeedback` (`starred`) | **TODO(deploy)** | `… \| jq -r .job.rating.txHash`, after rating the job in the app |

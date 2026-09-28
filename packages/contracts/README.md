@@ -129,7 +129,7 @@ everything indexed under the old one. The mainnet commands are `deploy:mainnet` 
 
 | | Monad testnet (10143) | Monad mainnet (143) |
 |---|---|---|
-| XorvLedger | <!-- TODO(deploy): testnet address = `address` in deployments/monadTestnet.json, written by `pnpm deploy:ledger` --> **TODO(deploy)**: not deployed yet | not deployed yet |
+| XorvLedger | [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) (block 66379818, [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD)) | not deployed yet |
 | ERC-8004 Identity | `0x8004A818BFB912233c491871b3d84c89A494BD9e` | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
 | ERC-8004 Reputation | `0x8004B663056A597Dffe9eCcC1965A193B7388713` | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
 
