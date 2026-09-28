@@ -1,0 +1,13 @@
+{
+  "contract": "XorvLedger",
+  "network": "monadTestnet",
+  "chainId": 10143,
+  "address": "0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD",
+  "txHash": "0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3",
+  "blockNumber": 66379818,
+  "identity": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "reputation": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+  "broker": "0x45d6510E68308566B7e1d7cA578707a59dC15752",
+  "owner": "0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49",
+  "deployedAt": "2026-09-28T10:03:01.000Z"
+}
