@@ -104,21 +104,7 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge build --sizes
       - run: forge test -vv
-      # Against the real USDG and USDC contracts on forks of the live testnets.
-      # Needs the public RPCs, so a flaky endpoint doesn't block the suite above.
+      # Against the real AUSD and USDC contracts on a fork of Monad testnet.
+      # Needs the public RPC, so a flaky endpoint doesn't block the suite above.
       - run: FORK_TESTS=1 forge test --match-contract Fork -vv
         continue-on-error: true
-
-  stylus:
-    name: Rust / Stylus registry
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contracts/stylus/registry
-    steps:
-      - uses: actions/checkout@v4
-      # rust-toolchain.toml pins the version and the wasm target.
-      - run: rustup show
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
