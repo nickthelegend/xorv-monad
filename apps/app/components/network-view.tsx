@@ -110,7 +110,7 @@ export function NetworkView() {
           <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
             A buyer&rsquo;s money waits in the escrow until the job delivers, and anyone can refund it
             once the deadline passes. Every settlement writes the provider&rsquo;s track record into
-            the registry contract on Monad — so reputation is earned on chain,
+            the registry contract on {XORV_CHAIN.name} — so reputation is earned on chain,
             not claimed.
           </p>
           <div className="mt-4 border-t border-[var(--line)] pt-1">
@@ -229,8 +229,14 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
       <h2 className="text-[13px] font-medium text-fg">Identity and signing</h2>
       <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
         Who can pay and be paid through the escrow, and what the broker&rsquo;s operator wallet is
-        allowed to sign. Neither depends on trusting this broker: the escrow contract checks
-        identity, and Privy&rsquo;s policy engine checks every transaction before it is signed.
+        allowed to sign.{" "}
+        {gate && signer?.mode === "privy"
+          ? "Neither depends on trusting this broker: the escrow contract checks identity, and Privy’s policy engine checks every transaction before it is signed."
+          : gate
+            ? "The escrow contract checks identity itself, so it doesn’t depend on trusting this broker."
+            : signer?.mode === "privy"
+              ? "Privy’s policy engine checks every operator transaction before it is signed, so it doesn’t depend on trusting this broker."
+              : "On this deployment neither is enforced: there is no identity gate on the escrow, and the operator key is not behind a Privy policy."}
       </p>
       <div className="mt-4 border-t border-[var(--line)] pt-1">
         {info.escrow ? (

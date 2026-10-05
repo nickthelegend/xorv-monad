@@ -60,7 +60,7 @@ export function Earn() {
           <div className="space-y-2.5">
             <Command>git clone https://github.com/nickthelegend/xorv-monad && cd xorv-monad</Command>
             <Command>pnpm install && pnpm build</Command>
-            <Command>alias xorv="node $PWD/packages/cli/dist/index.js"</Command>
+            <Command>{`alias xorv="node $PWD/packages/cli/dist/index.js"`}</Command>
             <Command>xorv init</Command>
             <Command>xorv start</Command>
           </div>

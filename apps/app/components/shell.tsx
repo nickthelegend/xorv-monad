@@ -29,10 +29,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
 
   // A route change should close the mobile rail; leaving it open over the new
-  // page is the classic half-finished drawer.
-  useEffect(() => {
+  // page is the classic half-finished drawer. Adjusted during render (React's
+  // pattern for state that follows a prop), not in an effect after it.
+  const [openedOn, setOpenedOn] = useState(pathname);
+  if (openedOn !== pathname) {
+    setOpenedOn(pathname);
     setOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <div className="flex min-h-dvh">

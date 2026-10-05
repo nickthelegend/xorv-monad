@@ -56,7 +56,9 @@ export function Connect() {
     sendStablecoin,
   } = useWallet();
   const [open, setOpen] = useState(false);
-  const [balances, setBalances] = useState<Balances | null>(null);
+  const [readBalances, setBalances] = useState<Balances | null>(null);
+  // Balances belong to an address: with none connected there are none to show.
+  const balances = address ? readBalances : null;
   const [sendTo, setSendTo] = useState("");
   const [sendAmount, setSendAmount] = useState("");
   const [sendToken, setSendToken] = useState<`0x${string}`>(STABLECOINS[0]!.address);
@@ -66,41 +68,24 @@ export function Connect() {
   const [copied, setCopied] = useState(false);
   const animate = useEntrance();
 
+  // Read on connect, and again after a send (below). State is only set once a
+  // read answers, and never for an address that has since changed.
   const refreshBalances = useCallback(async () => {
-    if (!address) {
-      setBalances(null);
-      return;
-    }
-    try {
-      const client = createPublicClient({ chain: XORV_CHAIN, transport: http() });
-      const account = getAddress(address);
-      const [wei, ...units] = await Promise.all([
-        client.getBalance({ address: account }),
-        ...STABLECOINS.map((t) =>
-          client.readContract({
-            address: t.address,
-            abi: erc20Abi,
-            functionName: "balanceOf",
-            args: [account],
-          }),
-        ),
-      ]);
-      setBalances({
-        tokens: STABLECOINS.map((t, i) => ({
-          symbol: t.symbol,
-          address: t.address,
-          amount: Number(formatUnits(units[i] ?? 0n, 6)),
-        })),
-        eth: Number(formatUnits(wei, 18)),
-      });
-    } catch {
-      /* a balance we couldn't read is not worth an error state */
-    }
+    if (!address) return;
+    const next = await readBalancesOf(address);
+    if (next) setBalances(next);
   }, [address]);
 
   useEffect(() => {
-    void refreshBalances();
-  }, [refreshBalances]);
+    if (!address) return;
+    let alive = true;
+    void readBalancesOf(address).then((next) => {
+      if (alive && next) setBalances(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [address]);
 
   // Close the menu on outside click — a popover that only closes via its own
   // trigger is a popover people leave open.
@@ -384,4 +369,33 @@ export function Connect() {
       </AnimatePresence>
     </div>
   );
+}
+
+/** MON and each stablecoin held by `address`, read from the node; null when the read fails. */
+async function readBalancesOf(address: string): Promise<Balances | null> {
+  try {
+    const client = createPublicClient({ chain: XORV_CHAIN, transport: http() });
+    const account = getAddress(address);
+    const [wei, ...units] = await Promise.all([
+      client.getBalance({ address: account }),
+      ...STABLECOINS.map((t) =>
+        client.readContract({
+          address: t.address,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [account],
+        }),
+      ),
+    ]);
+    return {
+      tokens: STABLECOINS.map((t, i) => ({
+        symbol: t.symbol,
+        address: t.address,
+        amount: Number(formatUnits(units[i] ?? 0n, 6)),
+      })),
+      eth: Number(formatUnits(wei, 18)),
+    };
+  } catch {
+    return null; // a balance we couldn't read is not worth an error state
+  }
 }

@@ -159,9 +159,13 @@ export function JobView({
   const startedAt = job?.startedAt ?? null;
   useEffect(() => {
     if (terminal || !startedAt) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 1_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
   }, [terminal, startedAt]);
 
   if (!job) {
@@ -410,9 +414,13 @@ function EscrowSection({
 
   useEffect(() => {
     if (escrow.state !== "funded") return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
+    const tick = () => setNow(Date.now());
+    const first = setTimeout(tick, 0);
+    const timer = setInterval(tick, 1_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
   }, [escrow.state]);
 
   const copy = ESCROW_COPY[escrow.state];

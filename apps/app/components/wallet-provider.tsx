@@ -98,8 +98,8 @@ function isDismissal(text: string): boolean {
 export function PrivyWalletProvider({ children }: { children: ReactNode }) {
   const { ready: privyReady, authenticated, user, login, logout } = usePrivy();
   const { wallets, ready: walletsReady } = useWallets();
-  const [session, setSession] = useState<WalletSession | null>(null);
-  const [provider, setProvider] = useState<Eip1193Provider | null>(null);
+  const [connectedSession, setSession] = useState<WalletSession | null>(null);
+  const [connectedProvider, setProvider] = useState<Eip1193Provider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
 
@@ -110,14 +110,13 @@ export function PrivyWalletProvider({ children }: { children: ReactNode }) {
     : undefined;
   const activeAddress = active?.address ?? null;
   const activeChain = active?.chainId ?? null;
+  // With no active wallet there is no session, whatever the last one was.
+  const session = active ? connectedSession : null;
+  const provider = active ? connectedProvider : null;
 
   useEffect(() => {
     let cancelled = false;
-    if (!active) {
-      setSession(null);
-      setProvider(null);
-      return;
-    }
+    if (!active) return;
     void (async () => {
       try {
         const p = (await active.getEthereumProvider()) as unknown as Eip1193Provider;

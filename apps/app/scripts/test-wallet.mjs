@@ -168,7 +168,8 @@ async function handle(method, params) {
           { code: -32602 },
         );
       }
-      const { EIP712Domain: _domain, ...types } = data.types;
+      const types = { ...data.types };
+      delete types.EIP712Domain; // viem derives the domain type itself
       return account.signTypedData({ domain: data.domain, types, primaryType: data.primaryType, message: data.message });
     }
     case "eth_sendTransaction": {

@@ -150,10 +150,29 @@ test("not found and invalid input: every dead end says what happened", async ({ 
   expect(w.problems).toEqual([]);
 });
 
+test("chain viewer front page: the deployment's contracts and a lookup", async ({ page }) => {
+  const w = watch(page);
+  await page.goto("/chain");
+  await expect(page.getByRole("heading", { name: "Chain" })).toBeVisible();
+  await expect(page.getByText("latest block")).toBeVisible();
+  await expect(page.getByText("XorvEscrow")).toBeVisible();
+  // A bad lookup says why; a real address goes to its page.
+  await page.getByLabel("Transaction hash or address").fill("nonsense");
+  await page.getByRole("button", { name: "Look up" }).click();
+  // By text: Next.js adds its own role="alert" route announcer.
+  await expect(page.getByText(/is neither a transaction hash/)).toBeVisible();
+  const escrow = (await page.getByRole("link").filter({ hasText: /^0x[0-9a-fA-F]{40}$/ }).first().textContent())!;
+  await page.getByLabel("Transaction hash or address").fill(escrow);
+  await page.getByRole("button", { name: "Look up" }).click();
+  await expect(page).toHaveURL(new RegExp(`/chain/address/${escrow}`));
+  await expect(page.getByRole("heading", { name: "Contract" })).toBeVisible();
+  expect(w.problems).toEqual([]);
+});
+
 test("375px: every page fits a phone", async ({ page }) => {
   await page.setViewportSize(PHONE);
   const w = watch(page);
-  for (const path of ["/", "/providers", "/network", ...(jobUrl ? [new URL(jobUrl).pathname] : [])]) {
+  for (const path of ["/", "/providers", "/network", "/chain", ...(jobUrl ? [new URL(jobUrl).pathname] : [])]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle").catch(() => {});
     await noHorizontalScroll(page);

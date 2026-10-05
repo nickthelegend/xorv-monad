@@ -5,7 +5,7 @@ import { ModelPicker, type ModelOption } from "./model-picker";
 import { useWallet } from "@/components/wallet-provider";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { BROKER_URL, api, formatUsd } from "@/lib/api";
+import { BROKER_URL, api } from "@/lib/api";
 import { DEFAULT_STABLECOIN, XORV_CHAIN } from "@/lib/chains";
 import { EASE, useEntrance } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -89,7 +89,7 @@ export function Composer() {
   }, []);
   const [model, setModel] = useState("");
   const [maxUsd, setMaxUsd] = useState("0.50");
-  const { session, address } = useWallet();
+  const { session } = useWallet();
 
   const [quote, setQuote] = useState<Quote | null>(null);
   /** Stablecoin symbol the buyer picked; null means "the first one my wallet can afford". */
@@ -123,9 +123,13 @@ export function Composer() {
   const [clock, setClock] = useState(() => Date.now());
   useEffect(() => {
     if (!quote) return;
-    setClock(Date.now());
-    const timer = setInterval(() => setClock(Date.now()), 1_000);
-    return () => clearInterval(timer);
+    const tick = () => setClock(Date.now());
+    const first = setTimeout(tick, 0); // refresh at once for a new quote, then every second
+    const timer = setInterval(tick, 1_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(timer);
+    };
   }, [quote]);
   const expired = quote ? clock >= quote.expiresAt : false;
 

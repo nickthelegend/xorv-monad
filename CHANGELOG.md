@@ -15,8 +15,9 @@ Ported from the Arbitrum version for Monad Metropolis (Track 04 — Trust, Ident
 - **Kimi and Qwen adapters**, and **`xorv-agent`**: Kimi or Qwen as an autonomous, budgeted buyer on the network.
 - Anvil local stack (no Docker), `MODE=fork` end-to-end run against the real AUSD, `scripts/faucet-ausd.sh`.
 - **Cleanverse CVI gate**: `CleanverseGate` and `XorvEscrow.setIdentityGate`. Only A-Pass holders can fund or be paid, refunds are never gated, and it is tested against the real A-Pass on a Monad fork. The facilitator, broker matching, CLI and app all know about it.
-- **Privy server wallet for the operator**: a policy allowing only the broker's eight calls, native gas sponsorship, `privy:setup`, and a labelled PRIVY MOCK MODE that enforces the same policy locally.
-- Kimi/Qwen **FIXTURE MODE** and **record mode** for the agent; CRE workflow tests on the SDK's test runtime; the app's History panel reads the Envio index; e2e stages `AGENT=1`, `INDEXER=1`, `SIGNER=privy-mock`, `CLEANVERSE=1`.
+- **Privy server wallet for the operator**: a policy allowing only the broker's eight calls, native gas sponsorship, and `privy:setup`. Without Privy keys the broker says it signs with a plain key; there is no stand-in.
+- Agent record mode (`XORV_AGENT_RECORD`); CRE workflow tests on the SDK's test runtime; the app's History panel reads the Envio index; the `/chain` front page; e2e stages `AGENT=1`, `INDEXER=1`, `CLEANVERSE=1`; the Playwright walk (`scripts/e2e-walk.sh`, `SERVE=1` for the one-command demo).
+- **Zero mocks in the running product**: no mock or fixture modes; test doubles live only in tests.
 
 ### Changed
 - Log reads default to Monad's 100-block `eth_getLogs` cap; history comes from the indexer.

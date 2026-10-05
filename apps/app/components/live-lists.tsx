@@ -19,13 +19,12 @@ import { Empty, Skeleton, Status } from "@/components/ui";
 function usePoll<T>(load: () => Promise<T>, intervalMs = 5_000): { data: T | null; error: boolean } {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState(false);
-  const stable = useCallback(load, [load]);
 
   useEffect(() => {
     let alive = true;
     const run = async (): Promise<void> => {
       try {
-        const next = await stable();
+        const next = await load();
         if (!alive) return;
         setData(next);
         setError(false);
@@ -39,7 +38,7 @@ function usePoll<T>(load: () => Promise<T>, intervalMs = 5_000): { data: T | nul
       alive = false;
       clearInterval(timer);
     };
-  }, [stable, intervalMs]);
+  }, [load, intervalMs]);
 
   return { data, error };
 }

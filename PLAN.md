@@ -34,21 +34,21 @@ Xorv's pitch is trust: escrowed payment, reputation written by settlement, ident
 
 | # | Task | Acceptance | Verify | Status |
 |---|---|---|---|---|
-| 1.1 | Remove PRIVY MOCK MODE from the product | `XORV_SIGNER` is `key` or `privy`. `privy` without keys fails at boot, naming the keys. The local policy evaluator lives in tests only | `git grep -i "privy-mock"` finds nothing outside tests; protocol tests green | NOT STARTED |
-| 1.2 | Remove agent FIXTURE MODE from the product | `xorv-agent` only calls a real API; without a key it says which key. Fixture replay moves to a test-only OpenAI-compatible server | agent tests green; `XORV_AGENT_FIXTURE` gone from `packages/agent/src` | NOT STARTED |
-| 1.3 | Remove the mock A-Pass from the local stack | No `CLEANVERSE=mock`, no `XORV_CLEANVERSE_MOCK`. The local stack runs gate-off; the real gate runs on the Monad fork | `git grep -i cleanverse_mock` empty; fork e2e green | NOT STARTED |
-| 1.4 | Process hygiene | No `pkill -f` in scripts; stop by PID | `git grep "pkill -f"` empty | NOT STARTED |
-| 2.1 | Walk every app page | Board, job, providers, network, chain tx/address/token, 404: loading, empty, error and 375px all handled | Playwright spec `apps/app/e2e/walk.spec.ts` green | NOT STARTED |
-| 2.2 | Buyer flow in the browser | Quote → pay (demo account) → stream → result → escrow released | Chrome, console clean | DONE (built-in browser, 6 Oct); recheck in Chrome |
-| 2.3 | Failure and cancel flows | A failed job refunds the buyer; cancel before start refunds with no reputation mark; invalid input is refused with a reason | Chrome plus broker tests | NOT STARTED |
-| 2.4 | Landing page | Renders, links work, no old-chain copy, 375px | Chrome | NOT STARTED |
-| 3.1 | Zero-mock test plan, executed | Every item PASS or UNTESTED (with the dependency) | `docs/TEST-PLAN-ZERO-MOCK.md` | NOT STARTED |
-| 4.1 | All suites green | TS (protocol, broker, CLI, MCP, agent, app), forge, fork tests, CRE, indexer, e2e stages | commands in README | IN PROGRESS |
-| 4.2 | Static analysis | Slither run on `contracts/src`; findings triaged | `docs/SECURITY-NOTES.md` | NOT STARTED |
-| 4.3 | Secret scan | Nothing secret tracked; no `.env`, `*.key` | gitleaks or `git grep` | NOT STARTED |
-| 5.1 | README judge package | One-command demo, new vs pre-existing, AI disclosure, why Monad, architecture diagram, sponsors | read-through | NOT STARTED |
-| 5.2 | SUBMISSION.md | Portal fields per bounty, evidence links, 3-minute script | read-through | IN PROGRESS |
-| 5.3 | docs/DEPLOY-LATER.md | Ordered runbook: addresses and MON, keys, deploy and verify, hosting, smoke test, shot list; under 1 hour | read-through | NOT STARTED |
+| 1.1 | Remove PRIVY MOCK MODE from the product | `XORV_SIGNER` is `key` or `privy`. `privy` without keys fails at boot, naming the keys. The local policy evaluator lives in tests only | `git grep -i "privy-mock"` finds nothing outside tests; protocol tests green | DONE (aa0b33f) |
+| 1.2 | Remove agent FIXTURE MODE from the product | `xorv-agent` only calls a real API; without a key it says which key. Fixture replay moves to a test-only OpenAI-compatible server | agent tests green; `XORV_AGENT_FIXTURE` gone from `packages/agent/src` | DONE (aa0b33f) |
+| 1.3 | Remove the mock A-Pass from the local stack | No `CLEANVERSE=mock`, no `XORV_CLEANVERSE_MOCK`. The local stack runs gate-off; the real gate runs on the Monad fork | `git grep -i cleanverse_mock` empty; fork e2e green | DONE (aa0b33f) |
+| 1.4 | Process hygiene | No `pkill -f` in scripts; stop by PID | `git grep "pkill -f"` empty | DONE (aa0b33f) |
+| 2.1 | Walk every app page | Board, job, providers, network, chain tx/address/token, 404: loading, empty, error and 375px all handled | Playwright spec `apps/app/e2e/walk.spec.ts` green | DONE: 10/10 in Google Chrome |
+| 2.2 | Buyer flow in the browser | Quote → pay (demo account) → stream → result → escrow released | Chrome, console clean | DONE (Playwright + built-in browser) |
+| 2.3 | Failure and cancel flows | A failed job refunds the buyer; cancel before start refunds with no reputation mark; invalid input is refused with a reason | Chrome plus broker tests | DONE: stop → refund verified on chain; invalid input refused |
+| 2.4 | Landing page | Renders, links work, no old-chain copy, 375px | Chrome | DONE: dead `/chain` link found and fixed |
+| 3.1 | Zero-mock test plan, executed | Every item PASS or UNTESTED (with the dependency) | `docs/TEST-PLAN-ZERO-MOCK.md` | DONE: 40 PASS, 0 FAIL, 8 UNTESTED (keys/testnet) |
+| 4.1 | All suites green | TS (protocol, broker, CLI, MCP, agent, app), forge, fork tests, CRE, indexer, e2e stages | commands in README | DONE |
+| 4.2 | Static analysis | Slither run on `contracts/src`; findings triaged | `docs/SECURITY-NOTES.md` | DONE: `docs/SECURITY-NOTES.md` |
+| 4.3 | Secret scan | Nothing secret tracked; no `.env`, `*.key` | gitleaks or `git grep` | DONE: clean, including history |
+| 5.1 | README judge package | One-command demo, new vs pre-existing, AI disclosure, why Monad, architecture diagram, sponsors | read-through | DONE |
+| 5.2 | SUBMISSION.md | Portal fields per bounty, evidence links, 3-minute script | read-through | DONE |
+| 5.3 | docs/DEPLOY-LATER.md | Ordered runbook: addresses and MON, keys, deploy and verify, hosting, smoke test, shot list; under 1 hour | read-through | DONE |
 | 6.x | Testnet deploy, hosting, video | | | BLOCKED: awaiting testnet go |
 
 ## Gaps (from the code, 6 Oct)
@@ -111,4 +111,12 @@ Submission (4):
 
 **Initial: 15 / 30 = 50%.** Done at the start: 1, 3, 6, 9, 10 (with the scripted model, so it doesn't count fully), 11, 12, 13, 17, 18, 20, 22, 23 (as of the last commit), 28 (partial), 2 (proven on Arbitrum, unverified here). Counting 10 and 28 as halves and 2 as zero: 1, 3, 6, 9, 11, 12, 13, 17, 18, 20, 22, 23, plus three halves rounded = 15.
 
-**Final:** filled in at step F.
+**Final: 24.5 / 30 = 82%** (6 Oct, after steps B–E).
+- **Done (24):** 1, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29.
+- **Half (1):** 10. The real agent binary, MCP and escrow are verified, but with a test-double model server; a live model run needs the keys.
+- **Open, none of them independently solvable:**
+  - 2: the visitor's own wallet. It needs a Privy app id for the app's wallet login, or a browser wallet funded on the local chain.
+  - 14, 15, 16: Privy, Kimi and Qwen keys.
+  - 30: the testnet go.
+
+Gaps G1–G4 and G9–G10 are closed. G5–G8 and G11 are BLOCKED on the user (see USER_ACTION_REQUIRED in the coordinator report).

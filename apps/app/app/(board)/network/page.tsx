@@ -1,3 +1,4 @@
+import { XORV_CHAIN } from "@/lib/chains";
 import { NetworkView } from "@/components/network-view";
 import { PageHeader } from "@/components/ui";
 
@@ -9,7 +10,7 @@ export default function NetworkPage() {
     <>
       <PageHeader
         title="Network"
-        sub="The broker keeps its working state in its own database. What it claims can be checked on Monad instead: every payment is an on-chain transfer, and the contracts this deployment uses are listed below — anyone can read them."
+        sub={`The broker keeps its working state in its own database. What it claims can be checked on ${XORV_CHAIN.name} instead: every payment is an on-chain transfer, and the contracts this deployment uses are listed below — anyone can read them.`}
       />
       <NetworkView />
     </>
