@@ -49,6 +49,17 @@ The steps below need a CRE account, a deployed escrow and keeper (`scripts/deplo
    cd refund-keeper && ./node_modules/.bin/cre-compile main.ts dist/refund-keeper.wasm
    ```
 
+5. To test without an account, run the workflow logic (`refund-keeper/workflow.ts`) under the SDK's own test runtime. `HttpActionsMock` stands in for the indexer and `EvmMock` stands in for the escrow and keeper on the `monad-testnet` selector. The tests cover:
+   - only escrow-confirmed refundable jobs reach the report;
+   - the report is `abi.encode(bytes32[])` sent to the keeper;
+   - the deadline cut-off uses DON time;
+   - an empty index or an index ahead of the chain writes nothing;
+   - an unreachable index fails loudly.
+
+   ```bash
+   cd refund-keeper && bun test
+   ```
+
 Deploying the workflow to a live DON needs CRE deploy access. After that, switch the keeper to the production forwarder:
 
 ```bash

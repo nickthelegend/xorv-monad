@@ -82,3 +82,6 @@ videos/xorv-demo/snapshots/
 videos/xorv-demo/.thumbnails/
 videos/xorv-demo/assets/footage/
 deployments/hosting.env
+
+# Rewritten by every local-stack run
+deployments/anvil.json
