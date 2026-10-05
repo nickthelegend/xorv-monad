@@ -1,0 +1,137 @@
+{
+  "brain": "qwen",
+  "model": "qwen3.8-max",
+  "source": "authored",
+  "note": "AUTHORED, not recorded: built in the provider's documented chat-completions response format because no API key was available. Re-record with XORV_AGENT_RECORD=<this file> and a real key. Plans for the local e2e network, where only the echo adapter is selling.",
+  "responses": [
+    {
+      "id": "chatcmpl-qwen-e2e-1",
+      "object": "chat.completion",
+      "created": 1791300101,
+      "model": "qwen3.8-max",
+      "system_fingerprint": null,
+      "choices": [
+        {
+          "index": 0,
+          "logprobs": null,
+          "finish_reason": "tool_calls",
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "I should see what capacity is live and what it costs before spending anything.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_qwen1e2e",
+                "type": "function",
+                "function": {
+                  "name": "xorv_list_providers",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1600,
+        "completion_tokens": 90,
+        "total_tokens": 1690
+      }
+    },
+    {
+      "id": "chatcmpl-qwen-e2e-2",
+      "object": "chat.completion",
+      "created": 1791300102,
+      "model": "qwen3.8-max",
+      "system_fingerprint": null,
+      "choices": [
+        {
+          "index": 0,
+          "logprobs": null,
+          "finish_reason": "tool_calls",
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "The echo provider is the cheapest live option and enough for a greeting. Cap it well under the budget.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_qwen2e2e",
+                "type": "function",
+                "function": {
+                  "name": "xorv_run_job",
+                  "arguments": "{\"prompt\": \"Say hello to Monad\", \"adapter\": \"echo\", \"max_usd\": 0.005}"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1900,
+        "completion_tokens": 90,
+        "total_tokens": 1990
+      }
+    },
+    {
+      "id": "chatcmpl-qwen-e2e-3",
+      "object": "chat.completion",
+      "created": 1791300103,
+      "model": "qwen3.8-max",
+      "system_fingerprint": null,
+      "choices": [
+        {
+          "index": 0,
+          "logprobs": null,
+          "finish_reason": "tool_calls",
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "A second, independent pass is cheap here; worth one more job before answering.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_qwen3e2e",
+                "type": "function",
+                "function": {
+                  "name": "xorv_run_job",
+                  "arguments": "{\"prompt\": \"Check this greeting for typos: hello to Monad\", \"adapter\": \"echo\", \"max_usd\": 0.005}"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2200,
+        "completion_tokens": 90,
+        "total_tokens": 2290
+      }
+    },
+    {
+      "id": "chatcmpl-qwen-e2e-4",
+      "object": "chat.completion",
+      "created": 1791300104,
+      "model": "qwen3.8-max",
+      "system_fingerprint": null,
+      "choices": [
+        {
+          "index": 0,
+          "logprobs": null,
+          "finish_reason": "stop",
+          "message": {
+            "role": "assistant",
+            "content": "Hired the echo provider twice on the Xorv network: once to write the greeting and once to check it. Both jobs were paid in AUSD through XorvEscrow and released on delivery; total spend $0.0020.",
+            "reasoning_content": "Both purchases settled; the budget is respected. Write the answer."
+          }
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2500,
+        "completion_tokens": 70,
+        "total_tokens": 2570
+      }
+    }
+  ]
+}

@@ -186,42 +186,31 @@ process.exit(fails ? 1 : 0);
 # ---------------------------------------------------------------------------
 # the agent (AGENT=1): xorv-agent hires the network through the real MCP server
 # ---------------------------------------------------------------------------
-# Its brain is Kimi or Qwen; with no API key here, a local server answers in the
-# chat-completions format with a fixed plan (list providers, buy one job, answer).
-# Everything after the brain is real: the agent binary, the MCP server it spawns,
-# the x402 payment into XorvEscrow, the provider run and the release.
+# Its brain is Kimi or Qwen. With no API key here it runs in FIXTURE MODE: the
+# model's responses are replayed from packages/agent/fixtures (documented API
+# format, labelled "authored" until re-recorded). Everything after the brain is
+# real: the agent binary, the MCP server it spawns, the x402 payment into
+# XorvEscrow, the provider run and the release.
 if [ "${AGENT:-0}" = 1 ]; then
-  say "xorv-agent — a scripted brain, real MCP + broker + escrow"
-  node --input-type=module -e '
-import { createServer } from "node:http";
-const plan = [
-  { content: null, tool_calls: [{ id: "a", type: "function", function: { name: "xorv_list_providers", arguments: "{}" } }] },
-  { content: null, tool_calls: [{ id: "b", type: "function", function: { name: "xorv_run_job", arguments: JSON.stringify({ prompt: "Say hello to Monad", adapter: "echo", max_usd: 1 }) } }] },
-  { content: "The echo provider answered; paid through escrow." },
-];
-createServer(async (req, res) => {
-  for await (const _ of req);
-  const message = plan.shift() ?? { content: "done" };
-  res.setHeader("content-type", "application/json");
-  res.end(JSON.stringify({ choices: [{ message: { role: "assistant", ...message }, finish_reason: "stop" }] }));
-}).listen(8653, "127.0.0.1");
-' &
-  PIDS+=($!)
-  sleep 1
-  AGENT_OUT=$(MOONSHOT_API_KEY=scripted XORV_AGENT_BASE_URL=http://127.0.0.1:8653/v1 XORV_BROKER_URL=$BROKER \
-    XORV_PAYER_KEY=$PAYER_KEY XORV_RPC_URL=$RPC XORV_NETWORK=$NETWORK \
-    node packages/agent/dist/index.js "Say hello to Monad" --budget 0.01 --json 2>"$WORK/agent.err" || true)
-  echo "$AGENT_OUT" >"$WORK/agent.json"
-  node --input-type=module -e '
+  for BRAIN in kimi qwen; do
+    say "xorv-agent ($BRAIN, FIXTURE MODE) — real MCP + broker + escrow"
+    AGENT_OUT=$(XORV_AGENT_FIXTURE=packages/agent/fixtures/$BRAIN-e2e.json XORV_BROKER_URL=$BROKER \
+      XORV_PAYER_KEY=$PAYER_KEY XORV_RPC_URL=$RPC XORV_NETWORK=$NETWORK \
+      node packages/agent/dist/index.js "Greet Monad, and have the greeting checked" --brain $BRAIN --budget 0.01 --json \
+      2>"$WORK/agent-$BRAIN.err" || true)
+    echo "$AGENT_OUT" >"$WORK/agent-$BRAIN.json"
+    node --input-type=module -e '
 import { readFileSync } from "node:fs";
 const run = JSON.parse(readFileSync(process.argv[1], "utf8"));
 let fails = 0;
 const check = (label, ok, extra = "") => { console.log(`${ok ? "✓" : "✗"} ${label}${extra ? "  " + extra : ""}`); if (!ok) fails++; };
-check("agent answered", run.stoppedBecause === "answered", run.answer);
-check("agent bought one job", run.purchases.length === 1 && run.purchases[0].ok);
-check("agent spent exactly the price", run.spentUsdMicros === 1000, `${run.spentUsdMicros} micro-USD`);
+check(`${run.brain} brain in fixture mode`, run.brainMode === "fixture", run.model);
+check("agent answered", run.stoppedBecause === "answered");
+check("agent bought two jobs, both delivered", run.purchases.length === 2 && run.purchases.every((p) => p.ok));
+check("agent spent exactly the prices", run.spentUsdMicros === 2000, `${run.spentUsdMicros} micro-USD`);
 check("agent kept within budget", run.spentUsdMicros <= run.budgetUsdMicros);
-check("purchase carries on-chain proof", run.purchases[0]?.proof.length >= 1, (run.purchases[0]?.proof ?? []).join(" "));
+check("every purchase carries on-chain proof", run.purchases.every((p) => p.proof.length >= 1));
 process.exit(fails ? 1 : 0);
-' "$WORK/agent.json" || { echo "--- agent stderr ---"; cat "$WORK/agent.err"; echo "$AGENT_OUT" | head -40; exit 1; }
+' "$WORK/agent-$BRAIN.json" || { echo "--- agent stderr ---"; cat "$WORK/agent-$BRAIN.err"; echo "$AGENT_OUT" | head -40; exit 1; }
+  done
 fi

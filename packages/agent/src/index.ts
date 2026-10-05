@@ -84,12 +84,17 @@ async function main(): Promise<void> {
   const log = json ? () => {} : (line: string) => console.error(line);
 
   const config = brainConfig(brain);
+  if (config.fixture) {
+    // Said loudly, every time: the brain is replaying a fixture, the rest is real.
+    console.error(`FIXTURE MODE — ${brain}'s responses are replayed from ${config.fixture}, not the live API.`);
+    console.error("The MCP server, broker, escrow and chain are real. Set the API key and unset XORV_AGENT_FIXTURE to go live.");
+  }
   log(`${brain} (${config.model}) is planning, with ${formatUsd(budgetUsdMicros)} to spend on the Xorv network`);
   const { belt, close } = await mcpBelt(budgetUsd);
   try {
     const run = await runAgent({ goal, budgetUsdMicros, brain: config, belt, log });
     if (json) {
-      console.log(JSON.stringify(run, null, 2));
+      console.log(JSON.stringify({ brain, model: config.model, brainMode: config.fixture ? "fixture" : "live", ...run }, null, 2));
       return;
     }
     console.log(`\n${run.answer}\n`);

@@ -1,0 +1,129 @@
+{
+  "brain": "kimi",
+  "model": "kimi-k2.6",
+  "source": "authored",
+  "note": "AUTHORED, not recorded: built in the provider's documented chat-completions response format because no API key was available. Re-record with XORV_AGENT_RECORD=<this file> and a real key. Plans for the local e2e network, where only the echo adapter is selling.",
+  "responses": [
+    {
+      "id": "chatcmpl-kimi-e2e-1",
+      "object": "chat.completion",
+      "created": 1791300001,
+      "model": "kimi-k2.6",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "I should see what capacity is live and what it costs before spending anything.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "functions.xorv_list_providers:0",
+                "type": "function",
+                "function": {
+                  "name": "xorv_list_providers",
+                  "arguments": "{}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1500,
+        "completion_tokens": 80,
+        "total_tokens": 1580
+      }
+    },
+    {
+      "id": "chatcmpl-kimi-e2e-2",
+      "object": "chat.completion",
+      "created": 1791300002,
+      "model": "kimi-k2.6",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "The echo provider is the cheapest live option and enough for a greeting. Cap it well under the budget.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "functions.xorv_run_job:1",
+                "type": "function",
+                "function": {
+                  "name": "xorv_run_job",
+                  "arguments": "{\"prompt\": \"Say hello to Monad\", \"adapter\": \"echo\", \"max_usd\": 0.005}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 1800,
+        "completion_tokens": 80,
+        "total_tokens": 1880
+      }
+    },
+    {
+      "id": "chatcmpl-kimi-e2e-3",
+      "object": "chat.completion",
+      "created": 1791300003,
+      "model": "kimi-k2.6",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "A second, independent pass is cheap here; worth one more job before answering.",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "functions.xorv_run_job:2",
+                "type": "function",
+                "function": {
+                  "name": "xorv_run_job",
+                  "arguments": "{\"prompt\": \"Check this greeting for typos: hello to Monad\", \"adapter\": \"echo\", \"max_usd\": 0.005}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2100,
+        "completion_tokens": 80,
+        "total_tokens": 2180
+      }
+    },
+    {
+      "id": "chatcmpl-kimi-e2e-4",
+      "object": "chat.completion",
+      "created": 1791300004,
+      "model": "kimi-k2.6",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Hired the echo provider twice on the Xorv network: once to write the greeting and once to check it. Both jobs were paid in AUSD through XorvEscrow and released on delivery; total spend $0.0020.",
+            "reasoning_content": "Two results bought, both delivered. Answer now and stop spending."
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 2400,
+        "completion_tokens": 60,
+        "total_tokens": 2460
+      }
+    }
+  ]
+}
