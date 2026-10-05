@@ -129,12 +129,11 @@ export interface NetworkInfo {
   operator: {
     address: string;
     url: string;
-    /** Who signs the operator's transactions: a local key, a Privy server wallet, or its labelled mock. */
+    /** Who signs the operator's transactions: the raw key, or a policy-locked Privy server wallet. */
     signer?: {
-      mode: "key" | "privy" | "privy-mock";
+      mode: "key" | "privy";
       description: string;
       policy: { name: string; allows: string[] } | null;
-      refusals: Array<{ at: string; to: string | null; reason: string }>;
     };
   };
   /** Stablecoins the broker accepts, default (AUSD) first. */
@@ -152,8 +151,6 @@ export interface NetworkInfo {
       apass: string | null;
       validator: string | null;
       pool: string | null;
-      /** A local stand-in A-Pass, not Cleanverse's. */
-      mock?: boolean;
     } | null;
   } | null;
   /** XorvRegistry, the contract holding provider reputation. */

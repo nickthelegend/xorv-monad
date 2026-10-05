@@ -21,9 +21,6 @@
 # compliance validator on the local fork only; an unverified buyer is refused,
 # then a verified one pays.
 #
-# SIGNER=privy-mock runs the broker's operator through PRIVY MOCK MODE: every
-# operator transaction is checked against the Privy policy before it is signed.
-#
 # Usage: scripts/e2e-local.sh    |    MODE=fork scripts/e2e-local.sh
 set -euo pipefail
 
@@ -36,7 +33,6 @@ for v in $(env | sed -n 's/^\(XORV_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 MODE=${MODE:-anvil}
-SIGNER=${SIGNER:-key}
 CLEANVERSE=${CLEANVERSE:-0}
 if [ "$CLEANVERSE" = 1 ] && [ "$MODE" != fork ]; then echo "CLEANVERSE=1 needs MODE=fork: the A-Pass is Cleanverse's real contract" >&2; exit 2; fi
 APASS=0xbA82D189540CaC9DC6FF46B6837CaC1BFdEC58B9
@@ -48,7 +44,8 @@ PIDS=()
 cleanup() {
   for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; done
   if [ "${INDEXER:-0}" = 1 ]; then
-    pkill -f "envio start --config config.local.yaml" 2>/dev/null || true
+    # By PID, never by pattern: other sessions run their own envio indexers.
+    for pid in $(lsof -ti tcp:"${ENVIO_INDEXER_PORT:-9871}" -sTCP:LISTEN 2>/dev/null); do kill "$pid" 2>/dev/null || true; done
     docker stop xorv-monad-hasura >/dev/null 2>&1 || true
   fi
   [ "${KEEP:-0}" = 1 ] || rm -rf "$WORK"
@@ -131,7 +128,7 @@ FROM_BLOCK=$(cast block-number --rpc-url "$RPC")
 # ---------------------------------------------------------------------------
 say "starting the broker"
 cd "$ROOT"
-env XORV_NETWORK=$NETWORK XORV_RPC_URL=$RPC XORV_OPERATOR_KEY=$OP_KEY XORV_OPERATOR_ADDRESS= XORV_SIGNER=$SIGNER \
+env XORV_NETWORK=$NETWORK XORV_RPC_URL=$RPC XORV_OPERATOR_KEY=$OP_KEY XORV_OPERATOR_ADDRESS= XORV_SIGNER=key \
   XORV_ESCROW_ADDRESS=$ESCROW XORV_REGISTRY_ADDRESS=$REGISTRY XORV_LOG_ADDRESS=$LOG \
   XORV_LOG_FROM_BLOCK=$FROM_BLOCK XORV_BROKER_PORT=$BROKER_PORT XORV_BROKER_URL=$BROKER \
   XORV_DB="$WORK/broker.db" XORV_MONGO_URI= XORV_DEMO_PAYER_KEY= XORV_CORS_ORIGINS= \
@@ -230,6 +227,11 @@ if (process.env.REGISTRY) {
   const providers = (await (await fetch(`${process.env.BROKER}/api/providers`)).json()).providers;
   check("broker sees the on-chain record", providers[0]?.onchain?.completed === 1, JSON.stringify(providers[0]?.onchain ?? null));
 }
+{
+  // Privy is not configured here, and the broker must say so rather than claim a policy.
+  const signer = (await (await fetch(`${process.env.BROKER}/api/network`)).json()).operator?.signer;
+  check("broker reports its real signer (a local key, no policy)", signer?.mode === "key" && signer?.policy === null, signer?.description);
+}
 if (process.env.GATE) {
   const gate = (await (await fetch(`${process.env.BROKER}/api/network`)).json()).escrow?.identityGate;
   check("broker reports the Cleanverse gate", gate?.address?.toLowerCase() === process.env.GATE.toLowerCase() && gate?.apass?.toLowerCase() === process.env.APASS.toLowerCase());
@@ -242,37 +244,31 @@ console.log(`\nmode=${process.env.MODE}  job=${run.jobId}  fund=${run.settlement
 process.exit(fails ? 1 : 0);
 ' "$WORK/run.json" || { echo; echo "--- broker log ---"; tail -40 "$WORK/broker.log"; echo "--- node log ---"; tail -20 "$WORK/node.log"; exit 1; }
 
-# ---------------------------------------------------------------------------
-# the signer (SIGNER=privy-mock): every operator write above went through the policy
-# ---------------------------------------------------------------------------
-if [ "$SIGNER" = privy-mock ]; then
-  say "operator signer: PRIVY MOCK MODE"
-  curl -sf "$BROKER/api/network" | BROKER_LOG="$WORK/broker.log" node --input-type=module -e '
-import { readFileSync } from "node:fs";
-let s = ""; for await (const d of process.stdin) s += d;
-const signer = JSON.parse(s).operator.signer;
-let fails = 0;
-const check = (label, ok, extra = "") => { console.log(`${ok ? "✓" : "✗"} ${label}${extra ? "  " + extra : ""}`); if (!ok) fails++; };
-check("broker reports the mock signer", signer.mode === "privy-mock", signer.description);
-check("labelled as a mock everywhere", signer.description.startsWith("PRIVY MOCK MODE") && readFileSync(process.env.BROKER_LOG, "utf8").includes("PRIVY MOCK MODE"));
-check("policy allows the escrow, log and registry calls", ["escrow.fund", "escrow.release", "log.append", "registry.registerFor"].every((f) => signer.policy?.allows.some((r) => r.startsWith(f))), `${signer.policy?.allows.length} rules`);
-check("the policy refused nothing the broker needed", signer.refusals.length === 0, JSON.stringify(signer.refusals));
-process.exit(fails ? 1 : 0);
-' || { tail -30 "$WORK/broker.log"; exit 1; }
-fi
 
 # ---------------------------------------------------------------------------
 # the agent (AGENT=1): xorv-agent hires the network through the real MCP server
 # ---------------------------------------------------------------------------
-# Its brain is Kimi or Qwen. With no API key here it runs in FIXTURE MODE: the
-# model's responses are replayed from packages/agent/fixtures (documented API
-# format, labelled "authored" until re-recorded). Everything after the brain is
-# real: the agent binary, the MCP server it spawns, the x402 payment into
-# XorvEscrow, the provider run and the release.
+# Its brain is Kimi or Qwen. With MOONSHOT_API_KEY / DASHSCOPE_API_KEY set in the
+# caller's environment it calls the real API. Without them, this test points the
+# agent at a test-double model server (packages/agent/test/model-server.ts)
+# speaking each API's documented response format. That checks the agent binary,
+# the MCP server it spawns, the x402 payment into XorvEscrow, the provider run
+# and the release, but it is not a model run: the live check needs the keys.
 if [ "${AGENT:-0}" = 1 ]; then
   for BRAIN in kimi qwen; do
-    say "xorv-agent ($BRAIN, FIXTURE MODE) — real MCP + broker + escrow"
-    AGENT_OUT=$(XORV_AGENT_FIXTURE=packages/agent/fixtures/$BRAIN-e2e.json XORV_BROKER_URL=$BROKER \
+    KEYVAR=$([ "$BRAIN" = kimi ] && echo MOONSHOT_API_KEY || echo DASHSCOPE_API_KEY)
+    MODEL_ENV=()
+    if [ -z "${!KEYVAR:-}" ]; then
+      say "xorv-agent ($BRAIN via a test-double model server: no $KEYVAR) — real MCP + broker + escrow"
+      node --experimental-strip-types packages/agent/test/model-server.ts \
+        "packages/agent/test/fixtures/$BRAIN-e2e.json" >"$WORK/model-$BRAIN.log" 2>&1 &
+      PIDS+=($!)
+      for _ in $(seq 1 40); do grep -q "^listening" "$WORK/model-$BRAIN.log" && break; sleep 0.25; done
+      MODEL_ENV=("$KEYVAR=test-double" "XORV_AGENT_BASE_URL=$(sed -n 's/^listening //p' "$WORK/model-$BRAIN.log")")
+    else
+      say "xorv-agent ($BRAIN, live API) — real MCP + broker + escrow"
+    fi
+    AGENT_OUT=$(env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} XORV_BROKER_URL=$BROKER \
       XORV_PAYER_KEY=$PAYER_KEY XORV_RPC_URL=$RPC XORV_NETWORK=$NETWORK \
       node packages/agent/dist/index.js "Greet Monad, and have the greeting checked" --brain $BRAIN --budget 0.01 --json \
       2>"$WORK/agent-$BRAIN.err" || true)
@@ -282,7 +278,7 @@ import { readFileSync } from "node:fs";
 const run = JSON.parse(readFileSync(process.argv[1], "utf8"));
 let fails = 0;
 const check = (label, ok, extra = "") => { console.log(`${ok ? "✓" : "✗"} ${label}${extra ? "  " + extra : ""}`); if (!ok) fails++; };
-check(`${run.brain} brain in fixture mode`, run.brainMode === "fixture", run.model);
+check(`${run.brain} agent ran`, typeof run.model === "string", run.model);
 check("agent answered", run.stoppedBecause === "answered");
 check("agent bought two jobs, both delivered", run.purchases.length === 2 && run.purchases.every((p) => p.ok));
 check("agent spent exactly the prices", run.spentUsdMicros === 2000, `${run.spentUsdMicros} micro-USD`);

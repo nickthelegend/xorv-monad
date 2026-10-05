@@ -237,9 +237,6 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
           <Row label="identity gate" wrap>
             {gate ? (
               <span>
-                {gate.mock ? (
-                  <span className="mr-1.5 rounded border border-warn/40 px-1 py-px text-[10.5px] font-medium text-warn">MOCK A-PASS</span>
-                ) : null}
                 Cleanverse CVI · buyer and provider need an active A-Pass{" "}
                 <Ext href={explorerAddress(gate.address)}>gate ↗</Ext>
                 {gate.apass ? (
@@ -262,13 +259,19 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
         {signer ? (
           <>
             <Row label="operator signer" wrap>
-              <span>
-                {signer.mode === "privy-mock" ? (
-                  <span className="mr-1.5 rounded border border-warn/40 px-1 py-px text-[10.5px] font-medium text-warn">MOCK</span>
-                ) : null}
-                {signer.mode === "key" ? "a local key, unrestricted" : "Privy server wallet, policy-locked"}
-                <span className="block text-[11.5px] text-fg-4">{signer.description}</span>
-              </span>
+              {signer.mode === "privy" ? (
+                <span>
+                  Privy server wallet, policy-locked
+                  <span className="block text-[11.5px] text-fg-4">{signer.description}</span>
+                </span>
+              ) : (
+                <span>
+                  a local key
+                  <span className="block text-[11.5px] text-fg-4">
+                    Privy not configured on this broker: no policy limits what the operator can sign
+                  </span>
+                </span>
+              )}
             </Row>
             {signer.policy ? (
               <Row label="policy allows" wrap>
@@ -277,13 +280,6 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
                   <span className="block text-[11.5px] text-fg-4">
                     on this chain only, zero value; everything else is denied before signing
                   </span>
-                </span>
-              </Row>
-            ) : null}
-            {signer.refusals.length ? (
-              <Row label="refused" wrap>
-                <span className="text-[12px] text-fail">
-                  {signer.refusals.length} transaction{signer.refusals.length === 1 ? "" : "s"} · last: {signer.refusals.at(-1)!.reason}
                 </span>
               </Row>
             ) : null}

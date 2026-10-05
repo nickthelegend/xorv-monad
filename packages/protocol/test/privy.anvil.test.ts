@@ -1,11 +1,13 @@
 /**
- * PRIVY MOCK MODE against the real contracts on a local chain.
+ * `operatorPolicy` against the real contracts on a local chain.
  *
  * The operator here owns the escrow as well as attesting for it, so on chain it
  * could pause it, swap the attester or drain its own MON. The policy is what
- * stops that: the broker's real fund/release path goes through the policy-locked
- * wallet client and lands, and the owner-only call is refused before it is
- * signed. Skipped without anvil or the Foundry build output.
+ * stops that. The broker's real fund/release path goes through the same routed
+ * wallet client the Privy signer uses, with a test sender standing in for
+ * Privy's enclave: it applies the policy by Privy's documented rules, then signs
+ * locally. The owner-only call is refused before it is signed.
+ * Skipped without anvil or the Foundry build output.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer } from "node:net";
@@ -15,7 +17,9 @@ import { createPublicClient, createWalletClient, defineChain, http, keccak256, s
 import { privateKeyToAccount } from "viem/accounts";
 import type { PaymentRequirements } from "@x402/core/types";
 import { ESCROW_SCHEME, EscrowClientScheme, EscrowFacilitatorScheme, escrowJobId, readEscrowJob, releaseEscrow } from "../src/escrow.js";
-import { operatorWallet, PolicyDeniedError, type OperatorWallet, type PolicyVerdict } from "../src/privy.js";
+import { operatorPolicy, routedWalletClient, type TransactionSender } from "../src/privy.js";
+import { writeClient } from "../src/chain.js";
+import { evaluatePolicy, PolicyDeniedError, type PolicyVerdict } from "./policy-engine.js";
 import { XORV_ESCROW_ABI } from "../src/xorv-escrow.abi.js";
 
 const OUT = new URL("../../../contracts/out/", import.meta.url);
@@ -53,13 +57,13 @@ const operator = privateKeyToAccount(OPERATOR_KEY);
 const buyer = privateKeyToAccount("0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
 const provider = "0x90F79bf6EB2c4f870365E785982E1f101E93b906" as Address;
 
-describe.skipIf(!hasAnvil || !hasBuild)("PRIVY MOCK MODE on anvil", () => {
+describe.skipIf(!hasAnvil || !hasBuild)("operator policy on anvil", () => {
   let node: ChildProcess;
   let pub: PublicClient;
   let deployer: WalletClient;
   let token: Address;
   let escrow: Address;
-  let signer: OperatorWallet;
+  let signer: { wallet: WalletClient; address: Address };
   const verdicts: PolicyVerdict[] = [];
   const priorRpc = process.env.XORV_RPC_URL;
 
@@ -87,20 +91,29 @@ describe.skipIf(!hasAnvil || !hasBuild)("PRIVY MOCK MODE on anvil", () => {
     const mint = await deployer.writeContract({ address: token, abi: artifact("MockERC3009").abi, functionName: "mint", args: [buyer.address, 10_000_000n], account: operator, chain });
     await pub.waitForTransactionReceipt({ hash: mint });
 
-    signer = operatorWallet({ mode: "privy-mock" }, { network: NET, escrow, tokens: [token] }, OPERATOR_KEY, {
-      onVerdict: (v) => verdicts.push(v),
-    });
+    // Privy's enclave, as a test double: the policy first, then the signature.
+    const policy = operatorPolicy({ network: NET, escrow, tokens: [token] });
+    const local = writeClient(NET, OPERATOR_KEY);
+    const send: TransactionSender = async (tx) => {
+      const ptx = { chainId: 10143, to: tx.to, value: tx.value ?? "0x0", data: tx.data ?? null };
+      const verdict = evaluatePolicy(policy, "eth_sendTransaction", ptx);
+      verdicts.push(verdict);
+      if (!verdict.allowed) throw new PolicyDeniedError(verdict, ptx);
+      return local.sendTransaction({
+        account: local.account!,
+        chain: local.chain,
+        to: tx.to as Address,
+        data: tx.data,
+        value: tx.value ? BigInt(tx.value) : undefined,
+      });
+    };
+    signer = { wallet: routedWalletClient(NET, operator.address, send), address: operator.address };
   }, 30_000);
 
   afterAll(() => {
     node?.kill();
     if (priorRpc === undefined) delete process.env.XORV_RPC_URL;
     else process.env.XORV_RPC_URL = priorRpc;
-  });
-
-  it("says what it is", () => {
-    expect(signer.address).toBe(operator.address);
-    expect(signer.description).toMatch(/^PRIVY MOCK MODE: policy "xorv-operator-10143" \(6 rules\) enforced locally/);
   });
 
   it("funds and releases a real escrow through the policy-locked wallet", async () => {
@@ -139,7 +152,7 @@ describe.skipIf(!hasAnvil || !hasBuild)("PRIVY MOCK MODE on anvil", () => {
       .then(() => null, (e: unknown) => e);
     // viem wraps it; the policy's refusal is the cause, and its reason is in the message.
     expect(policyRefusal(err)).toBeInstanceOf(PolicyDeniedError);
-    expect(String((err as Error).message)).toMatch(/Privy policy \(mock\) refused a transaction to 0x[0-9a-fA-F]{40}: no rule/);
+    expect(String((err as Error).message)).toMatch(/Policy engine \(test\) refused a transaction to 0x[0-9a-fA-F]{40}: no rule/);
     expect(await paused()).toBe(false);
     expect(await pub.getTransactionCount({ address: operator.address })).toBe(nonce);
 

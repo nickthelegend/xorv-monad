@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { encodeFunctionData, parseAbi, type Hex } from "viem";
+import { evaluatePolicy } from "./policy-engine.js";
 import {
-  evaluatePolicy,
   operatorPolicy,
   privySender,
   signerFromEnv,
@@ -54,7 +54,7 @@ describe("operatorPolicy", () => {
   });
 });
 
-describe("evaluatePolicy (the mock's stand-in for Privy's engine)", () => {
+describe("operatorPolicy under Privy's documented evaluation rules", () => {
   const tx = (to: string, data: Hex | null, extra: { value?: bigint; chainId?: number } = {}) => ({
     chainId: extra.chainId ?? 10143,
     to,
@@ -117,7 +117,7 @@ describe("evaluatePolicy (the mock's stand-in for Privy's engine)", () => {
 describe("signerFromEnv", () => {
   it("defaults to the local key and names every missing Privy value at once", () => {
     expect(signerFromEnv({})).toEqual({ mode: "key" });
-    expect(signerFromEnv({ XORV_SIGNER: "privy-mock" })).toEqual({ mode: "privy-mock" });
+    expect(() => signerFromEnv({ XORV_SIGNER: "privy-mock" })).toThrow(/must be key or privy/);
     expect(() => signerFromEnv({ XORV_SIGNER: "privy", PRIVY_APP_ID: "app" })).toThrow(
       /PRIVY_APP_SECRET, XORV_PRIVY_WALLET_ID, XORV_PRIVY_WALLET_ADDRESS/,
     );

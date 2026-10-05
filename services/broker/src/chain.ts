@@ -76,7 +76,6 @@ export interface ChainLike {
   readonly signerMode?: string;
   readonly signerDescription?: string;
   readonly signerPolicy?: PrivyPolicy | null;
-  readonly policyRefusals?: ReadonlyArray<{ at: string; to: string | null; reason: string }>;
   describeLog(): { address: string; url: string } | null;
   counts(): { registry: number; heartbeat: number; receipts: number };
   lastPublishError(): string | null;
@@ -99,13 +98,11 @@ export class Chain implements ChainLike {
   readonly walletClient: WalletClient;
   readonly network: string;
   readonly operatorAddress: string;
-  /** Who signs: "local key", a Privy server wallet, or PRIVY MOCK MODE. */
+  /** Who signs: the raw key, or a Privy server wallet. */
   readonly signerMode: string;
   readonly signerDescription: string;
   /** The policy the operator runs under, when Privy (or its mock) signs. */
   readonly signerPolicy: PrivyPolicy | null;
-  /** Transactions the policy refused, newest last, for /api/network. */
-  readonly policyRefusals: Array<{ at: string; to: string | null; reason: string }> = [];
   private readonly contract: string | null;
   /** Publish failures, kept for /api/network so a misconfig is visible. */
   private lastError: string | null = null;
@@ -129,14 +126,6 @@ export class Chain implements ChainLike {
         registry: config.registryAddress,
       },
       config.operatorKey,
-      {
-        onVerdict: (v, tx) => {
-          if (v.allowed) return;
-          this.policyRefusals.push({ at: new Date().toISOString(), to: tx.to ?? null, reason: v.reason });
-          if (this.policyRefusals.length > 20) this.policyRefusals.shift();
-          console.warn(`[broker] Privy policy refused a transaction to ${tx.to}: ${v.reason}`);
-        },
-      },
     );
     this.walletClient = op.wallet;
     this.signerMode = signer.mode;

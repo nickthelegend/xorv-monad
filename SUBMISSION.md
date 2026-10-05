@@ -10,6 +10,8 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 
 - **The buyer's money is never at the provider's mercy, or the broker's.** It waits in XorvEscrow. It is released only when a result is delivered, with the result's hash recorded beside the payment. Anyone can refund the buyer after the deadline, and a Chainlink CRE workflow makes sure someone does.
 - **A provider's identity is its track record.** XorvRegistry is written by the escrow in the settling transaction (completed, failed, earned, a Laplace-smoothed score). It can't be claimed or padded, only earned. The matcher ranks on it.
+- **Only verified identities can move money through it.** With Cleanverse CVI on, the escrow funds a job only between A-Pass holders and pays out only to a provider whose A-Pass is still active. A freeze by Cleanverse stops the payout in the same block.
+- **The broker's own key can't go rogue.** Its operator wallet is a Privy server wallet whose policy allows exactly the eight calls the broker makes, on this chain, at zero value, with gas sponsored by Privy.
 - **Agents can spend without being able to overspend.** `xorv-agent` (Kimi or Qwen) hires other models within a budget its runtime enforces, not one it promises to respect.
 
 ## Deployed on Monad testnet (chain 10143)
@@ -26,15 +28,16 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 
 | Bounty | Requirement | How Xorv meets it |
 |---|---|---|
+| **Cleanverse CVI/CVA** (T4) | "Gate CVA asset movement behind on-chain CVI identity verification" | `CleanverseGate` + `XorvEscrow.setIdentityGate`: `fund` requires both parties' A-Pass; `release`/`reassign` require the payee's. It reads Cleanverse's own A-Pass validity (frozen, revoked or expired → no), plus the compliance validator once a pool is registered. Tested against the **real** A-Pass and validator on a Monad testnet fork. CVA (aUSDC) escrow needs Cleanverse to recognise the escrow; see [SPONSOR-GAP](docs/SPONSOR-GAP.md). |
+| **Privy** (All) | "Beyond authentication"; multiple features | The broker's operator is a Privy **server wallet** under a **policy** that allows only its eight calls, with **native gas sponsorship** on Monad testnet. `privy:setup` creates both. |
 | **Alibaba Qwen** (T4) | "Push Qwen into genuinely agentic territory on Monad" | `xorv-agent --brain qwen`. Qwen 3.8 Max with thinking and tool calling is an autonomous buyer: it reads the live market, prices subtasks, picks which model to hire and whether a second opinion is worth paying for. It pays each job in AUSD on Monad via x402 into XorvEscrow, and stays inside a budget enforced in code. Providers can also **sell** Qwen capacity through the `qwen` adapter. |
 | **Kimi** (All) | "Genuinely powered by Kimi, not bolted on" | Kimi k2.6 is the agent's default brain: the same autonomous buyer as above, threading `reasoning_content` between turns. Providers can sell Kimi capacity through the `kimi` adapter. |
 | **Chainlink CRE** (All) | "A CRE workflow as an orchestration layer"; simulation accepted | `cre/refund-keeper`: cron → HTTP with DON consensus (the Envio index) → EVM read on Monad (`isRefundable`) → DON-signed report → KeystoneForwarder → `XorvRefundKeeper.onReport` → `XorvEscrow.refund`. It orchestrates the refund guarantee off the broker. The receiver is a real contract with 6 tests. |
 | **Envio** (All) | HyperIndex/HyperSync powering a core feature; derived/aggregated entities | `indexer/`: Job (full lifecycle, seconds to settle), Provider (registry score, heartbeats, earnings), Buyer, Receipt (linked to its job), DailyStat and Network aggregates across three contracts. It is load-bearing because Monad's public RPC serves only 100 blocks per `eth_getLogs`, and the CRE workflow reads its expired-jobs query. |
 
-**Considered and not claimed** (they don't truly fit, or need access we don't have yet):
-- Cleanverse CVI/CVA: docs access pending.
-- Privy beyond login, Alchemy Gas Manager: possible later.
-- Mera, Nansen, MetaMask (T1), Kuru and Perpl (T1): not this product.
+**Not claimed:** Agora (T1/T2 only, needs Mera), Mera, Dynamic, Nansen, MetaMask, Kuru, Perpl, Aurora (not this product), Alchemy (overlaps Privy sponsorship).
+
+**Status:** every bounty above is built and tested **locally**. Nothing is deployed yet. [docs/SPONSOR-GAP.md](docs/SPONSOR-GAP.md) lists each one's evidence, its labelled mock or fixture mode, and the one key or account its live run needs.
 
 ## Demo script (≤ 3 minutes)
 
@@ -45,6 +48,8 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 | 0:35 | App: prompt → quote | "A buyer asks for a quote. The broker answers with HTTP 402 and the terms: the price, the provider, and that the AUSD goes into XorvEscrow, refundable if the job fails." |
 | 0:55 | Pay → job streams → released | "One signature, no MON. The escrow is funded, the provider's machine runs the job, and the release pays them and writes their reputation in the same transaction." |
 | 1:25 | Monadscan: fund and release txs | "Every step is on chain." |
+| 1:25 | App → Network: Identity and signing | "Two more locks. Only Cleanverse A-Pass holders can fund or be paid by this escrow. And the broker's own wallet is a Privy server wallet whose policy allows eight calls and nothing else, with Privy paying the gas." |
+| 1:35 | Cleanverse freezes the provider → release reverts | "If Cleanverse freezes a provider mid-job, the payout stops at the escrow. Unfreeze it, and it goes through." |
 | 1:40 | `xorv-agent --brain qwen` | "Now an agent. Qwen gets a goal and a 30-cent budget. It reads the market, hires Codex to write the code and Kimi to review it, and pays each one through the escrow. The budget is enforced by its runtime, not by trusting the model." |
 | 2:20 | Envio GraphQL / app history | "Monad's RPC gives 100 blocks per log query, so history comes from Envio HyperIndex: every job, every provider's score, daily totals." |
 | 2:35 | CRE simulate → refund tx | "And if the broker vanishes, a Chainlink CRE workflow finds expired jobs and refunds the buyers on chain." |

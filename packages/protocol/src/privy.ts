@@ -21,11 +21,9 @@
  *                            gas yourself; PRIVY_AUTHORIZATION_KEY if the wallet
  *                            has an owner. `pnpm --filter @xorv/broker privy:setup`
  *                            creates the policy and the wallet.
- *   XORV_SIGNER=privy-mock   PRIVY MOCK MODE, for running without a Privy app. The
- *                            same policy JSON is evaluated locally, by the documented
- *                            rules (all conditions in a rule must hold; any DENY wins;
- *                            no matching rule is a DENY), and an allowed transaction
- *                            is signed with XORV_OPERATOR_KEY. Nothing is sponsored.
+ *
+ * There is no stand-in: without the Privy keys the broker signs with the raw key
+ * and says so (`/api/network` → operator.signer.mode "key").
  */
 import {
   type Abi,
@@ -36,7 +34,7 @@ import {
   type WalletClient,
   createWalletClient,
   custom,
-  decodeFunctionData,
+
   getAddress,
   http,
   parseAbi,
@@ -47,7 +45,7 @@ import { XORV_ESCROW_ABI } from "./xorv-escrow.abi.js";
 import { XORV_LOG_ABI } from "./xorv-log.abi.js";
 import { XORV_REGISTRY_ABI } from "./registry.js";
 
-export type SignerMode = "key" | "privy" | "privy-mock";
+export type SignerMode = "key" | "privy";
 
 export interface PrivySignerEnv {
   appId: string;
@@ -67,14 +65,14 @@ export interface OperatorSigner {
 /** Which signer the environment asks for, with every missing value named at once. */
 export function signerFromEnv(env: NodeJS.ProcessEnv = process.env): OperatorSigner {
   const mode = (env.XORV_SIGNER?.trim() || "key") as SignerMode;
-  if (mode === "key" || mode === "privy-mock") return { mode };
-  if (mode !== "privy") throw new Error(`XORV_SIGNER must be key, privy or privy-mock, got "${mode}"`);
+  if (mode === "key") return { mode };
+  if (mode !== "privy") throw new Error(`XORV_SIGNER must be key or privy, got "${mode}"`);
   const need = ["PRIVY_APP_ID", "PRIVY_APP_SECRET", "XORV_PRIVY_WALLET_ID", "XORV_PRIVY_WALLET_ADDRESS"];
   const missing = need.filter((k) => !env[k]?.trim());
   if (missing.length) {
     throw new Error(
       `XORV_SIGNER=privy needs ${missing.join(", ")}. Create the app at dashboard.privy.io, then run ` +
-        "`pnpm --filter @xorv/broker privy:setup` for the wallet. XORV_SIGNER=privy-mock runs without one.",
+        "`pnpm --filter @xorv/broker privy:setup` for the wallet.",
     );
   }
   return {
@@ -177,82 +175,6 @@ export function operatorPolicy(c: OperatorContracts): PrivyPolicy {
   };
 }
 
-/* ─────────────────────── the mock: the same policy, evaluated here ─────────────────────── */
-
-export interface PolicyTx {
-  chainId: number;
-  to: string | null | undefined;
-  value?: bigint | string | null;
-  data?: Hex | null;
-}
-
-export type PolicyVerdict = { allowed: true; rule: string } | { allowed: false; reason: string };
-
-function asBig(v: unknown): bigint | null {
-  if (typeof v === "bigint") return v;
-  if (typeof v === "number" && Number.isInteger(v)) return BigInt(v);
-  if (typeof v === "string" && /^(0x[0-9a-fA-F]+|\d+)$/.test(v)) return BigInt(v);
-  return null;
-}
-
-function compare(actual: unknown, operator: PolicyCondition["operator"], expected: string | string[]): boolean {
-  if (actual === undefined || actual === null) return false;
-  if (operator === "in") {
-    return (Array.isArray(expected) ? expected : [expected]).some((e) => compare(actual, "eq", e));
-  }
-  if (Array.isArray(expected)) return false;
-  const a = asBig(actual);
-  const e = asBig(expected);
-  if (a !== null && e !== null && !(typeof actual === "string" && actual.length === 42)) {
-    switch (operator) {
-      case "eq": return a === e;
-      case "gt": return a > e;
-      case "gte": return a >= e;
-      case "lt": return a < e;
-      case "lte": return a <= e;
-    }
-  }
-  // Addresses and names: equality only, case-insensitive for hex.
-  return operator === "eq" && String(actual).toLowerCase() === expected.toLowerCase();
-}
-
-function conditionHolds(c: PolicyCondition, tx: PolicyTx): boolean {
-  if (c.field_source === "ethereum_transaction") {
-    const actual = c.field === "chain_id" ? tx.chainId : c.field === "to" ? tx.to : c.field === "value" ? (tx.value ?? 0n) : undefined;
-    return compare(actual, c.operator, c.value);
-  }
-  if (!tx.data || !c.abi) return false;
-  let decoded: { functionName: string; args: readonly unknown[] };
-  try {
-    decoded = decodeFunctionData({ abi: c.abi, data: tx.data }) as typeof decoded;
-  } catch {
-    return false; // calldata this ABI doesn't describe can't satisfy it
-  }
-  if (c.field === "function_name") return compare(decoded.functionName, c.operator, c.value);
-  const [fn, param] = c.field.split(".");
-  if (fn !== decoded.functionName || !param) return false;
-  const inputs = (c.abi.find((i) => i.type === "function" && i.name === fn) as AbiFunction | undefined)?.inputs ?? [];
-  const at = inputs.findIndex((i) => i.name === param);
-  return at >= 0 && compare(decoded.args[at], c.operator, c.value);
-}
-
-/** Privy's documented evaluation: ANDed conditions, any DENY wins, no match is a DENY. */
-export function evaluatePolicy(policy: PrivyPolicy, method: PolicyRule["method"], tx: PolicyTx): PolicyVerdict {
-  const matched = policy.rules.filter((r) => r.method === method && r.conditions.every((c) => conditionHolds(c, tx)));
-  const deny = matched.find((r) => r.action === "DENY");
-  if (deny) return { allowed: false, reason: `denied by rule "${deny.name}"` };
-  const allow = matched.find((r) => r.action === "ALLOW");
-  if (allow) return { allowed: true, rule: allow.name };
-  return { allowed: false, reason: `no rule in policy "${policy.name}" allows it` };
-}
-
-export class PolicyDeniedError extends Error {
-  constructor(readonly verdict: Extract<PolicyVerdict, { allowed: false }>, readonly tx: PolicyTx) {
-    super(`Privy policy (mock) refused a transaction to ${tx.to ?? "nowhere"}: ${verdict.reason}`);
-    this.name = "PolicyDeniedError";
-  }
-}
-
 /* ────────────────────────── the wallet client ────────────────────────── */
 
 interface RpcTx {
@@ -280,26 +202,6 @@ export function routedWalletClient(network: string, address: Address, send: Tran
     return node.request({ method, params } as never);
   }) as EIP1193RequestFn;
   return createWalletClient({ account: address, chain: evmChain(network), transport: custom({ request }) });
-}
-
-/** PRIVY MOCK MODE: check the policy here, then sign with the local key. */
-export function mockPrivySender(network: string, rawKey: string, policy: PrivyPolicy, onVerdict?: (v: PolicyVerdict, tx: PolicyTx) => void): TransactionSender {
-  const local = writeClient(network, rawKey);
-  const chainId = chainIdFor(network);
-  return async (tx) => {
-    const ptx: PolicyTx = { chainId, to: tx.to, value: tx.value ?? "0x0", data: tx.data ?? null };
-    const verdict = evaluatePolicy(policy, "eth_sendTransaction", ptx);
-    onVerdict?.(verdict, ptx);
-    if (!verdict.allowed) throw new PolicyDeniedError(verdict, ptx);
-    return local.sendTransaction({
-      account: local.account!,
-      chain: local.chain,
-      to: tx.to as Address,
-      data: tx.data,
-      value: tx.value ? BigInt(tx.value) : undefined,
-      gas: tx.gas ? BigInt(tx.gas) : undefined,
-    });
-  };
 }
 
 /** The slice of `@privy-io/node` the sender uses, so tests can stand in for it. */
@@ -378,23 +280,14 @@ export function operatorWallet(
   signer: OperatorSigner,
   contracts: OperatorContracts,
   rawKey: string,
-  hooks: { onVerdict?: (v: PolicyVerdict, tx: PolicyTx) => void; api?: PrivyApi } = {},
+  hooks: { api?: PrivyApi } = {},
 ): OperatorWallet {
   const { network } = contracts;
   if (signer.mode === "key") {
     const wallet = writeClient(network, rawKey);
-    return { wallet, address: wallet.account!.address, description: "local key", policy: null };
+    return { wallet, address: wallet.account!.address, description: "a local key, unrestricted (Privy not configured)", policy: null };
   }
   const policy = operatorPolicy(contracts);
-  if (signer.mode === "privy-mock") {
-    const address = writeClient(network, rawKey).account!.address;
-    return {
-      wallet: routedWalletClient(network, address, mockPrivySender(network, rawKey, policy, hooks.onVerdict)),
-      address,
-      description: `PRIVY MOCK MODE: policy "${policy.name}" (${policy.rules.length} rules) enforced locally, signed with the local key, gas not sponsored`,
-      policy,
-    };
-  }
   const env = signer.privy!;
   return {
     wallet: routedWalletClient(network, env.walletAddress, privySender(network, env, hooks.api ?? (() => privyApi(env)))),

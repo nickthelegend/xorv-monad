@@ -56,8 +56,9 @@ Everything below runs offline unless noted.
 git clone --recursive https://github.com/nickthelegend/xorv-monad && cd xorv-monad
 pnpm install && pnpm build && pnpm test            # 418 TypeScript tests (protocol, broker, CLI, MCP, agent, app)
 
-cd contracts && forge test                         # 109 Solidity tests: unit, fuzz, 4 invariants, registry, keeper
-FORK_TESTS=1 forge test --match-contract Fork      # vs the REAL AUSD + USDC on a Monad testnet fork (network)
+cd contracts && forge test                         # 125 Solidity tests: unit, fuzz, 4 invariants, registry, keeper, Cleanverse gate
+FORK_TESTS=1 forge test --match-contract Fork      # vs the REAL AUSD, USDC and Cleanverse A-Pass on a Monad testnet fork (network)
+cd ../cre/refund-keeper && bun test                # the CRE workflow under the SDK's own test runtime
 cd ../indexer && pnpm install --ignore-workspace && pnpm codegen && pnpm test   # Envio: full job lifecycles
 ```
 
@@ -66,14 +67,20 @@ And the whole product, end to end, with real processes against real contracts:
 ```bash
 MODE=anvil scripts/e2e-local.sh          # fresh chain: escrow → registry reputation, through the real broker
 MODE=fork  scripts/e2e-local.sh          # Monad testnet fork, paying in the real Agora AUSD from Agora's faucet
-AGENT=1    scripts/e2e-local.sh          # + xorv-agent buying a job through the MCP server
+AGENT=1    scripts/e2e-local.sh          # + xorv-agent (Kimi and Qwen, FIXTURE MODE) buying jobs through the MCP server
+INDEXER=1  scripts/e2e-local.sh          # + the Envio indexer, checked against the chain
+SIGNER=privy-mock scripts/e2e-local.sh   # the operator signs through Privy's policy (PRIVY MOCK MODE)
+MODE=fork CLEANVERSE=1 scripts/e2e-local.sh   # escrow gated by Cleanverse's real A-Pass
 ```
 
 | Proof | Result |
 |---|---|
 | `MODE=anvil` — broker + provider node + `xorv run` | **13/13**: paid through escrow, released with the result hash, provider got exactly the price, **buyer spent 0 MON**, registry `completed = 1`, `earned = price` |
 | `MODE=fork` — the same against **real AUSD** on Monad testnet | **13/13** |
-| `AGENT=1` — `xorv-agent` → MCP → broker → escrow | **5/5**: bought one job, spent exactly the price, stayed in budget, on-chain proof attached |
+| `AGENT=1` — `xorv-agent` → MCP → broker → escrow, Kimi and Qwen | **6/6 each**: two jobs bought, spent exactly the prices, stayed in budget, on-chain proof attached |
+| `INDEXER=1` — Envio over the same chain | **8/8**: jobs, releases, provider score and earnings in the index match the chain |
+| `SIGNER=privy-mock` — every operator write through the Privy policy | **17/17**: fund, release, sponsored registration and audit log all allowed; nothing refused |
+| `MODE=fork CLEANVERSE=1` — Cleanverse's real A-Pass gating the escrow | **18/18**: a buyer without an A-Pass is refused with nothing moved, then pays once issued one |
 | Fork tests — escrow + registry vs the real tokens | fund → release → reputation on **AUSD** and **USDC** (Monad testnet) |
 
 ### Status, stated plainly
@@ -83,9 +90,11 @@ AGENT=1    scripts/e2e-local.sh          # + xorv-agent buying a job through the
 | ✅ Contracts written and tested; deploy + Sourcify verification scripted | `scripts/deploy-testnet.sh monad-testnet` |
 | ✅ Escrow in every payment path — broker, `xorv run`, MCP, agent, browser wallet, demo route | 418 TS tests |
 | ✅ End to end locally, including the real AUSD contract on a Monad fork | the table above |
-| ✅ Envio indexer, CRE workflow (compiles to WASM), Kimi/Qwen adapters and agent | `indexer/`, `cre/`, `packages/agent` |
-| ⏳ **Contracts on Monad testnet** | awaiting testnet MON for the deployer — addresses go here and in [`deployments/`](deployments) |
-| ⏳ Hosted broker, app, indexer; CRE simulation on testnet; live Kimi/Qwen runs | need the deployment and API keys |
+| ✅ Envio indexer, CRE workflow (compiles to WASM, tested on the SDK runtime), Kimi/Qwen adapters and agent | `indexer/`, `cre/`, `packages/agent` |
+| ✅ Cleanverse CVI gate on the escrow, proven against the real A-Pass on a fork | `contracts/src/CleanverseGate.sol` |
+| ✅ Operator as a policy-locked, gas-sponsored Privy server wallet (mock mode until keys) | `packages/protocol/src/privy.ts` |
+| ⏸ **Not deployed yet**, by choice: everything runs locally for now | `scripts/deploy-testnet.sh monad-testnet` when it's time |
+| ⏳ Live runs that need a key or account: Kimi, Qwen, Privy, `cre login`, Envio Cloud, Cleanverse A-Passes | [docs/SPONSOR-GAP.md](docs/SPONSOR-GAP.md) |
 
 ---
 
