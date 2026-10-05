@@ -1,11 +1,11 @@
 /**
- * Reading and writing XorvRegistry — the Stylus (Rust) contract that holds
+ * Reading and writing XorvRegistry — the Solidity contract that holds
  * each provider's on-chain reputation.
  *
  * The escrow writes outcomes into it inside every release, refund and
  * reassign, so a provider's record cannot be claimed, only earned. The broker
  * reads it back to rank providers, and sponsors each provider's registration
- * so a provider never needs ETH.
+ * so a provider never needs MON.
  *
  * The ABI below is IXorvRegistry (contracts/src/interfaces/IXorvRegistry.sol),
  * which `cargo stylus export-abi` matches selector for selector.

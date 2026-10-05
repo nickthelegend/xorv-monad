@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   USD_MICROS,
-  formatEth,
+  formatGas,
   formatUnits,
   formatUsd,
   parseUsd,
@@ -74,14 +74,14 @@ describe("stablecoin unit conversion", () => {
   });
 });
 
-describe("formatEth", () => {
+describe("formatGas", () => {
   it("renders the operator's gas balance at six decimals", () => {
-    expect(formatEth(1_250_000_000_000_000_000n)).toBe("1.250000 ETH");
-    expect(formatEth(4_281_188_000_000n)).toBe("0.000004 ETH");
-    expect(formatEth("0")).toBe("0 ETH");
+    expect(formatGas(1_250_000_000_000_000_000n)).toBe("1.250000 MON");
+    expect(formatGas(4_281_188_000_000n)).toBe("0.000004 MON");
+    expect(formatGas("0")).toBe("0 MON");
   });
 
   it("does not render dust as zero", () => {
-    expect(formatEth(999_999_999_999n)).toBe("<0.000001 ETH");
+    expect(formatGas(999_999_999_999n)).toBe("<0.000001 MON");
   });
 });

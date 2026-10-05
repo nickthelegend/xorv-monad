@@ -7,7 +7,7 @@
  *     of calling out to a hosted one. That matters beyond independence: the
  *     facilitator is the party that broadcasts, so running it ourselves is what
  *     lets a job poster hold nothing but a stablecoin and still transact. They
- *     sign an authorization; Xorv submits it and pays the ETH gas.
+ *     sign an authorization; Xorv submits it and pays the MON gas.
  *
  *  2. `paymentOptionsFor` — the `accepts` array a 402 offers, one option per
  *     configured stablecoin — and, for buyers, `choosePaymentAsset` /
@@ -19,9 +19,9 @@
  *
  * On Hedera the buyer built a native protobuf `TransferTransaction`, signed it,
  * and handed over a *partially signed transaction* for the facilitator to
- * counter-sign as fee payer. On Arbitrum the buyer signs an **EIP-3009
+ * counter-sign as fee payer. On Monad the buyer signs an **EIP-3009
  * authorization** — an EIP-712 typed-data message, not a transaction — and the
- * facilitator calls `transferWithAuthorization` on the USDG (or USDC) contract.
+ * facilitator calls `transferWithAuthorization` on the AUSD (or USDC) contract.
  * The buyer's bytes are never a transaction and never touch the mempool.
  *
  * Both end in the same place: the buyer needs no gas token, and the money moves
@@ -59,7 +59,7 @@ import { usdMicrosToUnits } from "./money.js";
 
 /**
  * A hosted x402 facilitator, kept as a named fallback so switching is a
- * one-word config change. The public facilitator does not know USDG, which is
+ * one-word config change. The public facilitator does not know AUSD, which is
  * part of why Xorv runs its own.
  */
 export const PUBLIC_FACILITATOR_URL = "https://x402.org/facilitator";
@@ -92,7 +92,7 @@ export function facilitatorSigner(opts: {
 }
 
 /**
- * An in-process facilitator backed by the operator's own account (which holds the ETH for gas).
+ * An in-process facilitator backed by the operator's own account (which holds the MON for gas).
  *
  * `x402Facilitator` implements the same `FacilitatorClient` surface the HTTP
  * client does, so the resource server cannot tell the difference — which is the
@@ -206,8 +206,8 @@ export function buildFacilitator(opts: {
  * The `accepts` array for a priced resource: one option per stablecoin.
  *
  * Every option carries the same amount — all of them are 6-decimal dollar
- * stablecoins — and they are ordered as configured, USDG first. A stock x402
- * client pays the first option it supports, so USDG is the default and USDC is
+ * stablecoins — and they are ordered as configured, AUSD first. A stock x402
+ * client pays the first option it supports, so AUSD is the default and USDC is
  * there for a buyer who holds only that.
  *
  * `payTo` is a resolver rather than a fixed string because Xorv pays the
@@ -248,7 +248,7 @@ export function paymentOptionsFor(opts: {
 /**
  * The symbol of the asset a settled payment used, for display and receipts.
  *
- * "USDG" or "USDC" for a configured token; a token the table doesn't know
+ * "AUSD" or "USDC" for a configured token; a token the table doesn't know
  * reads as "stablecoin" rather than being mislabelled as either.
  */
 export function assetSymbol(network: string, assetId: string): string {
@@ -269,7 +269,7 @@ export interface AssetOption {
  *   is offered at all — the buyer asked for it; an unfunded choice fails at
  *   verification with a clear reason rather than being silently swapped.
  * - Otherwise the first offered option the buyer can afford, in the broker's
- *   order (USDG first).
+ *   order (AUSD first).
  * - Otherwise the first option, so the payment fails with the facilitator's
  *   "insufficient funds" rather than this function inventing an error.
  *

@@ -161,12 +161,12 @@ export interface LogEntry {
  * failure is invisible exactly where it is least affordable. So reads are
  * always chunked.
  *
- * 10,000 blocks is a range the public Arbitrum endpoints and most hosted
- * providers accept. Arbitrum produces a block roughly every 0.25s, so it is
- * only ~40 minutes of chain time — hence the higher window ceiling below, and
- * `XORV_LOG_WINDOW_BLOCKS` to widen (or narrow) it for a given RPC.
+ * Monad's public RPC accepts at most 100 blocks per `eth_getLogs` (about 40
+ * seconds of chain at 0.4s blocks), so that is the default window. A paid RPC
+ * (Alchemy, QuickNode) accepts far more: widen it with `XORV_LOG_WINDOW_BLOCKS`.
+ * Deep history is not read this way at all — it comes from the Envio indexer.
  */
-const LOG_WINDOW_BLOCKS = 10_000n;
+const LOG_WINDOW_BLOCKS = 100n;
 
 /**
  * The `eth_getLogs` window in blocks: `XORV_LOG_WINDOW_BLOCKS`, or the default.
@@ -182,7 +182,7 @@ export function logWindowBlocks(): bigint {
 
 /**
  * Ceiling on windows walked per backwards read, so a cold chain can't hang a
- * request. 120 × 10,000 blocks is about 3.5 days of Arbitrum at 0.25s blocks;
+ * request. 120 × 100 blocks is about 80 minutes of Monad at 0.4s blocks;
  * `XORV_LOG_MAX_WINDOWS` overrides it.
  */
 function maxWindows(): number {

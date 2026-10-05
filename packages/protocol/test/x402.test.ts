@@ -11,39 +11,41 @@ import {
   onlyAssetPolicy,
   paymentOptionsFor,
 } from "../src/x402.js";
-import { ARBITRUM_SEPOLIA_CAIP2, ROBINHOOD_TESTNET_CAIP2 } from "../src/constants.js";
+import { ANVIL_CAIP2, MONAD_TESTNET_CAIP2 } from "../src/constants.js";
 import { sha256, newId, formatDuration, formatAgo } from "../src/index.js";
 import { envelope } from "../src/log.js";
 
 const PROVIDER = "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B";
-const USDG = "0xFFC95faa3d63Cde504a05B567C600B78C0b41892";
-const USDC = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
+const AUSD = "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC";
+const USDC = "0x534b2f3A21130d7a60830c2Df862319e593943A3";
 
 type Priced = { asset: string; amount: string; extra?: Record<string, unknown> };
 
 describe("paymentOptionsFor", () => {
-  it("offers one option per configured stablecoin, USDG first", () => {
+  it("offers one option per configured stablecoin, AUSD first", () => {
     const options = paymentOptionsFor({
-      network: ARBITRUM_SEPOLIA_CAIP2,
+      network: MONAD_TESTNET_CAIP2,
       priceUsdMicros: 10_000,
       payTo: PROVIDER,
     });
-    expect(options.map((o) => (o.price as Priced).asset)).toEqual([USDG, USDC]);
+    expect(options.map((o) => (o.price as Priced).asset)).toEqual([AUSD, USDC]);
   });
 
-  it("offers only USDG where USDG is all there is", () => {
+  it("offers only the one token where one is all there is", () => {
+    process.env.XORV_STABLECOIN = "0x1111111111111111111111111111111111111111";
     const options = paymentOptionsFor({
-      network: ROBINHOOD_TESTNET_CAIP2,
+      network: ANVIL_CAIP2,
       priceUsdMicros: 10_000,
       payTo: PROVIDER,
     });
+    delete process.env.XORV_STABLECOIN;
     expect(options).toHaveLength(1);
   });
 
   it("quotes the same 6-decimal amount on every row", () => {
     // $0.01 is 10000 units of either stablecoin.
     const options = paymentOptionsFor({
-      network: ARBITRUM_SEPOLIA_CAIP2,
+      network: MONAD_TESTNET_CAIP2,
       priceUsdMicros: 10_000,
       payTo: PROVIDER,
     });
@@ -53,20 +55,20 @@ describe("paymentOptionsFor", () => {
   it("carries each token's own EIP-712 domain", () => {
     // Not decorative: an EIP-3009 signature is made against
     // (name, version, chainId, verifyingContract), and x402 does not fill the
-    // domain in for tokens outside its own registry. USDG has no version() to
-    // read, so the table is the only source.
-    const [usdg, usdc] = paymentOptionsFor({
-      network: ARBITRUM_SEPOLIA_CAIP2,
+    // domain in for tokens outside its own registry. AUSD signs under
+    // "Agora Dollar", not its name(), so the table is the only source.
+    const [ausd, usdc] = paymentOptionsFor({
+      network: MONAD_TESTNET_CAIP2,
       priceUsdMicros: 1_000,
       payTo: PROVIDER,
     });
-    expect((usdg!.price as Priced).extra).toEqual({ name: "Global Dollar", version: "1" });
-    expect((usdc!.price as Priced).extra).toEqual({ name: "USD Coin", version: "2" });
+    expect((ausd!.price as Priced).extra).toEqual({ name: "Agora Dollar", version: "1" });
+    expect((usdc!.price as Priced).extra).toEqual({ name: "USDC", version: "2" });
   });
 
   it("pays the provider, never the broker", () => {
     const options = paymentOptionsFor({
-      network: ARBITRUM_SEPOLIA_CAIP2,
+      network: MONAD_TESTNET_CAIP2,
       priceUsdMicros: 1_000,
       payTo: PROVIDER,
     });
@@ -75,13 +77,13 @@ describe("paymentOptionsFor", () => {
 
   it("uses the exact scheme and the requested network on every row", () => {
     const options = paymentOptionsFor({
-      network: ARBITRUM_SEPOLIA_CAIP2,
+      network: MONAD_TESTNET_CAIP2,
       priceUsdMicros: 1_000,
       payTo: PROVIDER,
     });
     for (const option of options) {
       expect(option.scheme).toBe("exact");
-      expect(option.network).toBe(ARBITRUM_SEPOLIA_CAIP2);
+      expect(option.network).toBe(MONAD_TESTNET_CAIP2);
       expect(option.maxTimeoutSeconds).toBeGreaterThan(0);
     }
   });
@@ -89,34 +91,34 @@ describe("paymentOptionsFor", () => {
 
 describe("assetSymbol", () => {
   it("names configured tokens and nothing else", () => {
-    expect(assetSymbol(ARBITRUM_SEPOLIA_CAIP2, USDG)).toBe("USDG");
-    expect(assetSymbol(ARBITRUM_SEPOLIA_CAIP2, USDC.toLowerCase())).toBe("USDC");
-    expect(assetSymbol(ARBITRUM_SEPOLIA_CAIP2, PROVIDER)).toBe("stablecoin");
+    expect(assetSymbol(MONAD_TESTNET_CAIP2, AUSD)).toBe("AUSD");
+    expect(assetSymbol(MONAD_TESTNET_CAIP2, USDC.toLowerCase())).toBe("USDC");
+    expect(assetSymbol(MONAD_TESTNET_CAIP2, PROVIDER)).toBe("stablecoin");
   });
 });
 
 describe("choosePaymentAsset", () => {
   const accepts = [
-    { asset: USDG, amount: "1000", symbol: "USDG" },
+    { asset: AUSD, amount: "1000", symbol: "AUSD" },
     { asset: USDC, amount: "1000", symbol: "USDC" },
   ];
 
   it("takes the first option when balances are unknown", () => {
-    expect(choosePaymentAsset(accepts)!.symbol).toBe("USDG");
+    expect(choosePaymentAsset(accepts)!.symbol).toBe("AUSD");
   });
 
   it("skips a stablecoin the buyer can't afford", () => {
     const chosen = choosePaymentAsset(accepts, {
-      balances: { [USDG.toLowerCase()]: "999", [USDC.toLowerCase()]: "5000" },
+      balances: { [AUSD.toLowerCase()]: "999", [USDC.toLowerCase()]: "5000" },
     });
     expect(chosen!.symbol).toBe("USDC");
   });
 
   it("falls back to the first option when nothing is affordable", () => {
     const chosen = choosePaymentAsset(accepts, {
-      balances: { [USDG.toLowerCase()]: "0", [USDC.toLowerCase()]: "0" },
+      balances: { [AUSD.toLowerCase()]: "0", [USDC.toLowerCase()]: "0" },
     });
-    expect(chosen!.symbol).toBe("USDG");
+    expect(chosen!.symbol).toBe("AUSD");
   });
 
   it("honours an explicit choice by symbol or address, and refuses one not offered", () => {
@@ -128,12 +130,12 @@ describe("choosePaymentAsset", () => {
 
 describe("onlyAssetPolicy", () => {
   it("narrows requirements to the chosen asset", () => {
-    const reqs = [{ asset: USDG }, { asset: USDC }];
+    const reqs = [{ asset: AUSD }, { asset: USDC }];
     expect(onlyAssetPolicy(USDC.toLowerCase())(2, reqs)).toEqual([{ asset: USDC }]);
   });
 
   it("never empties the list, which would fail a payable request", () => {
-    const reqs = [{ asset: USDG }];
+    const reqs = [{ asset: AUSD }];
     expect(onlyAssetPolicy(USDC)(2, reqs)).toEqual(reqs);
   });
 });
@@ -177,7 +179,7 @@ describe("audit envelope size", () => {
       providerId: "prv_1LanKLZA8vhK",
       providerAddress: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",
       payer: "0x03294Ce27e218d1611B2ebc0b0ffdDb95F129F36",
-      asset: USDG,
+      asset: AUSD,
       amount: "10000",
       transactionHash: `0x${"a".repeat(64)}`,
       resultHash: "0".repeat(64),

@@ -23,10 +23,9 @@ import {
   shortAddress,
 } from "../src/chain.js";
 import {
-  ARBITRUM_ONE_CAIP2,
-  ARBITRUM_SEPOLIA_CAIP2,
-  ARBITRUM_SEPOLIA_CHAIN_ID,
-  ROBINHOOD_TESTNET_CAIP2,
+  MONAD_MAINNET_CAIP2,
+  MONAD_TESTNET_CAIP2,
+  MONAD_TESTNET_CHAIN_ID,
 } from "../src/constants.js";
 
 // A throwaway key with no funds on any network, used only to check parsing and
@@ -92,26 +91,23 @@ describe("address handling", () => {
 
 describe("evmChain", () => {
   it("derives the EVM chain id from the CAIP-2 network", () => {
-    expect(evmChain(ARBITRUM_SEPOLIA_CAIP2).id).toBe(ARBITRUM_SEPOLIA_CHAIN_ID);
-    expect(evmChain(ROBINHOOD_TESTNET_CAIP2).id).toBe(46630);
-    expect(evmChain(ARBITRUM_ONE_CAIP2).id).toBe(42161);
+    expect(evmChain(MONAD_TESTNET_CAIP2).id).toBe(MONAD_TESTNET_CHAIN_ID);
+    expect(evmChain(MONAD_MAINNET_CAIP2).id).toBe(143);
   });
 
-  it("meters gas in ETH on every network", () => {
-    for (const network of [ARBITRUM_SEPOLIA_CAIP2, ROBINHOOD_TESTNET_CAIP2, ARBITRUM_ONE_CAIP2]) {
-      expect(evmChain(network).nativeCurrency).toMatchObject({ symbol: "ETH", decimals: 18 });
+  it("meters gas in MON on every network", () => {
+    for (const network of [MONAD_TESTNET_CAIP2, MONAD_MAINNET_CAIP2]) {
+      expect(evmChain(network).nativeCurrency).toMatchObject({ symbol: "MON", decimals: 18 });
     }
   });
 
   it("names the explorer per network", () => {
-    expect(evmChain(ARBITRUM_SEPOLIA_CAIP2).blockExplorers?.default.name).toBe("Arbiscan");
-    expect(evmChain(ROBINHOOD_TESTNET_CAIP2).blockExplorers?.default.url).toBe(
-      "https://explorer.testnet.chain.robinhood.com",
-    );
+    expect(evmChain(MONAD_TESTNET_CAIP2).blockExplorers?.default.name).toBe("Monadscan");
+    expect(evmChain(MONAD_MAINNET_CAIP2).blockExplorers?.default.url).toBe("https://monadscan.com");
   });
 
   it("marks testnet as testnet, so a wallet cannot silently show mainnet chrome", () => {
-    expect(evmChain(ARBITRUM_SEPOLIA_CAIP2).testnet).toBe(true);
-    expect(evmChain(ARBITRUM_ONE_CAIP2).testnet).toBe(false);
+    expect(evmChain(MONAD_TESTNET_CAIP2).testnet).toBe(true);
+    expect(evmChain(MONAD_MAINNET_CAIP2).testnet).toBe(false);
   });
 });

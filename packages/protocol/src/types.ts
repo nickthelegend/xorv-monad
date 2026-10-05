@@ -52,7 +52,7 @@ export interface Provider {
   id: string;
   /** Display name chosen by the operator. */
   label: string;
-  /** EVM address that receives the stablecoin (USDG/USDC) for this provider's jobs. */
+  /** EVM address that receives the stablecoin (AUSD/USDC) for this provider's jobs. */
   address: string;
   /** Publicly reachable base URL of the node (usually a Cloudflare tunnel). */
   endpoint: string;
@@ -71,7 +71,7 @@ export interface Provider {
   /** Transaction hash of the on-chain registration entry, when published. */
   registryTxHash?: string | null;
   /**
-   * The provider's record in XorvRegistry (Stylus), when the broker runs with
+   * The provider's record in XorvRegistry, when the broker runs with
    * a registry. Written by the escrow on every settled job, so unlike `stats`
    * it does not depend on trusting this broker.
    */
@@ -107,7 +107,7 @@ export type JobStatus =
   | "expired";
 
 /**
- * Which asset a job was paid in: the stablecoin's symbol, e.g. `"USDG"` or
+ * Which asset a job was paid in: the stablecoin's symbol, e.g. `"AUSD"` or
  * `"USDC"` (`"stablecoin"` for a token the network table doesn't know).
  *
  * A symbol rather than a closed union because the set is per network and
@@ -151,7 +151,7 @@ export interface PaymentRecord {
   /** Address credited — the provider. */
   payTo: string;
   settledAt: number;
-  /** Direct block-explorer link (Arbiscan etc.), precomputed so every surface shows the same one. */
+  /** Direct block-explorer link (Monadscan etc.), precomputed so every surface shows the same one. */
   explorerUrl: string;
   /**
    * `escrow`: the money went into XorvEscrow and `payTo` is the contract;

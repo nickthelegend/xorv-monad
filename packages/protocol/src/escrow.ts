@@ -63,7 +63,7 @@ export const FUNDING_NONCE_TYPEHASH = keccak256(
   stringToHex("XorvFunding(uint256 chainId,address escrow,bytes32 jobId,uint40 deadline)"),
 );
 
-/** Must match the token's EIP-3009 typehash; identical on USDC and USDG. */
+/** Must match the token's EIP-3009 typehash; identical on USDC and AUSD. */
 export const RECEIVE_WITH_AUTHORIZATION_TYPES = {
   ReceiveWithAuthorization: [
     { name: "from", type: "address" },
@@ -81,7 +81,7 @@ export type EscrowStatus = (typeof ESCROW_STATUS)[number];
 
 /** What `extra` carries on an escrow payment requirement. */
 export interface EscrowExtra {
-  /** The token's EIP-712 domain. USDG exposes no `version()`, so it can't be read on chain. */
+  /** The token's EIP-712 domain. AUSD signs under "Agora Dollar", not its `name()`, so it is configured. */
   name: string;
   version: string;
   escrow: Address;

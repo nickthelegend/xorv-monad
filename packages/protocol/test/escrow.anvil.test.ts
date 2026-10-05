@@ -59,9 +59,9 @@ const PORT = await new Promise<number>((resolve, reject) => {
   });
 });
 const chain = defineChain({
-  id: 421614,
-  name: "anvil-as-arbitrum-sepolia",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  id: 10143,
+  name: "anvil-as-monad-testnet",
+  nativeCurrency: { name: "Monad", symbol: "MON", decimals: 18 },
   rpcUrls: { default: { http: [`http://127.0.0.1:${PORT}`] } },
 });
 
@@ -106,13 +106,13 @@ describe.skipIf(!hasAnvil || !hasBuild)("escrow scheme on anvil", () => {
     const block = await pub.getBlock();
     return {
       scheme: ESCROW_SCHEME,
-      network: "eip155:421614",
+      network: "eip155:10143",
       asset: token,
       amount: "250000",
       payTo: escrow,
       maxTimeoutSeconds: 300,
       extra: {
-        name: "Global Dollar",
+        name: "Agora Dollar",
         version: "1",
         escrow,
         jobId: escrowJobId(quoteId),
@@ -136,7 +136,7 @@ describe.skipIf(!hasAnvil || !hasBuild)("escrow scheme on anvil", () => {
   }
 
   beforeAll(async () => {
-    node = spawn("anvil", ["--port", String(PORT), "--chain-id", "421614", "--silent"]);
+    node = spawn("anvil", ["--port", String(PORT), "--chain-id", "10143", "--silent"]);
     pub = createPublicClient({ chain, transport: http() }) as PublicClient;
     wallet = createWalletClient({ chain, transport: http(), account: operator });
     for (let i = 0; i < 50; i++) {
@@ -147,7 +147,7 @@ describe.skipIf(!hasAnvil || !hasBuild)("escrow scheme on anvil", () => {
         await new Promise((r) => setTimeout(r, 100));
       }
     }
-    token = await deploy("MockERC3009", ["Global Dollar", "1"]);
+    token = await deploy("MockERC3009", ["Agora Dollar", "1"]);
     escrow = await deploy("XorvEscrow", [
       operator.address,
       operator.address,

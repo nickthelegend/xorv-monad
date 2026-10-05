@@ -75,7 +75,7 @@ describe("subjectOf", () => {
 });
 
 describe("logWindowBlocks", () => {
-  it("defaults to a chunk public Arbitrum RPCs accept, and is overridable", async () => {
+  it("defaults to the 100-block chunk Monad's public RPC accepts, and is overridable", async () => {
     const { logWindowBlocks, LOG_WINDOW_BLOCKS } = await import("../src/log.js");
     delete process.env.XORV_LOG_WINDOW_BLOCKS;
     expect(logWindowBlocks()).toBe(LOG_WINDOW_BLOCKS);

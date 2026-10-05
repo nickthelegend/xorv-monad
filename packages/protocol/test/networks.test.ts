@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  ARBITRUM_ONE_CAIP2,
-  ARBITRUM_SEPOLIA_CAIP2,
+  ANVIL_CAIP2,
   DEFAULT_NETWORK,
+  GAS_TOKEN_SYMBOL,
+  MONAD_MAINNET_CAIP2,
+  MONAD_TESTNET_CAIP2,
   NETWORKS,
-  ROBINHOOD_TESTNET_CAIP2,
   chainIdFor,
   explorerName,
   explorerTx,
@@ -17,17 +18,15 @@ import {
   stablecoinBySymbol,
   stablecoinSymbol,
   stablecoins,
-  NITRO_DEVNODE_CAIP2,
 } from "../src/constants.js";
 
-const SEPOLIA_USDG = "0xFFC95faa3d63Cde504a05B567C600B78C0b41892";
-const SEPOLIA_USDC = "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d";
-const ROBINHOOD_USDG = "0x7E955252E15c84f5768B83c41a71F9eba181802F";
+const TESTNET_AUSD = "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC";
+const TESTNET_USDC = "0x534b2f3A21130d7a60830c2Df862319e593943A3";
 
 /**
- * Three Arbitrum chains, each with its own stablecoin list. The USDG domains
- * ("Global Dollar" / "1") were checked against the live contracts'
- * DOMAIN_SEPARATOR() before being written into the table.
+ * Monad testnet and mainnet, each with AUSD first and USDC second. The testnet
+ * domains ("Agora Dollar" / "1", "USDC" / "2") were checked against the live
+ * contracts' DOMAIN_SEPARATOR() before being written into the table.
  */
 describe("networks", () => {
   afterEach(() => {
@@ -38,77 +37,67 @@ describe("networks", () => {
     delete process.env.XORV_STABLECOIN_SYMBOL;
   });
 
-  it("defaults to Arbitrum Sepolia", () => {
-    expect(DEFAULT_NETWORK).toBe("eip155:421614");
-    expect(networkInfo("eip155:1").caip2).toBe(ARBITRUM_SEPOLIA_CAIP2);
+  it("defaults to Monad testnet, and gas is MON", () => {
+    expect(DEFAULT_NETWORK).toBe("eip155:10143");
+    expect(networkInfo("eip155:1").caip2).toBe(MONAD_TESTNET_CAIP2);
+    expect(GAS_TOKEN_SYMBOL).toBe("MON");
   });
 
-  it("answers for Arbitrum Sepolia with its RPC, explorer and label", () => {
-    expect(chainIdFor(ARBITRUM_SEPOLIA_CAIP2)).toBe(421614);
-    expect(rpcUrl(ARBITRUM_SEPOLIA_CAIP2)).toBe("https://sepolia-rollup.arbitrum.io/rpc");
-    expect(networkLabel(ARBITRUM_SEPOLIA_CAIP2)).toBe("arbitrum-sepolia");
-    expect(explorerTx(ARBITRUM_SEPOLIA_CAIP2, "0xabc")).toBe("https://sepolia.arbiscan.io/tx/0xabc");
-    expect(explorerName(ARBITRUM_SEPOLIA_CAIP2)).toBe("Arbiscan");
+  it("answers for Monad testnet with its RPC, explorer and label", () => {
+    expect(chainIdFor(MONAD_TESTNET_CAIP2)).toBe(10143);
+    expect(rpcUrl(MONAD_TESTNET_CAIP2)).toBe("https://testnet-rpc.monad.xyz");
+    expect(networkLabel(MONAD_TESTNET_CAIP2)).toBe("monad-testnet");
+    expect(explorerTx(MONAD_TESTNET_CAIP2, "0xabc")).toBe("https://testnet.monadscan.com/tx/0xabc");
+    expect(explorerName(MONAD_TESTNET_CAIP2)).toBe("Monadscan");
   });
 
-  it("answers for Robinhood Chain Testnet", () => {
-    expect(chainIdFor(ROBINHOOD_TESTNET_CAIP2)).toBe(46630);
-    expect(rpcUrl(ROBINHOOD_TESTNET_CAIP2)).toBe("https://rpc.testnet.chain.robinhood.com");
-    expect(networkLabel(ROBINHOOD_TESTNET_CAIP2)).toBe("robinhood-testnet");
-    expect(explorerTx(ROBINHOOD_TESTNET_CAIP2, "0x1")).toBe(
-      "https://explorer.testnet.chain.robinhood.com/tx/0x1",
-    );
-    expect(stablecoins(ROBINHOOD_TESTNET_CAIP2).map((s) => s.symbol)).toEqual(["USDG"]);
-    expect(stablecoinAddress(ROBINHOOD_TESTNET_CAIP2)).toBe(ROBINHOOD_USDG);
+  it("answers for Monad mainnet, with Agora's mainnet AUSD", () => {
+    expect(chainIdFor(MONAD_MAINNET_CAIP2)).toBe(143);
+    expect(explorerTx(MONAD_MAINNET_CAIP2, "0x1")).toBe("https://monadscan.com/tx/0x1");
+    expect(networkInfo(MONAD_MAINNET_CAIP2).testnet).toBe(false);
+    const [ausd, usdc] = stablecoins(MONAD_MAINNET_CAIP2);
+    expect(ausd!.symbol).toBe("AUSD");
+    expect(ausd!.address).toBe("0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a");
+    expect(usdc!.address).toBe("0x754704Bc059F8C67012fEd69BC8A327a5aafb603");
   });
 
-  it("answers for Arbitrum One, with Paxos' mainnet USDG", () => {
-    expect(chainIdFor(ARBITRUM_ONE_CAIP2)).toBe(42161);
-    expect(explorerTx(ARBITRUM_ONE_CAIP2, "0x1")).toBe("https://arbiscan.io/tx/0x1");
-    expect(networkInfo(ARBITRUM_ONE_CAIP2).testnet).toBe(false);
-    const [usdg, usdc] = stablecoins(ARBITRUM_ONE_CAIP2);
-    expect(usdg!.symbol).toBe("USDG");
-    expect(usdg!.address).toBe("0x004B506865409877C9fA29bfb1ebA929984B9bbC");
-    expect(usdg!.verified).toBe(true);
-    expect(usdc!.address).toBe("0xaf88d065e77c8cC2239327C5EDb3A432268e5831");
-  });
-
-  it("puts USDG first on every network where it exists", () => {
+  it("puts AUSD first on every network", () => {
     for (const network of Object.keys(NETWORKS)) {
       if (NETWORKS[network]!.stablecoins.length === 0) continue; // the local dev node
-      expect(primaryStablecoin(network).symbol).toBe("USDG");
+      expect(primaryStablecoin(network).symbol).toBe("AUSD");
     }
   });
 
-  it("carries each token's EIP-712 domain, since USDG has no version() to read", () => {
-    expect(stablecoinBySymbol(ARBITRUM_SEPOLIA_CAIP2, "usdg")!.eip712).toEqual({
-      name: "Global Dollar",
+  it("carries each token's EIP-712 domain, which is not always its name()", () => {
+    // AUSD's name() is "AUSD", but it signs under "Agora Dollar".
+    expect(stablecoinBySymbol(MONAD_TESTNET_CAIP2, "ausd")!.eip712).toEqual({
+      name: "Agora Dollar",
       version: "1",
     });
-    expect(stablecoinBySymbol(ARBITRUM_SEPOLIA_CAIP2, "USDC")!.eip712).toEqual({
-      name: "USD Coin",
+    expect(stablecoinBySymbol(MONAD_TESTNET_CAIP2, "USDC")!.eip712).toEqual({
+      name: "USDC",
       version: "2",
     });
   });
 
   it("looks tokens up by address case-insensitively, and names unknown ones generically", () => {
-    expect(stablecoinByAddress(ARBITRUM_SEPOLIA_CAIP2, SEPOLIA_USDC.toLowerCase())!.symbol).toBe("USDC");
-    expect(stablecoinSymbol(ARBITRUM_SEPOLIA_CAIP2, SEPOLIA_USDG)).toBe("USDG");
-    expect(stablecoinSymbol(ARBITRUM_SEPOLIA_CAIP2, "0x1111111111111111111111111111111111111111")).toBe(
+    expect(stablecoinByAddress(MONAD_TESTNET_CAIP2, TESTNET_USDC.toLowerCase())!.symbol).toBe("USDC");
+    expect(stablecoinSymbol(MONAD_TESTNET_CAIP2, TESTNET_AUSD)).toBe("AUSD");
+    expect(stablecoinSymbol(MONAD_TESTNET_CAIP2, "0x1111111111111111111111111111111111111111")).toBe(
       "stablecoin",
     );
   });
 
   it("lets XORV_STABLECOIN pick the default by symbol or address, keeping the others", () => {
     process.env.XORV_STABLECOIN = "USDC";
-    expect(stablecoins(ARBITRUM_SEPOLIA_CAIP2).map((s) => s.symbol)).toEqual(["USDC", "USDG"]);
-    process.env.XORV_STABLECOIN = SEPOLIA_USDC.toLowerCase();
-    expect(stablecoinAddress(ARBITRUM_SEPOLIA_CAIP2)).toBe(SEPOLIA_USDC);
+    expect(stablecoins(MONAD_TESTNET_CAIP2).map((s) => s.symbol)).toEqual(["USDC", "AUSD"]);
+    process.env.XORV_STABLECOIN = TESTNET_USDC.toLowerCase();
+    expect(stablecoinAddress(MONAD_TESTNET_CAIP2)).toBe(TESTNET_USDC);
   });
 
   it("ignores a symbol the network doesn't have rather than pricing in nothing", () => {
-    process.env.XORV_STABLECOIN = "USDC";
-    expect(stablecoins(ROBINHOOD_TESTNET_CAIP2).map((s) => s.symbol)).toEqual(["USDG"]);
+    process.env.XORV_STABLECOIN = "USDG";
+    expect(stablecoins(MONAD_TESTNET_CAIP2).map((s) => s.symbol)).toEqual(["AUSD", "USDC"]);
   });
 
   it("accepts an unknown token address with an explicitly configured domain", () => {
@@ -117,23 +106,23 @@ describe("networks", () => {
     process.env.XORV_STABLECOIN_NAME = "Test Dollar";
     process.env.XORV_STABLECOIN_VERSION = "1";
     process.env.XORV_STABLECOIN_SYMBOL = "TUSD";
-    expect(rpcUrl(ARBITRUM_SEPOLIA_CAIP2)).toBe("https://my.rpc");
-    const [custom, ...rest] = stablecoins(ARBITRUM_SEPOLIA_CAIP2);
+    expect(rpcUrl(MONAD_TESTNET_CAIP2)).toBe("https://my.rpc");
+    const [custom, ...rest] = stablecoins(MONAD_TESTNET_CAIP2);
     expect(custom).toMatchObject({
       symbol: "TUSD",
       address: "0x1111111111111111111111111111111111111111",
       eip712: { name: "Test Dollar", version: "1" },
       verified: false,
     });
-    expect(rest.map((s) => s.symbol)).toEqual(["USDG", "USDC"]);
+    expect(rest.map((s) => s.symbol)).toEqual(["AUSD", "USDC"]);
   });
 
   it("every network entry is keyed by its own CAIP-2 id and has well-formed tokens", () => {
     for (const [key, info] of Object.entries(NETWORKS)) {
       expect(info.caip2).toBe(key);
       expect(chainIdFor(key)).toBe(info.chainId);
-      // Only the local Nitro dev node has none of its own (XORV_STABLECOIN supplies one).
-      if (key !== NITRO_DEVNODE_CAIP2) expect(info.stablecoins.length).toBeGreaterThan(0);
+      // Only the local Anvil node has none of its own (XORV_STABLECOIN supplies one).
+      if (key !== ANVIL_CAIP2) expect(info.stablecoins.length).toBeGreaterThan(0);
       for (const token of info.stablecoins) {
         expect(token.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
         expect(token.decimals).toBe(6);
@@ -144,17 +133,17 @@ describe("networks", () => {
   });
 });
 
-describe("the local Nitro dev node", () => {
+describe("the local Anvil node", () => {
   it("has no stablecoin of its own and takes one from XORV_STABLECOIN", () => {
-    expect(stablecoins(NITRO_DEVNODE_CAIP2)).toEqual([]);
+    expect(stablecoins(ANVIL_CAIP2)).toEqual([]);
     process.env.XORV_STABLECOIN = "0x986931f67aFBBD833bC5f8347F369744AA851Db8";
-    process.env.XORV_STABLECOIN_NAME = "Global Dollar";
-    process.env.XORV_STABLECOIN_VERSION = "1";
-    process.env.XORV_STABLECOIN_SYMBOL = "USDG";
+    process.env.XORV_STABLECOIN_NAME = "USD Coin";
+    process.env.XORV_STABLECOIN_VERSION = "2";
+    process.env.XORV_STABLECOIN_SYMBOL = "USDC";
     try {
-      const [t] = stablecoins(NITRO_DEVNODE_CAIP2);
-      expect(t).toMatchObject({ symbol: "USDG", eip712: { name: "Global Dollar", version: "1" }, verified: false });
-      expect(chainIdFor(NITRO_DEVNODE_CAIP2)).toBe(412346);
+      const [t] = stablecoins(ANVIL_CAIP2);
+      expect(t).toMatchObject({ symbol: "USDC", eip712: { name: "USD Coin", version: "2" }, verified: false });
+      expect(chainIdFor(ANVIL_CAIP2)).toBe(31337);
     } finally {
       delete process.env.XORV_STABLECOIN;
       delete process.env.XORV_STABLECOIN_NAME;

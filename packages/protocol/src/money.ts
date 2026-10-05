@@ -6,7 +6,7 @@
  * floating point starts lying. A `number` holds micro-USD losslessly well past
  * any price this network will ever see, and JSON carries it without ceremony.
  *
- * Every stablecoin Xorv settles in (USDG, USDC) has 6 decimals, so micro-USD
+ * Every stablecoin Xorv settles in (AUSD, USDC) has 6 decimals, so micro-USD
  * and a token's smallest unit are the same integer. That is a happy
  * coincidence, not a law, so the conversion still goes through a named
  * function — if this ever runs against a token with different precision, there
@@ -19,11 +19,11 @@
  * two needed a live rate to relate. Xorv now prices only in dollar
  * stablecoins, treated 1:1 with the dollar, so there is no rate to fetch, no
  * cache to keep warm, and no window in which a stale quote misprices someone's
- * work. Gas is ETH, but only the operator's facilitator ever pays it, so no
+ * work. Gas is MON, but only the operator's facilitator ever pays it, so no
  * price in the product is denominated in it.
  */
 
-import { GAS_TOKEN_DECIMALS, STABLECOIN_DECIMALS } from "./constants.js";
+import { GAS_TOKEN_DECIMALS, GAS_TOKEN_SYMBOL, STABLECOIN_DECIMALS } from "./constants.js";
 
 /** One US dollar, in micro-USD. */
 export const USD_MICROS = 1_000_000;
@@ -69,18 +69,18 @@ export function formatUnits(units: string | number): string {
 }
 
 /**
- * Render a wei amount as ETH, for the operator's gas balance.
+ * Render a wei amount as MON, for the operator's gas balance.
  *
- * Six decimal places, because an Arbitrum transaction costs a few millionths
- * of an ETH and "0.00 ETH" says nothing. Integer math down to the display
+ * Six decimal places, so a small balance never renders as "0.00 MON", which
+ * says nothing. Integer math down to the display
  * precision, so an 18-decimal balance never passes through a float whole.
  */
-export function formatEth(wei: string | number | bigint): string {
+export function formatGas(wei: string | number | bigint): string {
   const value = BigInt(wei);
   const scale = 10n ** BigInt(GAS_TOKEN_DECIMALS - 6);
   const micro = value / scale;
-  if (micro === 0n) return value === 0n ? "0 ETH" : "<0.000001 ETH";
+  if (micro === 0n) return value === 0n ? `0 ${GAS_TOKEN_SYMBOL}` : `<0.000001 ${GAS_TOKEN_SYMBOL}`;
   const whole = micro / 1_000_000n;
   const frac = (micro % 1_000_000n).toString().padStart(6, "0");
-  return `${whole}.${frac} ETH`;
+  return `${whole}.${frac} ${GAS_TOKEN_SYMBOL}`;
 }

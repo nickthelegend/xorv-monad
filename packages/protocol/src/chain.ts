@@ -12,8 +12,8 @@
  * **Token association.** On Hedera an account must opt in to a token before it
  * can be paid in it, or the transfer dies at consensus with
  * `TOKEN_NOT_ASSOCIATED_TO_ACCOUNT`. ERC-20 has no such concept. Any address
- * can receive USDG or USDC, always, having done nothing — and on Arbitrum it
- * needs no ETH to do so.
+ * can receive AUSD or USDC, always, having done nothing — and on Monad it
+ * needs no MON to do so.
  */
 
 import {
@@ -49,8 +49,8 @@ import {
  *
  * Built here rather than imported from `viem/chains` so the RPC honours
  * `XORV_RPC_URL` — a self-hosted or paid endpoint is the difference between a
- * demo that works and one that rate-limits halfway through — and so Robinhood
- * Chain Testnet, which viem does not ship, is described the same way.
+ * demo that works and one that rate-limits halfway through — and so the local
+ * Anvil node is described the same way as Monad.
  */
 export function evmChain(network: string): Chain {
   const id = chainIdFor(network);
@@ -58,7 +58,7 @@ export function evmChain(network: string): Chain {
   return defineChain({
     id,
     name: info.name,
-    nativeCurrency: { name: "Ether", symbol: GAS_TOKEN_SYMBOL, decimals: GAS_TOKEN_DECIMALS },
+    nativeCurrency: { name: "Monad", symbol: GAS_TOKEN_SYMBOL, decimals: GAS_TOKEN_DECIMALS },
     rpcUrls: { default: { http: [rpcUrl(network)] } },
     blockExplorers: { default: { name: info.explorerName, url: info.explorer } },
     testnet: info.testnet,
@@ -92,7 +92,7 @@ export function accountFor(rawKey: string): PrivateKeyAccount {
   // escrow funding and the chain writer's releases, refunds, sponsorships and
   // audit entries — often in the same second. Without a shared manager each
   // asked the node for "the next nonce", got the same answer, and one of the
-  // pair died with "nonce too low". Found on a Nitro node: a settlement and a
+  // pair died with "nonce too low". Found on a dev node: a settlement and a
   // registry sponsorship collided on the first paid job.
   return privateKeyToAccount(parsePrivateKey(rawKey), { nonceManager });
 }
@@ -137,19 +137,19 @@ export interface StablecoinBalance {
 
 export interface AccountBalances {
   /**
-   * ETH for gas, in wei (18dp).
+   * MON for gas, in wei (18dp).
    *
    * Only the operator — whose facilitator relays payments and whose broker
    * writes the audit log — ever spends it. Buyers sign typed data and
    * providers only receive, so for them this is informational and zero is fine.
    */
-  ethWei: string;
+  gasWei: string;
   /** One entry per configured stablecoin, default first. */
   stablecoins: StablecoinBalance[];
 }
 
 /**
- * An address's ETH balance and its balance in every configured stablecoin.
+ * An address's MON balance and its balance in every configured stablecoin.
  *
  * A token whose balance can't be read (no contract at that address, an RPC
  * hiccup) reports "0" with an `error`, rather than failing the whole read —
@@ -159,7 +159,7 @@ export async function fetchBalances(network: string, address: string): Promise<A
   const client = readClient(network);
   const account = getAddress(address);
   const tokens = stablecoins(network);
-  const [ethWei, units] = await Promise.all([
+  const [gasWei, units] = await Promise.all([
     client.getBalance({ address: account }),
     Promise.allSettled(
       tokens.map((token) =>
@@ -173,7 +173,7 @@ export async function fetchBalances(network: string, address: string): Promise<A
     ),
   ]);
   return {
-    ethWei: ethWei.toString(),
+    gasWei: gasWei.toString(),
     stablecoins: tokens.map((token, i) => {
       const r = units[i]!;
       return r.status === "fulfilled"
@@ -232,7 +232,7 @@ export interface DomainCheck {
  * Check a stablecoin's configured EIP-712 domain against the live contract.
  *
  * The domain is configured, never read, because it cannot be read portably:
- * USDG's `version()` reverts and it implements no `eip712Domain()`. What every
+ * AUSD's domain name ("Agora Dollar") is not its `name()` ("AUSD"). What every
  * EIP-3009 token does expose is `DOMAIN_SEPARATOR()`, the hash of
  * `(name, version, chainId, verifyingContract)`. Recomputing that from the
  * configured strings and comparing is a complete check — a wrong `version`
