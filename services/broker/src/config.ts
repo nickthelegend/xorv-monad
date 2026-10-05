@@ -55,7 +55,7 @@ export interface BrokerConfig {
    * the escrow's attester, because only the attester may fund and settle.
    */
   escrowAddress: string | null;
-  /** XorvRegistry (Stylus) address; null disables on-chain reputation. The operator must be its operator. */
+  /** XorvRegistry address; null disables on-chain reputation. The operator must be its operator. */
   registryAddress: string | null;
   /** Seconds from quote to the point anyone may refund the buyer. */
   escrowDeadlineSeconds: number;
@@ -70,7 +70,7 @@ function required(name: string): string {
   if (!value) {
     throw new Error(
       `Missing ${name}. Copy .env.example to .env and fill it in — the operator ` +
-        `needs Arbitrum Sepolia ETH for gas (https://faucet.quicknode.com/arbitrum/sepolia)`,
+        `needs Monad testnet MON for gas (https://faucet.monad.xyz)`,
     );
   }
   return value;

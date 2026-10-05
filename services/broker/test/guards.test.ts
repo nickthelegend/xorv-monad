@@ -128,7 +128,7 @@ describe("requestLog", () => {
 
 describe("Metrics", () => {
   const chain: ChainLike = {
-    network: "eip155:421614",
+    network: "eip155:10143",
     operatorAddress: "0xeEE4CA97A7Af69B42d9cafD3955735C1130eB51E",
     publicClient: null as never,
     walletClient: null as never,

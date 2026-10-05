@@ -146,7 +146,7 @@ export function resolveBrokerUrl(config: NodeConfig): string {
 export interface EarningRow {
   at: number;
   jobId: string;
-  /** "stablecoin" (USDG or USDC — see the on-chain receipt); older rows say "usdc". */
+  /** "stablecoin" (AUSD or USDC — see the on-chain receipt); older rows say "usdc". */
   asset: string;
   amount: string;
   usdMicros: number;

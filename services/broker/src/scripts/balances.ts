@@ -9,11 +9,11 @@
  *
  *  - **Each configured stablecoin's EIP-712 domain**, by recomputing its
  *    `DOMAIN_SEPARATOR` from the configured name/version and comparing it with
- *    the contract's. USDG has no `version()` to read, so this is the only way
+ *    the contract's. AUSD's domain name is not its `name()`, so this is the only way
  *    to know a buyer's signature will verify before a buyer finds out.
- *  - **Who holds what.** The buyer needs a stablecoin and **no ETH** — it signs
+ *  - **Who holds what.** The buyer needs a stablecoin and **no MON** — it signs
  *    an authorization and never broadcasts. The provider needs nothing; it only
- *    receives. Only the operator needs ETH, because only its facilitator (and
+ *    receives. Only the operator needs MON, because only its facilitator (and
  *    the audit log) send transactions.
  */
 
@@ -21,7 +21,7 @@ import {
   explorerAddress,
   explorerToken,
   fetchBalances,
-  formatEth,
+  formatGas,
   formatUnits,
   networkInfo,
   stablecoins,
@@ -38,7 +38,7 @@ const ACCOUNTS: Array<{ address: string | undefined; label: string; needs: strin
   {
     address: process.env.XORV_DEMO_PAYER_ADDRESS,
     label: "buyer",
-    needs: "a stablecoin to spend — no ETH, it never broadcasts",
+    needs: "a stablecoin to spend — no MON, it never broadcasts",
   },
   {
     address: process.env.XORV_DEMO_PROVIDER_ADDRESS,
@@ -48,7 +48,7 @@ const ACCOUNTS: Array<{ address: string | undefined; label: string; needs: strin
   {
     address: config.operatorAddress,
     label: "operator",
-    needs: "ETH for gas — its facilitator relays every payment",
+    needs: "MON for gas — its facilitator relays every payment",
   },
 ];
 
@@ -95,9 +95,9 @@ async function main(): Promise<void> {
       const held = b.stablecoins
         .map((s) => (s.error ? `? ${s.symbol} (unreadable)` : `${formatUnits(s.units)} ${s.symbol}`))
         .join("   ");
-      console.log(`    ${held}   ${formatEth(b.ethWei)}`);
-      if (entry.label === "operator" && BigInt(b.ethWei) === 0n) {
-        console.log("    ✖ no ETH — the facilitator cannot relay a single payment");
+      console.log(`    ${held}   ${formatGas(b.gasWei)}`);
+      if (entry.label === "operator" && BigInt(b.gasWei) === 0n) {
+        console.log("    ✖ no MON — the facilitator cannot relay a single payment");
       }
       console.log(`    needs: ${entry.needs}`);
       console.log(`    ${explorerAddress(network, entry.address)}`);

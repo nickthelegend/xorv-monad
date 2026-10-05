@@ -1,5 +1,5 @@
 /**
- * `pnpm setup` — get an Arbitrum deployment from nothing to ready.
+ * `pnpm setup` — get an Monad deployment from nothing to ready.
  *
  * Much less to do here than the Hedera version, and the difference is the
  * interesting part.
@@ -11,10 +11,10 @@
  *
  * On an EVM chain an account is a keypair. It exists because you generated
  * it; nothing is created on chain, nothing is opted into, and any address can
- * receive USDG or USDC immediately. So this generates keys, reports what is
+ * receive AUSD or USDC immediately. So this generates keys, reports what is
  * configured, and checks the things that can actually be wrong: whether each
  * stablecoin's EIP-712 domain matches its contract, whether the operator has
- * ETH for gas, and whether the audit-log contract is really deployed where
+ * MON for gas, and whether the audit-log contract is really deployed where
  * config says it is.
  *
  *   pnpm setup              # check what's configured
@@ -26,7 +26,7 @@ import {
   explorerAddress,
   explorerToken,
   fetchBalances,
-  formatEth,
+  formatGas,
   formatUnits,
   logDeployed,
   networkInfo,
@@ -48,7 +48,7 @@ async function reportBalance(label: string, address: string): Promise<void> {
   try {
     const b = await fetchBalances(config.network, address);
     const held = b.stablecoins.map((s) => `${formatUnits(s.units)} ${s.symbol}`).join("  ");
-    line(label, `${address}  ${formatEth(b.ethWei)}${BigInt(b.ethWei) === 0n ? " ✖ needs ETH for gas" : ""}  ${held}`);
+    line(label, `${address}  ${formatGas(b.gasWei)}${BigInt(b.gasWei) === 0n ? " ✖ needs MON for gas" : ""}  ${held}`);
   } catch (err) {
     line(label, `${address}  — could not read (${(err as Error).message})`);
   }
@@ -120,7 +120,7 @@ async function main(): Promise<void> {
     console.log(
       `  Then fund the buyer with ${stablecoins(config.network).map((s) => s.symbol).join(" or ")} on ${networkInfo(config.network).name}.`,
     );
-    console.log("  Neither needs ETH: the provider only receives, the buyer only signs.");
+    console.log("  Neither needs MON: the provider only receives, the buyer only signs.");
   }
 
   console.log("");

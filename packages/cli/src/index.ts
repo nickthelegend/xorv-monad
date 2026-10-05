@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * xorv — rent out idle AI capacity, get paid per job in USDG over x402 on Arbitrum.
+ * xorv — rent out idle AI capacity, get paid per job in AUSD over x402 on Monad.
  */
 
 import { Command } from "commander";
@@ -36,13 +36,13 @@ const program = new Command();
 program
   .name("xorv")
   .description(
-    "Rent out your idle Claude / Codex / Grok subscription and get paid per job in USDG (or USDC) over x402 on Arbitrum.",
+    "Rent out your idle Claude / Codex / Grok subscription and get paid per job in AUSD (or USDC) over x402 on Monad.",
   )
   .version(VERSION, "-v, --version")
   .configureHelp({ sortSubcommands: false })
   .addHelpText(
     "beforeAll",
-    ui.banner("decentralized AI capacity network · x402 on Arbitrum"),
+    ui.banner("decentralized AI capacity network · x402 on Monad"),
   )
   .addHelpText(
     "afterAll",
@@ -56,7 +56,7 @@ program
       `  ${ui.c.bold("buyer — spend")}`,
       `    ${ui.c.accent('xorv run "…"')}       post a job and pay for it`,
       "",
-      `  ${ui.c.muted("docs: https://github.com/nickthelegend/xorv-arbitrum")}`,
+      `  ${ui.c.muted("docs: https://github.com/nickthelegend/xorv-monad")}`,
       "",
     ].join("\n"),
   );
@@ -112,7 +112,7 @@ program
   .option("--max <usd>", "most you'll pay for this job", "0.05")
   .option("--adapter <kind>", "require a specific adapter (claude-code, codex, grok, …)")
   .option("--key <key>", "private key to pay from (its address is derived)")
-  .option("--token <symbol>", "stablecoin to pay with: USDG or USDC (default: the first one you hold)")
+  .option("--token <symbol>", "stablecoin to pay with: AUSD or USDC (default: the first one you hold)")
   .option("-y, --yes", "skip the confirmation")
   .option("--json", "machine-readable output")
   .action(wrap(runCommand));
@@ -210,7 +210,7 @@ function wrap<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
 }
 
 /**
- * On a network with no public explorer (a local Nitro node), explorer links
+ * On a network with no public explorer (a local Anvil node), explorer links
  * must go where the broker's do — its /chain viewer — or every link a command
  * prints is a raw RPC URL that opens nothing. Asked once, briefly, before any
  * command; public networks and an explicit XORV_EXPLORER_URL skip it entirely.

@@ -48,8 +48,8 @@ function quoteInput(price = 1_000) {
     priceUsdMicros: price,
     amountUnits: String(price),
     options: [
-      { symbol: "USDG", asset: "0xFFC95faa3d63Cde504a05B567C600B78C0b41892", eip712: { name: "Global Dollar", version: "1" } },
-      { symbol: "USDC", asset: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", eip712: { name: "USD Coin", version: "2" } },
+      { symbol: "AUSD", asset: "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC", eip712: { name: "Agora Dollar", version: "1" } },
+      { symbol: "USDC", asset: "0x534b2f3A21130d7a60830c2Df862319e593943A3", eip712: { name: "USDC", version: "2" } },
     ],
   };
 }
@@ -105,10 +105,10 @@ describe("jobs survive a restart", () => {
     const job = first.createJob(first.createQuote(quoteInput()));
     first.patch(job.id, {
       payment: {
-        asset: "USDG",
-        assetId: "0xFFC95faa3d63Cde504a05B567C600B78C0b41892",
+        asset: "AUSD",
+        assetId: "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC",
         amount: "1000",
-        network: "eip155:421614",
+        network: "eip155:10143",
         transactionHash: "0x9c1fed2b2c87bf85bef22045ff3a440e3d4463c2147cdd00f66777163f4f0c67",
         payer: "0x03294Ce27e218d1611B2ebc0b0ffdDb95F129F36",
         payTo: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",

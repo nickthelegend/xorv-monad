@@ -2,7 +2,7 @@
   "name": "@xorv/broker",
   "version": "0.1.0",
   "private": true,
-  "description": "Xorv broker \u2014 provider registry, job matching, x402 settlement and the on-chain audit trail on Arbitrum.",
+  "description": "Xorv broker — provider registry, job matching, x402 settlement and the on-chain audit trail on Monad.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

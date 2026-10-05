@@ -41,7 +41,7 @@ import { ESCROW_SCHEME } from "@xorv/protocol";
 // ---------------------------------------------------------------------------
 
 export class StubChain implements ChainLike {
-  readonly network = "eip155:421614";
+  readonly network = "eip155:10143";
   readonly operatorAddress = "0xeEE4CA97A7Af69B42d9cafD3955735C1130eB51E";
   readonly publicClient = null as never;
   readonly walletClient = null as never;
@@ -119,8 +119,8 @@ export function stubFacilitator(
     async getSupported() {
       return {
         kinds: [
-          { x402Version: 2, scheme: "exact", network: "eip155:421614" },
-          { x402Version: 2, scheme: ESCROW_SCHEME, network: "eip155:421614" },
+          { x402Version: 2, scheme: "exact", network: "eip155:10143" },
+          { x402Version: 2, scheme: ESCROW_SCHEME, network: "eip155:10143" },
         ],
         extensions: [],
         signers: {},
@@ -146,7 +146,7 @@ export class StubScheme implements SchemeNetworkClient {
 
 export function testConfig(): BrokerConfig {
   return {
-    network: "eip155:421614",
+    network: "eip155:10143",
     operatorAddress: "0xeEE4CA97A7Af69B42d9cafD3955735C1130eB51E",
     // A throwaway key. Nothing in this test broadcasts, so it needs to parse
     // and nothing more; the facilitator that would use it is stubbed out.
@@ -217,7 +217,7 @@ export async function boot(
     // direct-payment path, which is what a broker without XORV_ESCROW_ADDRESS runs.
     escrow: opts.escrow ?? null,
     reputation: opts.reputation ?? null,
-    // Uses the network table's stablecoins (USDG first, then USDC) — nothing
+    // Uses the network table's stablecoins (AUSD first, then USDC) — nothing
     // is read from the chain, so the whole suite stays off the network.
   });
 

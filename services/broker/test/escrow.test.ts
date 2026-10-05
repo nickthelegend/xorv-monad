@@ -50,11 +50,11 @@ describe("escrow: the 402", () => {
       Buffer.from(res.headers.get("payment-required")!, "base64").toString("utf8"),
     ).accepts as Array<Record<string, any>>;
 
-    // escrow × {USDG, USDC}, then exact × {USDG, USDC}
+    // escrow × {AUSD, USDC}, then exact × {AUSD, USDC}
     expect(accepts.map((a) => a.scheme)).toEqual(["escrow", "escrow", "exact", "exact"]);
     expect(accepts[0]!.payTo).toBe(escrow.address);
     expect(accepts[0]!.extra).toMatchObject({
-      name: "Global Dollar",
+      name: "Agora Dollar",
       version: "1",
       escrow: escrow.address,
       jobId: escrowJobId(body.quoteId),

@@ -27,7 +27,7 @@ import type { NodeConfig } from "../src/config.js";
 
 const config = (over: Partial<NodeConfig> = {}): NodeConfig =>
   ({
-    network: "eip155:421614",
+    network: "eip155:10143",
     address: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",
     privateKey: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
     label: "test-node",
@@ -38,18 +38,18 @@ const config = (over: Partial<NodeConfig> = {}): NodeConfig =>
   }) as NodeConfig;
 
 const balances = (over = {}) => ({
-  ethWei: "0",
+  gasWei: "0",
   stablecoins: [
-    { symbol: "USDG", units: "1250000" },
+    { symbol: "AUSD", units: "1250000" },
     { symbol: "USDC", units: "0" },
   ],
   ...over,
 });
 
 const domain = (ok: boolean, actual: `0x${string}` | null = ok ? "0x01" : "0x02") => ({
-  symbol: "USDG",
-  address: "0xFFC95faa3d63Cde504a05B567C600B78C0b41892",
-  eip712: { name: "Global Dollar", version: "1" },
+  symbol: "AUSD",
+  address: "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC",
+  eip712: { name: "Agora Dollar", version: "1" },
   expected: "0x01" as `0x${string}`,
   actual,
   ok,
@@ -131,25 +131,25 @@ describe("payoutChecks", () => {
     // The failure that looks like success: balances read fine, but every
     // buyer signature in that token verifies against a domain the contract
     // does not use, and the only symptom is an opaque 402.
-    const checks = payoutChecks("eip155:421614", ADDRESS, balances(), [domain(false)]);
+    const checks = payoutChecks("eip155:10143", ADDRESS, balances(), [domain(false)]);
     expect(find(checks, "stablecoin")?.status).toBe("fail");
     expect(find(checks, "stablecoin")?.detail).toContain("does not match");
   });
 
   it("warns, rather than fails, when the domain could not be checked", () => {
-    const checks = payoutChecks("eip155:421614", ADDRESS, balances(), [domain(false, null)]);
+    const checks = payoutChecks("eip155:10143", ADDRESS, balances(), [domain(false, null)]);
     expect(find(checks, "stablecoin")?.status).toBe("warn");
   });
 
   it("passes a matching domain and reports every stablecoin balance", () => {
-    const checks = payoutChecks("eip155:421614", ADDRESS, balances(), [domain(true)]);
+    const checks = payoutChecks("eip155:10143", ADDRESS, balances(), [domain(true)]);
     expect(find(checks, "stablecoin")?.status).toBe("ok");
-    expect(find(checks, "balance")?.detail).toContain("USDG");
+    expect(find(checks, "balance")?.detail).toContain("AUSD");
     expect(find(checks, "balance")?.detail).toContain("USDC");
   });
 
-  it("never asks a provider for ETH — the facilitator pays the gas", () => {
-    const checks = payoutChecks("eip155:421614", ADDRESS, balances());
+  it("never asks a provider for MON — the facilitator pays the gas", () => {
+    const checks = payoutChecks("eip155:10143", ADDRESS, balances());
     expect(find(checks, "gas")?.status).toBe("ok");
     expect(find(checks, "gas")?.detail).toContain("none needed");
   });
@@ -158,9 +158,9 @@ describe("payoutChecks", () => {
     // A provider only ever receives, so it needs nothing to operate. Flagging
     // an empty balance would send people to a faucet they do not need.
     const checks = payoutChecks(
-      "eip155:421614",
+      "eip155:10143",
       ADDRESS,
-      balances({ stablecoins: [{ symbol: "USDG", units: "0" }] }),
+      balances({ stablecoins: [{ symbol: "AUSD", units: "0" }] }),
     );
     expect(find(checks, "balance")?.status).toBe("ok");
     expect(find(checks, "balance")?.detail).toContain("only receives");
@@ -169,18 +169,18 @@ describe("payoutChecks", () => {
 
 describe("brokerChecks", () => {
   const info = {
-    network: "eip155:421614",
+    network: "eip155:10143",
     facilitator: { description: "self-hosted", feePayer: "0xeEE4CA97A7Af69B42d9cafD3955735C1130eB51E" },
     stats: { providersLive: 3 },
   };
 
   it("fails a network mismatch, which breaks every settlement", () => {
-    const checks = brokerChecks("http://b", { ...info, network: "eip155:42161" }, "eip155:421614");
+    const checks = brokerChecks("http://b", { ...info, network: "eip155:42161" }, "eip155:10143");
     expect(find(checks, "network")?.status).toBe("fail");
   });
 
   it("passes when both sides agree", () => {
-    expect(find(brokerChecks("http://b", info, "eip155:421614"), "network")?.status).toBe("ok");
+    expect(find(brokerChecks("http://b", info, "eip155:10143"), "network")?.status).toBe("ok");
   });
 });
 

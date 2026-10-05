@@ -1,16 +1,16 @@
 {
   "name": "@xorv/cli",
   "version": "0.1.0",
-  "description": "Rent out your idle Claude / Codex / Grok subscription and get paid per job in stablecoins (USDG/USDC) over x402 on Arbitrum.",
+  "description": "Rent out your idle Claude / Codex / Grok subscription and get paid per job in stablecoins (AUSD/USDC) over x402 on Monad.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
-  "homepage": "https://github.com/nickthelegend/xorv-arbitrum#readme",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv-arbitrum.git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
     "directory": "packages/cli"
   },
-  "bugs": "https://github.com/nickthelegend/xorv-arbitrum/issues",
+  "bugs": "https://github.com/nickthelegend/xorv-monad/issues",
   "type": "module",
   "engines": {
     "node": ">=20.11.0"
@@ -29,8 +29,8 @@
   },
   "keywords": [
     "x402",
-    "usdg",
-    "arbitrum",
+    "ausd",
+    "monad",
     "usdc",
     "ai",
     "claude-code",

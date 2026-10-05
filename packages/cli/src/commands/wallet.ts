@@ -10,8 +10,8 @@
  * and spend it before they could earn anything, and the failure if they skipped
  * it was invisible until someone's payment bounced.
  *
- * ERC-20 has no such concept. Every address can receive USDG or USDC,
- * immediately, having done nothing — and on Arbitrum it needs no ETH to do so,
+ * ERC-20 has no such concept. Every address can receive AUSD or USDC,
+ * immediately, having done nothing — and on Monad it needs no MON to do so,
  * because the broker's facilitator pays the gas. So the command is gone, along with the `canReceiveUsdc`
  * check that `doctor` used to run and the "can be paid: no" row this used to
  * print. Nothing replaced them, because there is nothing left to be wrong.
@@ -26,7 +26,7 @@ import {
   explorerName,
   explorerToken,
   fetchBalances,
-  formatEth,
+  formatGas,
   formatUnits,
   networkInfo,
 } from "@xorv/protocol";
@@ -51,9 +51,9 @@ export async function walletShow(): Promise<void> {
         `${ui.c.money(formatUnits(token.units))} ${ui.c.muted(`${token.symbol}${i === 0 ? " · default" : ""}`)}`,
       ]);
     });
-    // ETH is shown for completeness, not because it is needed: a provider only
+    // MON is shown for completeness, not because it is needed: a provider only
     // receives, and the broker's facilitator pays the gas on every settlement.
-    rows.push(["eth", `${ui.c.muted(formatEth(balances.ethWei))} ${ui.c.muted("(none needed — gas is paid by the facilitator)")}`]);
+    rows.push(["eth", `${ui.c.muted(formatGas(balances.gasWei))} ${ui.c.muted("(none needed — gas is paid by the facilitator)")}`]);
     for (const token of balances.stablecoins) {
       rows.push([`${token.symbol.toLowerCase()} token`, ui.c.muted(`${token.address}  ${explorerToken(config.network, token.address)}`)]);
     }
@@ -107,8 +107,8 @@ export async function walletNew(): Promise<void> {
         "",
         ui.c.warn("Write the private key down now — it is not shown again."),
         "",
-        "  It can receive USDG or USDC immediately. There is nothing to fund —",
-        "  not even ETH — and nothing to opt into: this node only ever receives.",
+        "  It can receive AUSD or USDC immediately. There is nothing to fund —",
+        "  not even MON — and nothing to opt into: this node only ever receives.",
       ],
       { title: "keypair", color: ui.BRAND.amber },
     ),

@@ -6,11 +6,11 @@
  * needs work done finds capacity, pays for it, and gets the result — without a
  * human opening a browser, creating an account, or pasting a card number. The
  * agent holds an EVM key, the network quotes a price, the payment settles on
- * Arbitrum in about a second, and the job runs on a stranger's machine.
+ * Monad in about a second, and the job runs on a stranger's machine.
  *
- * The agent never broadcasts a transaction and needs no ETH. It signs an
+ * The agent never broadcasts a transaction and needs no MON. It signs an
  * EIP-3009 authorization and a facilitator relays it — which is what makes an
- * autonomous wallet holding nothing but USDG (or USDC) a workable thing to give
+ * autonomous wallet holding nothing but AUSD (or USDC) a workable thing to give
  * a model.
  *
  * Point any MCP client at it:
@@ -23,7 +23,7 @@
  *   XORV_BROKER_URL   broker to buy from (default http://localhost:8402)
  *   XORV_PAYER_KEY    the private key that pays for jobs (the address is
  *                     derived from it — there is nothing else to configure)
- *   XORV_NETWORK      default eip155:421614 (Arbitrum Sepolia); the broker's
+ *   XORV_NETWORK      default eip155:10143 (Monad testnet); the broker's
  *                     own network wins once it is known
  *   XORV_RPC_URL      optional RPC override, for reading the payer's balances
  *   XORV_MAX_USD      hard ceiling per job, default 0.05 — see below
@@ -91,7 +91,7 @@ interface QuoteResponse {
     model: string | null;
     stats: { jobsCompleted: number; jobsFailed: number };
   };
-  /** One row per stablecoin the broker accepts, USDG first. */
+  /** One row per stablecoin the broker accepts, AUSD first. */
   accepts: Array<{ asset: string; amount: string; symbol?: string }>;
   /** Present when the broker pays jobs into XorvEscrow rather than straight to the provider. */
   escrow?: { address: string; jobId: string; deadline: number } | null;
@@ -161,7 +161,7 @@ function payingClient(asset: string) {
   // Both schemes, escrow first: the agent's money waits in XorvEscrow until
   // the job delivers, and comes back if it doesn't.
   registerXorvPaymentSchemes(client, toClientEvmSigner(payer, readClient(NETWORK)));
-  // The 402 offers every stablecoin the broker accepts (USDG first). Pay in
+  // The 402 offers every stablecoin the broker accepts (AUSD first). Pay in
   // the one chosen from the payer's balances, not blindly the first.
   client.registerPolicy(onlyAssetPolicy(asset));
   return { paidFetch: wrapFetchWithPayment(fetch, client), httpClient: new x402HTTPClient(client) };
@@ -193,7 +193,7 @@ server.tool(
       const live = providers.filter((p) => p.status !== "offline");
       if (live.length === 0) {
         return text(
-          "No providers are online right now. Anyone can run one from source: `git clone https://github.com/nickthelegend/xorv-arbitrum && cd xorv-arbitrum && pnpm install && pnpm build`, then `node packages/cli/dist/index.js init` and `… start`.",
+          "No providers are online right now. Anyone can run one from source: `git clone https://github.com/nickthelegend/xorv-monad && cd xorv-monad && pnpm install && pnpm build`, then `node packages/cli/dist/index.js init` and `… start`.",
         );
       }
 
@@ -233,7 +233,7 @@ server.tool(
       return text(
         [
           `Network: ${info.network}`,
-          `Facilitator: ${info.facilitator.description} (ETH gas paid by ${info.facilitator.feePayer} — buyers need none)`,
+          `Facilitator: ${info.facilitator.description} (MON gas paid by ${info.facilitator.feePayer} — buyers need none)`,
           `Payable in: ${(info.stablecoins ?? []).map((t) => `${t.symbol} ${t.address}`).join(", ") || "unknown"}`,
           `Providers live: ${info.stats.providersLive}`,
           `Jobs: ${info.stats.jobsCompleted} completed of ${info.stats.jobsTotal}`,
@@ -283,7 +283,7 @@ server.tool(
           quote.escrow
             ? `Payment is held in the XorvEscrow contract ${quote.escrow.address} and released to ${quote.provider.address} when the result is delivered — refunded if it isn't, by anyone after ${new Date(quote.escrow.deadline * 1000).toISOString()}. The broker never holds it.`
             : `Payment goes directly to ${quote.provider.address} — the broker never holds it.`,
-          `Payable in: ${quote.accepts.map((a) => `${a.symbol ?? a.asset} (${a.amount} units)`).join(" or ")}. You need no ETH — the facilitator relays and pays the gas.`,
+          `Payable in: ${quote.accepts.map((a) => `${a.symbol ?? a.asset} (${a.amount} units)`).join(" or ")}. You need no MON — the facilitator relays and pays the gas.`,
         ].join("\n"),
       );
     } catch (err) {
@@ -298,7 +298,7 @@ server.tool(
 
 server.tool(
   "xorv_run_job",
-  `Run an AI job on the Xorv network and PAY FOR IT with a real on-chain transfer. This spends money — at most ${formatUsd(MAX_USD_MICROS)} per call. The job runs on someone else's machine using their AI subscription. The payment is held in an on-chain escrow and released to them when the result is delivered, or refunded to you if it isn't. Pays in the broker's default stablecoin (USDG on Arbitrum) unless told otherwise. Returns the result plus explorer links proving the deposit and the release or refund.`,
+  `Run an AI job on the Xorv network and PAY FOR IT with a real on-chain transfer. This spends money — at most ${formatUsd(MAX_USD_MICROS)} per call. The job runs on someone else's machine using their AI subscription. The payment is held in an on-chain escrow and released to them when the result is delivered, or refunded to you if it isn't. Pays in the broker's default stablecoin (AUSD on Monad) unless told otherwise. Returns the result plus explorer links proving the deposit and the release or refund.`,
   {
     prompt: z.string().min(1).describe("The job to run."),
     adapter: z
@@ -313,7 +313,7 @@ server.tool(
     token: z
       .string()
       .optional()
-      .describe("Stablecoin to pay with: USDG or USDC. Omit to pay with the first one the payer holds enough of (USDG first)."),
+      .describe("Stablecoin to pay with: AUSD or USDC. Omit to pay with the first one the payer holds enough of (AUSD first)."),
   },
   async ({ prompt, adapter, max_usd, token }) => {
     const ceiling = Math.min(max_usd ? parseUsd(max_usd) : MAX_USD_MICROS, MAX_USD_MICROS);

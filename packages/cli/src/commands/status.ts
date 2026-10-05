@@ -92,7 +92,7 @@ export async function statusCommand(opts: { broker?: string; json?: boolean }): 
             .map((t, i) => `${i === 0 ? ui.c.bold(t.symbol) : t.symbol} ${ui.c.muted(t.address)}`)
             .join(ui.c.muted(" · ")) || ui.c.muted("—"),
         ],
-        ["facilitator", `${network.facilitator.description} ${ui.c.muted(`· ETH gas paid by ${network.facilitator.feePayer}`)}`],
+        ["facilitator", `${network.facilitator.description} ${ui.c.muted(`· MON gas paid by ${network.facilitator.feePayer}`)}`],
         ["providers", `${ui.c.ok(String(network.stats.providersLive))} live ${ui.c.muted(`· ${network.stats.providersConnected} connected · ${network.stats.capacity} capabilities`)}`],
         ["jobs", `${network.stats.jobsCompleted} completed ${ui.c.muted(`of ${network.stats.jobsTotal}`)}`],
         ["settled", ui.c.money(formatUsd(network.stats.paidUsdMicros))],

@@ -6,7 +6,7 @@ import { serve } from "@hono/node-server";
 import type { Server as HttpServer } from "node:http";
 import {
   GAS_TOKEN_SYMBOL,
-  formatEth,
+  formatGas,
   formatUsd,
   logFromBlock,
   networkInfo,
@@ -123,7 +123,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
       ? `${config.escrowAddress} — jobs are paid into escrow, refundable after ${config.escrowDeadlineSeconds / 60} min`
       : "off — providers are paid directly (set XORV_ESCROW_ADDRESS)",
   );
-  line("reputation", config.registryAddress ? `${config.registryAddress} (Stylus)` : "off (set XORV_REGISTRY_ADDRESS)");
+  line("reputation", config.registryAddress ? `${config.registryAddress} ` : "off (set XORV_REGISTRY_ADDRESS)");
   console.log("");
   void bootChecks();
 });
@@ -131,7 +131,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 /**
  * Off the boot path, but loud: the two things that make every payment fail
  * with an opaque 402 — a stablecoin whose configured EIP-712 domain does not
- * match the contract, and an operator with no ETH to relay settlements.
+ * match the contract, and an operator with no MON to relay settlements.
  */
 async function bootChecks(): Promise<void> {
   try {
@@ -174,7 +174,7 @@ async function bootChecks(): Promise<void> {
           `the facilitator cannot relay payments until it is funded`,
       );
     } else {
-      console.log(`[broker] operator gas balance: ${formatEth(wei)}`);
+      console.log(`[broker] operator gas balance: ${formatGas(wei)}`);
     }
   } catch {
     /* the RPC is briefly unreachable; the first payment will say so */

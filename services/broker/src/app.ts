@@ -99,7 +99,7 @@ import type { LogIndex } from "./log-index.js";
  *
  * An audit append is ~43,500 gas. On an L2 that is a small fraction of a cent,
  * but at one every five minutes it is still 288 writes a day per provider —
- * paid in ETH by the broker, which takes a 0% fee and earns nothing — and a
+ * paid in MON by the broker, which takes a 0% fee and earns nothing — and a
  * busy L1 blob market can multiply it. On Hedera an HCS message cost a
  * fraction of a cent and the arithmetic never mattered.
  *
@@ -129,7 +129,7 @@ export interface AppDeps {
    * Production reads the network table (with `XORV_STABLECOIN` applied). Tests
    * pass a fixed list so the quote path stays deterministic. Nothing here
    * touches the network: each token's EIP-712 domain is configured rather than
-   * read, because USDG's `version()` reverts.
+   * read, because AUSD signs under "Agora Dollar", not its `name()`.
    */
   stablecoins?: StablecoinInfo[];
   metrics?: Metrics;
@@ -139,7 +139,7 @@ export interface AppDeps {
    * `null` turns escrow off, and the broker pays providers directly (`exact`).
    */
   escrow?: EscrowOps | null;
-  /** Override the reputation registry (Stylus). `null` turns on-chain reputation off. */
+  /** Override the reputation registry . `null` turns on-chain reputation off. */
   reputation?: ReputationSource | null;
   /**
    * The persisted audit-log index. When present, log reads are served from it
@@ -154,7 +154,7 @@ export function createApp(deps: AppDeps) {
   const heartbeatCounters = new Map<string, number>();
 
   /**
-   * The stablecoins every 402 offers, default (USDG) first, fixed at boot.
+   * The stablecoins every 402 offers, default (AUSD) first, fixed at boot.
    *
    * Fixed because the paid route's `accepts` array is built once below, one
    * row per token, and x402 asks for requirements twice per payment — both
@@ -200,7 +200,7 @@ export function createApp(deps: AppDeps) {
   // No `defaultAssets` to configure, because every price this server quotes is
   // an explicit `{asset, amount, extra}` rather than a dollar figure the scheme
   // has to look up. That matters here specifically: the scheme's built-in asset
-  // registry knows nothing about USDG, so a Money-typed price would resolve to
+  // registry knows nothing about AUSD, so a Money-typed price would resolve to
   // the wrong token or to nothing at all.
   const x402Server = new x402ResourceServer(facilitator)
     .register("eip155:*" as Network, new ExactEvmScheme())
@@ -446,7 +446,7 @@ export function createApp(deps: AppDeps) {
     // node that is ready to work.
     const registryResult = await chain.publishRegistration(provider).catch(() => null);
     if (registryResult) provider.registryTxHash = registryResult.transactionHash;
-    // Sponsored into XorvRegistry in the background: the provider needs no ETH,
+    // Sponsored into XorvRegistry in the background: the provider needs no MON,
     // and a slow block must not hold up a node that is ready to work.
     if (reputation) void reputation.onRegistered(provider, `${config.publicUrl}/api/providers/${provider.id}`);
 
@@ -533,7 +533,7 @@ export function createApp(deps: AppDeps) {
    * chain. Capped per job and rate limited, because anyone can press the button.
    *
    * The demo account pays in whichever offered stablecoin it can afford, in
-   * the broker's order (USDG first), exactly as `xorv run` would.
+   * the broker's order (AUSD first), exactly as `xorv run` would.
    */
   app.post("/api/demo/pay", async (c) => {
     const payerKey = process.env.XORV_DEMO_PAYER_KEY?.trim();
@@ -680,7 +680,7 @@ export function createApp(deps: AppDeps) {
         model: match.capability.model ?? null,
         stats: match.provider.stats,
       },
-      // One row per stablecoin, in the order the 402 will offer them (USDG
+      // One row per stablecoin, in the order the 402 will offer them (AUSD
       // first). The same amount on every row: all are 6-decimal dollars. A
       // buyer uses this to decide which one it can pay with before signing.
       accepts: quote.options.map((o) => ({
@@ -716,7 +716,7 @@ export function createApp(deps: AppDeps) {
       // Quote.amountUnits for why recomputing here silently breaks
       // correctly-signed payments.
       //
-      // One row per configured stablecoin, USDG first. A stock x402 client
+      // One row per configured stablecoin, AUSD first. A stock x402 client
       // pays the first row it supports; Xorv's own clients pick the first one
       // the buyer can afford, or the one named with `--token`.
       accepts: [
@@ -775,7 +775,7 @@ export function createApp(deps: AppDeps) {
                 priceLabel: formatUsd(quote.priceUsdMicros),
                 accepts: quote.options.map((o) => o.symbol),
                 escrow: quote.escrow ?? null,
-                hint: `Sign an EIP-3009 authorization from an address holding ${quote.options.map((o) => o.symbol).join(" or ")} and retry with the PAYMENT-SIGNATURE header. You need no ETH — the facilitator relays it and pays the gas.${quote.escrow ? " With the escrow scheme the money waits in XorvEscrow until the job delivers, and is refundable by anyone after the deadline." : ""}`,
+                hint: `Sign an EIP-3009 authorization from an address holding ${quote.options.map((o) => o.symbol).join(" or ")} and retry with the PAYMENT-SIGNATURE header. You need no MON — the facilitator relays it and pays the gas.${quote.escrow ? " With the escrow scheme the money waits in XorvEscrow until the job delivers, and is refundable by anyone after the deadline." : ""}`,
               }
             : { error: "quote not found or expired — request a new one from POST /api/quotes" },
         };

@@ -1,7 +1,7 @@
 /**
  * On-chain reputation, as the broker uses it.
  *
- * XorvRegistry (Stylus) is written by the escrow, not by the broker: every
+ * XorvRegistry is written by the escrow, not by the broker: every
  * release adds a completed job and the amount earned, every attester refund or
  * reassignment adds a failure. So it is the one track record a buyer can check
  * without trusting this broker's database — and the matcher should rank on it.
@@ -82,7 +82,7 @@ export class ReputationBook {
    * Make sure a newly joined provider exists in the registry.
    *
    * Sponsored rather than self-service so that joining the network never
-   * requires holding ETH: the provider is paid in stablecoins by the escrow and
+   * requires holding MON: the provider is paid in stablecoins by the escrow and
    * should need nothing else. Skipped when the record already exists.
    */
   async onRegistered(provider: ReputationTarget, metadataUri: string): Promise<void> {

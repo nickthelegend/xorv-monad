@@ -20,8 +20,8 @@ function quoteInput(over: Partial<Omit<Quote, "id" | "createdAt" | "expiresAt">>
     priceUsdMicros: 1_000,
     amountUnits: "1000",
     options: [
-      { symbol: "USDG", asset: "0xFFC95faa3d63Cde504a05B567C600B78C0b41892", eip712: { name: "Global Dollar", version: "1" } },
-      { symbol: "USDC", asset: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", eip712: { name: "USD Coin", version: "2" } },
+      { symbol: "AUSD", asset: "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC", eip712: { name: "Agora Dollar", version: "1" } },
+      { symbol: "USDC", asset: "0x534b2f3A21130d7a60830c2Df862319e593943A3", eip712: { name: "USDC", version: "2" } },
     ],
     ...over,
   };
@@ -79,13 +79,13 @@ describe("quotes", () => {
     expect(store.paidJobIdForQuote(quote.id)).toBeUndefined();
   });
 
-  it("carries each stablecoin's EIP-712 domain the buyer has to sign against, USDG first", () => {
+  it("carries each stablecoin's EIP-712 domain the buyer has to sign against, AUSD first", () => {
     // x402's EVM scheme fills this in only for tokens in its built-in
-    // registry, and USDG is not one of them, so the quote must.
+    // registry, and AUSD is not one of them, so the quote must.
     const quote = store.createQuote(quoteInput());
     const options = store.getQuote(quote.id)!.options;
-    expect(options.map((o) => o.symbol)).toEqual(["USDG", "USDC"]);
-    expect(options[0]!.eip712).toEqual({ name: "Global Dollar", version: "1" });
+    expect(options.map((o) => o.symbol)).toEqual(["AUSD", "USDC"]);
+    expect(options[0]!.eip712).toEqual({ name: "Agora Dollar", version: "1" });
   });
 
   it("returns undefined for an unknown quote", () => {

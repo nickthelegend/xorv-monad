@@ -4,7 +4,7 @@
  *
  * The wizard's job is to make the two genuinely hard parts painless: which of
  * the operator's agent CLIs actually work right now (probed, not asked), and
- * getting them an address that can receive USDG or USDC on Arbitrum
+ * getting them an address that can receive AUSD or USDC on Monad
  * (generated, with nothing to fund).
  */
 
@@ -211,8 +211,8 @@ interface WalletChoice {
  * account id the faucet assigned, validate it, and then tell them to run
  * `xorv wallet associate` before they could be paid at all.
  *
- * On Arbitrum: generate a key. The address is a function of the key, the
- * account needs no funding to exist — not even ETH — and it can receive USDG or
+ * On Monad: generate a key. The address is a function of the key, the
+ * account needs no funding to exist — not even MON — and it can receive AUSD or
  * USDC immediately. A provider only ever receives, so there is nothing left
  * for them to do.
  */
@@ -271,8 +271,8 @@ async function setupWallet(previous: NodeConfig | null, network: string): Promis
           ["private key", ui.c.muted(`${key.slice(0, 14)}…  (saved to ${configPath()})`)],
         ]),
         "",
-        "  Ready now. It can receive USDG or USDC immediately — there is nothing",
-        "  to fund (no ETH either) and nothing to opt into: it only receives.",
+        "  Ready now. It can receive AUSD or USDC immediately — there is nothing",
+        "  to fund (no MON either) and nothing to opt into: it only receives.",
       ],
       { title: "payout account", color: ui.BRAND.mint },
     ),

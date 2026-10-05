@@ -37,7 +37,7 @@ describe("config round trip", () => {
     const config = {
       nodeId: "abc",
       label: "test-node",
-      network: "eip155:421614",
+      network: "eip155:10143",
       brokerUrl: "http://localhost:8402",
       address: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",
       privateKey: "deadbeef",
@@ -68,7 +68,7 @@ describe("config round trip", () => {
     mod.saveConfig({
       nodeId: "a",
       label: "n",
-      network: "eip155:421614",
+      network: "eip155:10143",
       brokerUrl: "u",
       address: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",
       privateKey: "k",
@@ -88,7 +88,7 @@ describe("config round trip", () => {
     mod.saveConfig({
       nodeId: "a",
       label: "n",
-      network: "eip155:421614",
+      network: "eip155:10143",
       brokerUrl: "u",
       address: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",
       privateKey: "k",
@@ -108,7 +108,7 @@ describe("config round trip", () => {
     fs.writeFileSync(mod.configPath(), JSON.stringify({ label: "old" }));
     const loaded = mod.loadConfig()!;
     expect(loaded.label).toBe("old");
-    expect(loaded.network).toBe("eip155:421614");
+    expect(loaded.network).toBe("eip155:10143");
     expect(loaded.capabilities).toEqual([]);
     expect(loaded.tunnel).toEqual({ enabled: false, hostname: null });
   });
@@ -224,8 +224,11 @@ describe("network migration", () => {
     const mod = await loadModule();
     fs.mkdirSync(home, { recursive: true });
     fs.writeFileSync(mod.configPath(), JSON.stringify({ label: "old", network: "eip155:1" }));
-    expect(mod.loadConfig()!.network).toBe("eip155:421614");
-    fs.writeFileSync(mod.configPath(), JSON.stringify({ label: "rh", network: "eip155:46630" }));
-    expect(mod.loadConfig()!.network).toBe("eip155:46630");
+    expect(mod.loadConfig()!.network).toBe("eip155:10143");
+    // An Arbitrum config from the version this was ported from moves too.
+    fs.writeFileSync(mod.configPath(), JSON.stringify({ label: "arb", network: "eip155:421614" }));
+    expect(mod.loadConfig()!.network).toBe("eip155:10143");
+    fs.writeFileSync(mod.configPath(), JSON.stringify({ label: "main", network: "eip155:143" }));
+    expect(mod.loadConfig()!.network).toBe("eip155:143");
   });
 });

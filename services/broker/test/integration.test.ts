@@ -72,7 +72,7 @@ describe("quoting", () => {
     expect(status).toBe(200);
     expect(body.quoteId).toMatch(/^qte_/);
     expect(body.provider.address).toBe("0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B");
-    expect(body.accepts.map((a: { symbol: string }) => a.symbol)).toEqual(["USDG", "USDC"]);
+    expect(body.accepts.map((a: { symbol: string }) => a.symbol)).toEqual(["AUSD", "USDC"]);
     for (const a of body.accepts) expect(a.amount).toBe(String(body.priceUsdMicros));
     provider.close();
   });
@@ -199,7 +199,7 @@ describe("the paid path", () => {
     provider.close();
   });
 
-  it("offers one requirement per stablecoin, USDG first, each with its own EIP-712 domain", async () => {
+  it("offers one requirement per stablecoin, AUSD first, each with its own EIP-712 domain", async () => {
     const provider = await connectProvider(h);
     const { body } = await quote(h);
     const res = await fetch(`${h.base}/api/jobs/${body.quoteId}`, {
@@ -209,11 +209,11 @@ describe("the paid path", () => {
     });
     const decoded = JSON.parse(Buffer.from(res.headers.get("payment-required")!, "base64").toString("utf8"));
     expect(decoded.accepts.map((a: { asset: string }) => a.asset)).toEqual([
-      "0xFFC95faa3d63Cde504a05B567C600B78C0b41892",
-      "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
+      "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC",
+      "0x534b2f3A21130d7a60830c2Df862319e593943A3",
     ]);
-    expect(decoded.accepts[0].extra).toMatchObject({ name: "Global Dollar", version: "1" });
-    expect(decoded.accepts[1].extra).toMatchObject({ name: "USD Coin", version: "2" });
+    expect(decoded.accepts[0].extra).toMatchObject({ name: "Agora Dollar", version: "1" });
+    expect(decoded.accepts[1].extra).toMatchObject({ name: "USDC", version: "2" });
     provider.close();
   });
 
@@ -253,7 +253,7 @@ describe("the paid path", () => {
     expect(full.job.payment.payer).toBe("0x03294Ce27e218d1611B2ebc0b0ffdDb95F129F36");
     expect(full.job.payment.transactionHash).toBeTruthy();
     // A stock client pays the first option, and the record names it.
-    expect(full.job.payment.asset).toBe("USDG");
+    expect(full.job.payment.asset).toBe("AUSD");
     expect(full.job.events.length).toBeGreaterThan(0);
 
     // And the receipt reached the ledger, carrying the settlement id.
@@ -546,7 +546,7 @@ describe("public surface", () => {
   it("serves health and network state", async () => {
     expect((await fetch(`${h.base}/health`)).status).toBe(200);
     const net = (await (await fetch(`${h.base}/api/network`)).json()) as Record<string, never>;
-    expect(net.network).toBe("eip155:421614");
+    expect(net.network).toBe("eip155:10143");
     expect(net.log.address).toBe("0x383f5153db8bb18c7c25157fb3493645a465eEf3");
   });
 

@@ -1,16 +1,16 @@
 {
   "name": "@xorv/mcp",
   "version": "0.1.0",
-  "description": "MCP server for Xorv — lets any agent buy AI capacity from the network and pay for it over x402 on Arbitrum.",
+  "description": "MCP server for Xorv — lets any agent buy AI capacity from the network and pay for it over x402 on Monad.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
-  "homepage": "https://github.com/nickthelegend/xorv-arbitrum#readme",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv-arbitrum.git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
     "directory": "packages/mcp"
   },
-  "bugs": "https://github.com/nickthelegend/xorv-arbitrum/issues",
+  "bugs": "https://github.com/nickthelegend/xorv-monad/issues",
   "type": "module",
   "engines": {
     "node": ">=20.11.0"
@@ -28,8 +28,8 @@
   },
   "keywords": [
     "mcp",
-    "usdg",
-    "arbitrum",
+    "ausd",
+    "monad",
     "x402",
     "usdc",
     "ai-agents",

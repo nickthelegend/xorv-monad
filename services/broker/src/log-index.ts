@@ -6,8 +6,9 @@
  * wrong with that, both observed live on an earlier chain rather than supposed:
  *
  *  - **It cannot reach old receipts.** A bounded number of windows covers a
- *    bounded stretch of chain, and at Arbitrum's ~0.25s blocks even 120
- *    10,000-block windows is only a few days. Anything older is invisible,
+ *    bounded stretch of chain, and Monad's public RPC answers at most 100
+ *    blocks per `eth_getLogs` (40 seconds of chain at 0.4s blocks), so 120
+ *    windows is under an hour. Anything older is invisible,
  *    and the page says "no receipts yet" about a log that has them.
  *  - **It rate-limits itself.** Public RPCs allow only a few `eth_getLogs` a
  *    second sustained. A landing page and a job board both polling the
@@ -114,9 +115,9 @@ export class LogIndex {
     this.readRange = options.readRange ?? ((fromBlock, toBlock) => readLogRange(network, { address, fromBlock, toBlock }));
     this.readTransactions = options.readTransactions ?? ((hashes) => readLogFromTransactions(network, address, hashes));
     this.head = options.head ?? (() => readClient(network).getBlockNumber());
-    // Arbitrum makes ~4 blocks a second, so a backfill has to move faster
-    // than the old 2.5s pace to ever catch up: 10,000 blocks a second is still
-    // one request a second, well inside public-RPC limits.
+    // Monad makes ~2.5 blocks a second and its public RPC serves 100 blocks
+    // per eth_getLogs, so one request a second backfills ~40x faster than the
+    // chain grows, well inside public-RPC limits.
     this.paceMs = options.paceMs ?? 1_000;
     this.windowBlocks = options.windowBlocks ?? logWindowBlocks();
     this.pollMs = options.pollMs ?? 15_000;

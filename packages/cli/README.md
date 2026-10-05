@@ -1,13 +1,13 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/nickthelegend/xorv-arbitrum/main/brand/xorv-logo.svg" alt="Xorv" width="240" />
+<img src="https://raw.githubusercontent.com/nickthelegend/xorv-monad/main/brand/xorv-logo.svg" alt="Xorv" width="240" />
 
 **Rent out your idle AI subscription. Get paid per job in USDC.**
 
 </div>
 
 ```bash
-git clone https://github.com/nickthelegend/xorv-arbitrum && cd xorv-arbitrum
+git clone https://github.com/nickthelegend/xorv-monad && cd xorv-monad
 pnpm install && pnpm build
 alias xorv="node $PWD/packages/cli/dist/index.js"
 xorv init
@@ -17,7 +17,7 @@ xorv start
 > Not on npm yet: the `@xorv/cli` package published there is the earlier Hedera version
 > and talks to a different network. Install from this repo as above.
 
-That's it. Your machine joins the [Xorv](https://github.com/nickthelegend/xorv-arbitrum) network, takes jobs
+That's it. Your machine joins the [Xorv](https://github.com/nickthelegend/xorv-monad) network, takes jobs
 from anyone, runs them on the Claude / Codex / Grok plan you already pay for, and gets paid **per
 job in USDC over [x402](https://x402.org) on [Arc](https://www.circle.com/arc)** — straight to your
 wallet, with no platform in the middle.
@@ -87,7 +87,7 @@ xorv run "Summarise this paper" --adapter claude-code --yes
 | `--key` | Payer key, its address is derived (or `XORV_PAYER_KEY`) |
 | `--broker <url>` | Broker to post to |
 | `-y, --yes` | Skip the confirmation |
-| `--token <symbol>` | Pay in `USDG` or `USDC` (default: the first one the payer holds) |
+| `--token <symbol>` | Pay in `AUSD` or `USDC` (default: the first one the payer holds) |
 | `--json` | Machine-readable output |
 
 When the broker runs with XorvEscrow, the payment waits in escrow until the job delivers: the receipt
@@ -160,4 +160,4 @@ deliberate, stated trade-off, since it's a hot key that must sign with no human 
 
 ---
 
-MIT · [github.com/nickthelegend/xorv-arbitrum](https://github.com/nickthelegend/xorv-arbitrum)
+MIT · [github.com/nickthelegend/xorv-monad](https://github.com/nickthelegend/xorv-monad)

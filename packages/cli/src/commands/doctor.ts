@@ -23,7 +23,7 @@
 
 import {
   fetchBalances,
-  formatEth,
+  formatGas,
   formatUsd,
   formatUnits,
   explorerAddress,
@@ -155,8 +155,8 @@ export function sandboxChecks(tier: SandboxTier, withheld: number, safe: boolean
 }
 
 export interface BalanceLike {
-  /** ETH for gas, in wei. */
-  ethWei: string | bigint | number;
+  /** MON for gas, in wei. */
+  gasWei: string | bigint | number;
   /** One entry per configured stablecoin, default first. */
   stablecoins: Array<{ symbol: string; units: string | bigint | number }>;
 }
@@ -167,7 +167,7 @@ export interface BalanceLike {
  * On Hedera this was three checks and the important one asked whether the
  * account could receive the token *at all* — an account without an association
  * or an automatic slot silently cannot be paid. That check is gone: every
- * ERC-20 address can receive USDG or USDC, so the question has one answer and
+ * ERC-20 address can receive AUSD or USDC, so the question has one answer and
  * asking it is noise.
  *
  * What is left is reporting, plus the check that actually decides whether a
@@ -176,9 +176,9 @@ export interface BalanceLike {
  * signature in that token is rejected with an opaque "invalid signature", and
  * nothing else would tell the operator why.
  *
- * Gas is ETH, and a provider needs none: it only receives, and the broker's
+ * Gas is MON, and a provider needs none: it only receives, and the broker's
  * facilitator pays the gas on every settlement. Flagging an empty balance —
- * stablecoin or ETH — would send people to a faucet they do not need.
+ * stablecoin or MON — would send people to a faucet they do not need.
  */
 export function payoutChecks(
   network: string,
@@ -197,7 +197,7 @@ export function payoutChecks(
   checks.push(
     ok(
       "gas",
-      `${formatEth(String(balances.ethWei))} — none needed: the broker's facilitator pays the gas, providers and buyers never do`,
+      `${formatGas(String(balances.gasWei))} — none needed: the broker's facilitator pays the gas, providers and buyers never do`,
     ),
   );
 

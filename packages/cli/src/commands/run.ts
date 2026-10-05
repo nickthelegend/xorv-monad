@@ -2,13 +2,13 @@
  * `xorv run "<prompt>"` — the buyer side.
  *
  * Posts a job, pays for it with a real on-chain transfer over x402, watches it
- * execute on a stranger's machine, and prints the answer plus an Arbiscan link.
+ * execute on a stranger's machine, and prints the answer plus an Monadscan link.
  * The whole protocol, end to end, in one command and about four seconds.
  *
  * The buyer never broadcasts a transaction. It signs an EIP-3009
  * authorization — typed data, not a transaction — and the facilitator relays
- * it. So this command works from an address holding nothing but USDG (or
- * USDC) — no ETH at all — which is the entire point.
+ * it. So this command works from an address holding nothing but AUSD (or
+ * USDC) — no MON at all — which is the entire point.
  *
  * This is also the honest test of the network: it uses the same public HTTP
  * surface and the same `@x402/*` client any third party would, with no
@@ -46,7 +46,7 @@ interface RunOptions {
   key?: string;
   yes?: boolean;
   json?: boolean;
-  /** Stablecoin to pay with, by symbol (USDG, USDC) or address. */
+  /** Stablecoin to pay with, by symbol (AUSD, USDC) or address. */
   token?: string;
 }
 
@@ -66,7 +66,7 @@ interface QuoteResponse {
     model: string | null;
     stats: { jobsCompleted: number; jobsFailed: number };
   };
-  /** One row per stablecoin the broker accepts, in its preference order (USDG first). */
+  /** One row per stablecoin the broker accepts, in its preference order (AUSD first). */
   accepts: Array<{ asset: string; amount: string; symbol?: string }>;
   /** Set when the broker settles through XorvEscrow: where the money will wait, and until when. */
   escrow?: { address: string; jobId: string; deadline: number; addressUrl?: string } | null;
@@ -187,7 +187,7 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<void
   network = await brokerNetwork(brokerUrl, network);
 
   // Which stablecoin to pay with: the one named by --token, otherwise the
-  // first one (in the broker's order, USDG first) this payer can afford.
+  // first one (in the broker's order, AUSD first) this payer can afford.
   const balances = await payerBalances(network, payerAddress, quote.accepts);
   const chosen = choosePaymentAsset(quote.accepts, { balances, preferred: opts.token ?? null });
   if (!chosen) {
@@ -236,7 +236,7 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<void
               ]
             : ["goes to", `${quote.provider.address} ${ui.c.muted("— straight to the provider, not the broker")}`],
           ["from", payerAddress],
-          ["gas", ui.c.muted("none — you need no ETH; the facilitator relays and pays the fee")],
+          ["gas", ui.c.muted("none — you need no MON; the facilitator relays and pays the fee")],
         ]),
         { title: "quote" },
       ),

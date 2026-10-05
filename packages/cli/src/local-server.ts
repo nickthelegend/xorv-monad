@@ -144,7 +144,7 @@ function page(node: ProviderNode): string {
 </style></head><body><div class="wrap">
   <div class="mark">Xorv provider node</div>
   <h1>${escapeHtml(node.config.label)}</h1>
-  <p class="sub">Selling idle AI capacity, paid per job in USDG over x402 on Arbitrum.</p>
+  <p class="sub">Selling idle AI capacity, paid per job in AUSD over x402 on Monad.</p>
   <span class="pill"><span class="dot"></span>${node.stats.connected ? "connected to the network" : "reconnecting"}</span>
   <div class="grid">
     <div class="card"><div class="k">Jobs done</div><div class="v">${node.stats.jobsCompleted}</div></div>
@@ -155,6 +155,6 @@ function page(node: ProviderNode): string {
   <table><thead><tr><th>Capability</th><th>Adapter</th><th class="right">Price / job</th></tr></thead>
   <tbody>${rows}</tbody></table>
   <footer>Payouts to <span class="mono">${escapeHtml(node.config.address)}</span> on ${escapeHtml(node.config.network)}.
-  <br>Run your own: <span class="mono">github.com/nickthelegend/xorv-arbitrum</span> — clone, build, <span class="mono">xorv init</span></footer>
+  <br>Run your own: <span class="mono">github.com/nickthelegend/xorv-monad</span> — clone, build, <span class="mono">xorv init</span></footer>
 </div></body></html>`;
 }

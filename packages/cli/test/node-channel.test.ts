@@ -55,7 +55,7 @@ async function until(check: () => boolean, timeoutMs = 5_000): Promise<void> {
 const config: NodeConfig = {
   nodeId: "channel-test-node",
   label: "channel-test",
-  network: "eip155:421614",
+  network: "eip155:10143",
   brokerUrl: "http://127.0.0.1:1",
   address: "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B",
   privateKey: "",

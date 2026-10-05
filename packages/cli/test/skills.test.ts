@@ -47,7 +47,7 @@ describe("spending discipline", () => {
 
   it("tells the agent to stop rather than guess when the CLI is missing", () => {
     // From source: the npm package of that name is the older Hedera CLI.
-    expect(body).toContain("git clone https://github.com/nickthelegend/xorv-arbitrum");
+    expect(body).toContain("git clone https://github.com/nickthelegend/xorv-monad");
     expect(body).not.toContain("npm i -g @xorv/cli");
   });
 });

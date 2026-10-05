@@ -47,13 +47,13 @@ export interface Quote {
    */
   amountUnits: string;
   /**
-   * The stablecoins this quote can be paid in, default (USDG) first, each with
+   * The stablecoins this quote can be paid in, default (AUSD) first, each with
    * its EIP-712 domain — frozen here for the same reason as the amount.
    *
    * The buyer signs an EIP-3009 authorization against
    * `(name, version, chainId, verifyingContract)`, so the 402 has to state the
    * first two for every token it offers. x402's EVM scheme fills them in only
-   * for tokens in its built-in registry, and USDG is not one of them. Left out,
+   * for tokens in its built-in registry, and AUSD is not one of them. Left out,
    * the buyer signs against a domain of its own guessing and the facilitator
    * rejects a signature that is otherwise perfectly valid.
    */

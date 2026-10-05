@@ -61,7 +61,7 @@ async function providers(harness: Harness) {
 }
 
 describe("on-chain reputation", () => {
-  it("sponsors a new provider's registration, so joining needs no ETH", async () => {
+  it("sponsors a new provider's registration, so joining needs no MON", async () => {
     const reg = new MemoryRegistry();
     h = await boot({ reputation: reg });
     const p = await connectProvider(h, { address: A1 });

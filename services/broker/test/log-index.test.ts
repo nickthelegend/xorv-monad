@@ -32,7 +32,7 @@ describe("LogIndex", () => {
     const store = new MemoryPersistence();
     const windows: Array<[bigint, bigint]> = [];
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1_000n,
@@ -58,7 +58,7 @@ describe("LogIndex", () => {
   it("backs off on an RPC error without advancing, then carries on", async () => {
     let refuse = true;
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -79,7 +79,7 @@ describe("LogIndex", () => {
   it("resumes from the saved cursor and entries after a restart", async () => {
     const store = new MemoryPersistence();
     const first = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -91,7 +91,7 @@ describe("LogIndex", () => {
 
     const seen: bigint[] = [];
     const second = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -110,7 +110,7 @@ describe("LogIndex", () => {
   it("seeds from known transactions immediately, once each", async () => {
     let lookups = 0;
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -129,7 +129,7 @@ describe("LogIndex", () => {
   it("picks up newly published receipts on every tick, even mid-backfill", async () => {
     const published: string[] = [];
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -150,7 +150,7 @@ describe("LogIndex", () => {
   it("never lets a failing seed stop the forward scan", async () => {
     const ranges: bigint[] = [];
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -174,7 +174,7 @@ describe("LogIndex", () => {
     let writing = true;
     const calls: string[] = [];
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -204,7 +204,7 @@ describe("LogIndex", () => {
 
   it("orders newest first and filters by kind", async () => {
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 1n,
@@ -227,7 +227,7 @@ describe("LogIndex", () => {
     let head = 500n;
     const ranges: Array<[bigint, bigint]> = [];
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       windowBlocks: WINDOW,
       address: ADDRESS,
       fromBlock: 0n,
@@ -250,7 +250,7 @@ describe("LogIndex window size", () => {
     process.env.XORV_LOG_WINDOW_BLOCKS = "2500";
     const windows: Array<[bigint, bigint]> = [];
     const index = new LogIndex({
-      network: "eip155:421614",
+      network: "eip155:10143",
       address: ADDRESS,
       fromBlock: 1n,
       store: new MemoryPersistence(),
