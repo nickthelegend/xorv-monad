@@ -1,14 +1,14 @@
 {
-  "name": "xorv-arbitrum",
+  "name": "xorv-monad",
   "version": "0.1.0",
   "private": true,
   "description": "Xorv — a decentralized AI capacity network. Rent out your idle Claude/Codex/Grok subscription, get paid per job in stablecoins (AUSD/USDC) over x402 on Monad.",
   "license": "MIT",
   "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
-  "homepage": "https://github.com/nickthelegend/xorv-arbitrum#readme",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nickthelegend/xorv-arbitrum.git"
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git"
   },
   "type": "module",
   "engines": {
@@ -32,8 +32,8 @@
   },
   "keywords": [
     "x402",
-    "usdg",
-    "arbitrum",
+    "ausd",
+    "monad",
     "usdc",
     "ai-agents",
     "micropayments",

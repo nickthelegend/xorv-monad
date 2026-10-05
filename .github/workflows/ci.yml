@@ -46,7 +46,7 @@ jobs:
       # Every test in the repo runs with no credentials and no network:
       # the two pieces that would touch the chain — the facilitator and the
       # audit-log writer — are stubbed, so CI proves the logic without spending
-      # testnet stablecoins or depending on an Arbitrum RPC being up.
+      # testnet stablecoins or depending on a Monad RPC being up.
       - name: Test
         run: pnpm test
 

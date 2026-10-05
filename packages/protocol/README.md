@@ -1,12 +1,12 @@
 # @xorv/protocol
 
-Shared types, money math, chain plumbing and x402 wiring for [Xorv](https://github.com/nickthelegend/xorv-arbitrum) —
+Shared types, money math, chain plumbing and x402 wiring for [Xorv](https://github.com/nickthelegend/xorv-monad) —
 a marketplace for idle AI subscription capacity, paid per job in USDC over x402 on Arc.
 
 Used by `@xorv/cli`, `@xorv/mcp` and the Xorv broker. You only need it directly if you are building your
 own buyer, provider or broker against the Xorv protocol.
 
-It ships as a workspace package of [xorv-arbitrum](https://github.com/nickthelegend/xorv-arbitrum) —
+It ships as a workspace package of [xorv-monad](https://github.com/nickthelegend/xorv-monad) —
 the `@xorv/protocol` on npm is the earlier Hedera version. Depend on it from the workspace
 (`"@xorv/protocol": "workspace:*"`).
 

@@ -7,7 +7,7 @@ contract MockRegistry {
         Ok,
         Revert,
         BurnGas,
-        /// Needs ~120k gas in total (50k burned + its storage writes): more than a cold Stylus
+        /// Needs ~120k gas in total (50k burned + its storage writes): more than a cold registry
         /// record (~72k measured), still inside the escrow's 150k budget.
         Expensive
     }

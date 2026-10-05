@@ -31,5 +31,5 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "description": "Xorv marketing site — decentralized AI capacity network paid in stablecoins (USDG/USDC) over x402 on Arbitrum."
+  "description": "Xorv marketing site — decentralized AI capacity network paid in stablecoins (AUSD/USDC) over x402 on Monad."
 }

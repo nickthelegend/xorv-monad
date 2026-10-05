@@ -10,7 +10,7 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
  * relies on: 6 decimals, the canonical `ReceiveWithAuthorization` typehash,
  * the `msg.sender == to` rule, single-use nonces, validity windows, and
  * ERC-1271 support through the `bytes signature` overload (as FiatTokenV2_2
- * and USDG both have).
+ * and AUSD both have).
  */
 contract MockERC3009 is ERC20, EIP712 {
     bytes32 public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = keccak256(

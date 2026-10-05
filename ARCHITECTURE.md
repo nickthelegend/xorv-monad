@@ -1,6 +1,6 @@
 # Architecture
 
-How Xorv on Arbitrum is put together, and why the awkward parts are the way they are.
+How Xorv on Monad is put together, and why the awkward parts are the way they are.
 
 ---
 
@@ -19,14 +19,14 @@ How Xorv on Arbitrum is put together, and why the awkward parts are the way they
         │  ◄── 402 + accepts[]    │  scheme "escrow", payTo = XorvEscrow
         │                         │                                  │
         │  3. PAYMENT-SIGNATURE ─►│  facilitator = escrow attester   │
-        │     ReceiveWith-        │  XorvEscrow.fund() ────────────► Arbitrum
+        │     ReceiveWith-        │  XorvEscrow.fund() ────────────► Monad   
         │     Authorization       │  (buyer → escrow, buyer pays 0 gas)
         │  ◄── 200 + jobId        │                                  │
         │                         ├──── job.dispatch (WebSocket) ───►│
         │  ◄═══ SSE events ═══════╪◄═══ tool calls, edits ═══════════┤
         │  ◄── result             │◄─── answer ──────────────────────┤
         │                         ├── XorvEscrow.release(sha256) ──► escrow → provider
-        │                         │        └─ recordOutcome ───────► XorvRegistry (Stylus)
+        │                         │        └─ recordOutcome ───────► XorvRegistry         
 ```
 
 A job that fails is **reassigned** (money stays in escrow, the payee changes) or
@@ -55,10 +55,10 @@ flowchart LR
     NODE["xorv start<br/>Claude Code / Codex / …<br/>sandboxed per job"]
   end
 
-  subgraph Arbitrum["Arbitrum Sepolia · Robinhood Chain Testnet"]
-    TOKEN["USDG (Paxos) · USDC (Circle)<br/>EIP-3009 receiveWithAuthorization"]
+  subgraph Monad["Monad testnet (10143)"]
+    TOKEN["AUSD (Agora) · USDC (Circle)<br/>EIP-3009 receiveWithAuthorization"]
     ESC["XorvEscrow (Solidity)<br/>fund · release · refund · reassign"]
-    REG["XorvRegistry (Stylus / Rust)<br/>providers · completed · failed · score"]
+    REG["XorvRegistry (Solidity)<br/>providers · completed · failed · score"]
     LOG["XorvLog (Solidity)<br/>registrations · heartbeats · receipts"]
   end
 
@@ -84,7 +84,10 @@ flowchart LR
 
 | Package | What it is |
 |---|---|
-| `contracts/` | Foundry project: `XorvEscrow`, `XorvLog`, tests, deploy script. `contracts/stylus/registry` is the Rust registry. |
+| `contracts/` | Foundry project: `XorvEscrow`, `XorvRegistry`, `XorvLog`, `XorvRefundKeeper`, tests, deploy script. |
+| `indexer/` | Envio HyperIndex over all three contracts. |
+| `cre/` | Chainlink CRE refund-keeper workflow. |
+| `packages/agent` | `xorv-agent`: Kimi or Qwen as an autonomous, budgeted buyer. |
 | `packages/protocol` | Shared vocabulary: networks, stablecoins, money math, viem plumbing, x402 wiring, the **escrow scheme**. |
 | `packages/cli` | `xorv` — the provider node, and the buyer-side `xorv run`. |
 | `packages/mcp` | `@xorv/mcp` — Xorv as an MCP server, so an agent can buy capacity. |
@@ -102,7 +105,7 @@ The Hedera and Arc versions paid the provider at the moment of purchase, and
 covered a failing provider by reassigning the job "at no extra charge". That
 is a promise from the broker, and the buyer had no way to enforce it.
 
-On Arbitrum the money waits in `XorvEscrow` until the work is delivered. There
+On Monad the money waits in `XorvEscrow` until the work is delivered. There
 are exactly three exits — release, refund, reassign — and one of them (refund
 after the deadline) needs nobody's permission. The broker can stall; it cannot
 keep the money. See `contracts/README.md` for the full property table and the
@@ -146,25 +149,39 @@ provider, amount, token domain, job id and deadline. So `POST /api/quotes`
 freezes all of them, and the escrow `jobId` is `keccak256("xorv:job:" + quoteId)`
 — deterministic, so both passes agree without storing anything extra.
 
-### USDG has no `version()`
+### AUSD's domain is not its name
 
-Paxos' USDG keeps EIP-3009 in a facet behind its proxy and exposes no
-`version()` or `eip712Domain()`. x402 fills the EIP-712 domain automatically
-only for tokens in its built-in registry, which USDG is not in. Omit `extra.name`
-/ `extra.version` and the buyer signs against a guessed domain — a valid
-signature that verifies against nothing. The domain is configured per token in
+Agora's AUSD answers `name()` with "AUSD" but signs EIP-3009 under the domain
+"Agora Dollar" v1; Circle's test USDC on Monad signs under "USDC" v2. x402 fills
+the EIP-712 domain automatically only for tokens in its built-in registry, and a
+domain read from `name()` would produce a valid signature that verifies against
+nothing. The domain is configured per token in
 `packages/protocol/src/constants.ts` and was verified by recomputing each
 token's `DOMAIN_SEPARATOR`; the fork tests re-check it on every run.
 
-### Reputation lives in Stylus
+### Reputation is written by the settlement
 
-The registry is written on every settled job, so it is the contract whose
-per-call cost matters most. Stylus runs it as WASM with cheaper compute and
-storage access, and it is the part of the system where a Rust contract being
-called from Solidity is the natural shape rather than a demo: the escrow calls
-`recordOutcome` inside `release` / `refund` / `reassign`, gas-capped and wrapped
-in `try/catch` so the registry can never block a payment — with an EIP-150 guard
-so a caller can't starve the call to skip a provider's bad mark.
+The registry is written on every settled job: the escrow calls `recordOutcome`
+inside `release` / `refund` / `reassign`, gas-capped and wrapped in `try/catch`
+so the registry can never block a payment — with an EIP-150 guard so a caller
+can't starve the call to skip a provider's bad mark. It started as a Rust
+contract on Arbitrum Stylus; Monad has no Stylus, so it is now Solidity with the
+same ABI and semantics (its tests mirror the Rust suite).
+
+### History comes from the index, not the RPC
+
+Monad's public RPC answers at most 100 blocks per `eth_getLogs`, about 40
+seconds of chain. The broker keeps its own forward index of the audit log
+(seeded from transactions it published, then paced at 100 blocks a request),
+and everything historical — jobs, receipts, provider records, daily totals — is
+indexed by Envio HyperIndex. The CRE refund keeper reads its expired-jobs query.
+
+### Refunds don't depend on the broker
+
+After a job's deadline anyone may refund it, and the money can only go to its
+buyer. A Chainlink CRE workflow is that "anyone": it asks the index for funded
+jobs past their deadline, confirms each with `isRefundable` on chain, reaches
+consensus, and delivers a signed report to `XorvRefundKeeper`, which refunds them.
 
 ### Provider nodes dial out
 
@@ -173,13 +190,13 @@ Someone sharing a laptop is behind NAT, on hotel wifi, on a machine that sleeps.
 Outbound works from all of those with no port forwarding and no inbound attack
 surface on their machine.
 
-### Only the operator needs ETH
+### Only the operator needs MON
 
-Arbitrum meters gas in ETH. The buyer signs typed data and needs none. The
+Monad meters gas in MON. The buyer signs typed data and needs none. The
 provider is paid by the escrow and needs none — the broker sponsors their
 registry entry with `registerFor`. The operator (facilitator + attester) pays
-for `fund`, `release` and audit entries; on Arbitrum these cost fractions of a
-cent.
+for `fund`, `release` and audit entries; on Monad these cost fractions of a
+cent. Monad charges for the gas *limit*, not the gas used, so limits are kept tight.
 
 ### Liveness is not a database row
 

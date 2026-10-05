@@ -2,6 +2,26 @@
 
 All notable changes to this project.
 
+## [0.5.0] — Xorv on Monad — Monad Metropolis, October 2026
+
+Ported from the Arbitrum version for Monad Metropolis (Track 04 — Trust, Identity & AI Infrastructure).
+
+### Added
+- **Monad testnet (10143) as the default network**, Monad mainnet (143) configured, gas in MON, links to Monadscan.
+- **Agora AUSD** as the default settlement token (domain "Agora Dollar" v1, checked on chain), Circle test USDC second.
+- **XorvRegistry in Solidity**, ported from the Rust/Stylus registry with the same ABI and semantics (45 tests).
+- **XorvRefundKeeper** and a **Chainlink CRE** workflow (`cre/refund-keeper`) that refunds expired jobs off-broker.
+- **Envio HyperIndex** indexer (`indexer/`): jobs, providers, buyers, receipts, daily and network totals.
+- **Kimi and Qwen adapters**, and **`xorv-agent`**: Kimi or Qwen as an autonomous, budgeted buyer on the network.
+- Anvil local stack (no Docker), `MODE=fork` end-to-end run against the real AUSD, `scripts/faucet-ausd.sh`.
+
+### Changed
+- Log reads default to Monad's 100-block `eth_getLogs` cap; history comes from the indexer.
+- The deploy pads gas estimates by 10%: Monad charges for the gas limit.
+
+### Removed
+- The Rust/Stylus registry and the Arbitrum/Robinhood/Nitro tooling.
+
 ## [0.4.0] — Xorv on Arbitrum — 2026-09-30
 
 Built for the Arbitrum Open House Singapore buildathon. Back to the Xorv name.

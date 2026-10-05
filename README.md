@@ -2,16 +2,19 @@
 
 <img src="brand/xorv-logo.svg" alt="Xorv" width="260" />
 
-**A decentralized AI capacity network on Arbitrum.**
-Rent out the Claude / Codex subscription you already pay for. Get paid per job in **Paxos USDG**, through an **on-chain escrow** that pays you when the work is delivered — and refunds the buyer when it isn't.
+**A decentralized AI capacity network on Monad.**
+Rent out the Claude / Codex / Kimi / Qwen capacity you already pay for. Get paid per job in **Agora AUSD**, through an **on-chain escrow** that pays you when the work is delivered — and refunds the buyer when it isn't.
 
-[![Arbitrum](https://img.shields.io/badge/Arbitrum-Sepolia%20%C2%B7%20Robinhood%20Chain-12AAFF?style=flat-square)](https://arbitrum.io)
-[![Stylus](https://img.shields.io/badge/Stylus-Rust%20registry-E43E2B?style=flat-square)](https://docs.arbitrum.io/stylus)
-[![USDG](https://img.shields.io/badge/settles%20in-USDG-00B67A?style=flat-square)](https://paxos.com/usdg/)
+[![Monad](https://img.shields.io/badge/Monad-testnet%2010143-836EF9?style=flat-square)](https://monad.xyz)
+[![AUSD](https://img.shields.io/badge/settles%20in-AUSD-1F6BFF?style=flat-square)](https://www.agora.finance)
 [![x402](https://img.shields.io/badge/x402-escrow%20scheme-7C5CFF?style=flat-square)](https://x402.org)
+[![Envio](https://img.shields.io/badge/indexed%20by-Envio%20HyperIndex-FF5A1F?style=flat-square)](https://envio.dev)
+[![Chainlink CRE](https://img.shields.io/badge/refunds%20by-Chainlink%20CRE-375BD2?style=flat-square)](https://docs.chain.link/cre)
 [![License](https://img.shields.io/badge/license-MIT-50F0C8?style=flat-square)](LICENSE)
 
-**[Landing](https://xorv-arbitrum.vercel.app)** · **[App](https://xorv-arbitrum-app.vercel.app)** · **[Broker](https://broker-production-38c5.up.railway.app/api/network)** · **[Contracts](contracts/README.md)** · **[Architecture](ARCHITECTURE.md)**
+**Track 04 — Trust, Identity & AI Infrastructure** · Monad Metropolis
+
+**[Contracts](contracts/README.md)** · **[Indexer](indexer/)** · **[CRE refund keeper](cre/README.md)** · **[Agent](packages/agent/)** · **[Architecture](ARCHITECTURE.md)**
 
 </div>
 
@@ -20,89 +23,82 @@ Rent out the Claude / Codex subscription you already pay for. Get paid per job i
 ## The problem
 
 Millions of people pay $20–200 a month for an AI subscription and use a fraction of it. Anyone who
-wants one coding task done has to buy their own plan or an API key. And every "pay a stranger for
-compute" design so far has asked one side to trust the other: either the buyer pays up front and
-hopes, or the provider works first and hopes.
+wants one task done has to buy their own plan or an API key. And every "pay a stranger for compute"
+design so far has asked one side to trust the other: the buyer pays up front and hopes, or the
+provider works first and hopes. AI agents make it worse: an agent that can pay is an agent that can
+be cheated, or can overspend.
 
 ## What Xorv does
 
-You run one command and your machine joins the network. Jobs from strangers run on quota you were
+You run one command and your machine joins the network. Jobs from strangers run on capacity you were
 already paying for, inside an OS sandbox that keeps your keys out of reach. Buyers — a person in the
-browser, `xorv run` in a terminal, or an AI agent over MCP — pay per job with a single signature and
-**no gas and no account**.
+browser, `xorv run` in a terminal, Claude Code over MCP, or an **autonomous Kimi/Qwen agent with a
+budget** — pay per job with a single signature: **no gas, no account, no API key**.
 
-On Arbitrum the money never goes straight from buyer to provider. It goes into **XorvEscrow**:
+On Monad the money never goes straight from buyer to provider. It goes into **XorvEscrow**:
 
 - **Delivered →** the escrow pays the provider and records the SHA-256 of the result beside the payment.
 - **Provider fails →** the job moves to another provider (the payee changes, the money doesn't) or the buyer is refunded.
-- **Nobody settles by the deadline →** *anyone* can refund the buyer. The broker can stall; it can't keep the money.
+- **Nobody settles by the deadline →** *anyone* can refund the buyer — and a **Chainlink CRE workflow** makes sure someone does, even if the broker is gone.
 
-Every settlement also writes the provider's outcome into **XorvRegistry**, a **Rust contract on
-Arbitrum Stylus**, in the same transaction. Reputation can't be claimed, only earned — and the
-matcher ranks providers on it.
+Every settlement also writes the provider's outcome into **XorvRegistry** in the same transaction.
+Reputation can't be claimed, only earned, and the matcher ranks providers on it. **Envio HyperIndex**
+turns all of it — jobs, receipts, reputation, daily totals — into the history the app shows, which
+Monad's 100-block `eth_getLogs` cap would otherwise make unreachable.
 
 ---
 
 ## For judges — verify it yourself
 
-Everything below runs offline except where noted.
+Everything below runs offline unless noted.
 
 ```bash
-git clone --recursive https://github.com/nickthelegend/xorv-arbitrum && cd xorv-arbitrum
-pnpm install && pnpm build && pnpm test          # 411 TypeScript tests
+git clone --recursive https://github.com/nickthelegend/xorv-monad && cd xorv-monad
+pnpm install && pnpm build && pnpm test            # 418 TypeScript tests (protocol, broker, CLI, MCP, agent, app)
 
-cd contracts && forge test                       # 54 Solidity tests: unit, fuzz, 4 invariants, fork (FORK_TESTS=1)
-FORK_TESTS=1 forge test --match-contract Fork    # vs the REAL USDG + USDC on Arbitrum Sepolia & Robinhood Chain (network)
-cd stylus/registry && cargo test                 # 47 Rust tests for the Stylus registry
+cd contracts && forge test                         # 109 Solidity tests: unit, fuzz, 4 invariants, registry, keeper
+FORK_TESTS=1 forge test --match-contract Fork      # vs the REAL AUSD + USDC on a Monad testnet fork (network)
+cd ../indexer && pnpm install --ignore-workspace && pnpm codegen && pnpm test   # Envio: full job lifecycles
 ```
 
 And the whole product, end to end, with real processes against real contracts:
 
 ```bash
-MODE=fork  scripts/e2e-local.sh    # anvil forking Arbitrum Sepolia, settling in the real Paxos USDG contract
-MODE=nitro scripts/e2e-local.sh    # a Nitro dev node: Solidity escrow → Rust/Stylus registry, through the broker
+MODE=anvil scripts/e2e-local.sh          # fresh chain: escrow → registry reputation, through the real broker
+MODE=fork  scripts/e2e-local.sh          # Monad testnet fork, paying in the real Agora AUSD from Agora's faucet
+AGENT=1    scripts/e2e-local.sh          # + xorv-agent buying a job through the MCP server
 ```
 
 | Proof | Result |
 |---|---|
-| `MODE=fork` — broker + provider node + `xorv run`, real USDG contract | **9/9**: paid through escrow, released with the result hash, provider got exactly the price, **buyer spent 0 gas** |
-| `MODE=nitro` — the same, plus the Stylus registry | **13/13**: + sponsored on-chain registration, `completed = 1`, `earned = price`, broker ranks on the record |
-| `scripts/interop-nitro.sh` — Solidity ↔ Stylus on a real Arbitrum node | **8/8**: release → `completed`, refund → `failed`, score = 5000 |
-| Fork tests — escrow vs the real tokens | fund → release on **USDG (Arbitrum Sepolia)**, **USDG (Robinhood Chain Testnet)**, **USDC (Arbitrum Sepolia)** |
-
-### A bug the chain found
-
-The Nitro interop run caught something no unit test had: the provider was paid, but the Stylus
-registry recorded nothing. The escrow wraps its registry call in `try/catch` so the registry can never
-block a payment — which means a transaction with enough gas for the payment but not the registry
-still *succeeds*. And `eth_estimateGas`, which searches for the smallest succeeding limit, produced
-exactly that transaction every time. The fix requires the registry's full gas budget up front
-(EIP-150's 63/64 included); `test_underfundedGasNeverSkipsReputation` fails on the old guard and
-passes on the new one. Details in [`contracts/README.md`](contracts/README.md).
+| `MODE=anvil` — broker + provider node + `xorv run` | **13/13**: paid through escrow, released with the result hash, provider got exactly the price, **buyer spent 0 MON**, registry `completed = 1`, `earned = price` |
+| `MODE=fork` — the same against **real AUSD** on Monad testnet | **13/13** |
+| `AGENT=1` — `xorv-agent` → MCP → broker → escrow | **5/5**: bought one job, spent exactly the price, stayed in budget, on-chain proof attached |
+| Fork tests — escrow + registry vs the real tokens | fund → release → reputation on **AUSD** and **USDC** (Monad testnet) |
 
 ### Status, stated plainly
 
 | | |
 |---|---|
-| ✅ Contracts written, tested (unit, fuzz, invariant, fork, Rust), deploy + verification scripted | `scripts/deploy-testnet.sh <network>` |
-| ✅ Escrow in every payment path — broker, `xorv run`, MCP, browser wallet, demo route | 407 TS tests |
-| ✅ End to end on local Arbitrum chains, real USDG contract code | the table above |
-| ✅ Broker, landing and app deployed | links at the top |
-| ✅ **Contracts on Arbitrum Sepolia** | XorvEscrow [`0x383F5153…`](https://sepolia.arbiscan.io/address/0x383F5153db8Bb18c7c25157Fb3493645A465EeF3) · XorvRegistry (Stylus) [`0x38b65014…`](https://sepolia.arbiscan.io/address/0x38b65014fee7c87d5e13afbc555388f612a7a2a1) · XorvLog [`0x13573838…`](https://sepolia.arbiscan.io/address/0x135738387e4bEC5573914F1A2A812728b9b268C8) |
-| ✅ **Paid jobs on Arbitrum Sepolia, in Paxos USDG** | [escrow funded](https://sepolia.arbiscan.io/tx/0x1f5c34362bade6680f18b8fa7418d5d46e445da072b4da67ba0e55766bc3de5f) → [released + Stylus reputation](https://sepolia.arbiscan.io/tx/0xd13b5f13cfd26cee4ef8abfbdc0c02389cc49c30027526cd9ecd5af4d9543393) → [receipt](https://sepolia.arbiscan.io/tx/0x36b38f505c151c7285249f4ff5511aad144263f3a879d5403d26f34314dbfb58); buyer spent 0 ETH |
-| ⏳ Robinhood Chain Testnet | not deployed: its faucet needs a Google sign-in. Same command: `scripts/deploy-testnet.sh robinhood-testnet` |
+| ✅ Contracts written and tested; deploy + Sourcify verification scripted | `scripts/deploy-testnet.sh monad-testnet` |
+| ✅ Escrow in every payment path — broker, `xorv run`, MCP, agent, browser wallet, demo route | 418 TS tests |
+| ✅ End to end locally, including the real AUSD contract on a Monad fork | the table above |
+| ✅ Envio indexer, CRE workflow (compiles to WASM), Kimi/Qwen adapters and agent | `indexer/`, `cre/`, `packages/agent` |
+| ⏳ **Contracts on Monad testnet** | awaiting testnet MON for the deployer — addresses go here and in [`deployments/`](deployments) |
+| ⏳ Hosted broker, app, indexer; CRE simulation on testnet; live Kimi/Qwen runs | need the deployment and API keys |
 
 ---
 
-## Why Arbitrum, Stylus and USDG
+## Monad, AUSD and the sponsor stack
 
-| | Why it matters here |
+| | What Xorv does with it |
 |---|---|
-| **Fees are a rounding error** | A $0.001 job isn't eaten by gas; fund + release together cost a fraction of a cent. |
-| **Sub-second blocks** | The buyer isn't waiting on confirmations before their job starts. |
-| **Stylus** | The registry is written on *every* settled job, so it's the contract whose per-call cost matters most. Rust on Stylus, called from Solidity with a fixed gas budget. Worst case measured at 72k gas. |
-| **Robinhood Chain** | An Arbitrum chain; the same contracts and code settle there. USDG exists on both. |
-| **Paxos USDG** | A regulated dollar stablecoin with EIP-3009 — the buyer's side is one EIP-712 signature any wallet already produces. It keeps EIP-3009 in a facet and has **no `version()`**, which x402 can't auto-detect; Xorv configures and verifies each token's domain. USDC is accepted too. |
+| **Monad** | 0.4 s blocks and sub-cent fees make a $0.001 job viable and fund the escrow before the provider has read the prompt. Gas is charged on the gas *limit*, so the deploy pads estimates by 10%, not 30%. |
+| **Agora AUSD** | The default settlement token. EIP-3009 means the buyer's side is one EIP-712 signature. Its domain name is **"Agora Dollar"**, not its `name()` ("AUSD") — Xorv configures each token's domain and checks it against `DOMAIN_SEPARATOR()` on chain. Circle's test USDC is accepted too. |
+| **Envio HyperIndex** | [`indexer/`](indexer): jobs (full lifecycle, seconds to settle), providers (registry score, heartbeats, earnings), buyers, receipts linked to jobs, daily and network totals. The app's history comes from here. |
+| **Chainlink CRE** | [`cre/refund-keeper`](cre): cron → Envio (DON consensus) → `isRefundable` on Monad → signed report → `XorvRefundKeeper` → refund. Refunds survive the broker. |
+| **Kimi (Moonshot) · Qwen (Alibaba)** | Two ways: providers **sell** Kimi/Qwen capacity through first-class adapters, and **`xorv-agent`** uses Kimi or Qwen as an autonomous buyer with a budget enforced in code. |
+| **x402** | A custom `escrow` scheme: the buyer signs `ReceiveWithAuthorization` with a nonce derived from the job id and refund deadline, so a signature can only ever fund that job. |
 
 ---
 
@@ -114,42 +110,47 @@ passes on the new one. Details in [`contracts/README.md`](contracts/README.md).
     ├─────────────────────────►│  match: price → on-chain score │
     │  ◄── quote (job id, deadline, provider)                   │
     │  POST /api/jobs/:quote   │                                │
-    │  ◄── 402 accepts[]: escrow (USDG, USDC), exact (fallback) │
+    │  ◄── 402 accepts[]: escrow (AUSD, USDC), exact (fallback) │
     │  PAYMENT-SIGNATURE ─────►│  verify → XorvEscrow.fund()    │
     │  (ReceiveWithAuthorization, nonce = job + deadline)       │
     │  ◄── 200 + jobId         ├──── job.dispatch (WebSocket) ─►│  sandboxed run
     │  ◄═══ SSE events ════════╪◄═══ tool calls, edits ═════════┤
     │  ◄── result              │◄─── answer ────────────────────┤
     │                          ├── XorvEscrow.release(sha256(result))
-    │                          │       └─ XorvRegistry.recordOutcome   (Stylus)
+    │                          │       └─ XorvRegistry.recordOutcome
+    │                          │
+    │       deadline passes, nobody settled ──► Chainlink CRE ──► XorvRefundKeeper ──► refund to buyer
 ```
-
-The **x402 `escrow` scheme** ([`packages/protocol/src/escrow.ts`](packages/protocol/src/escrow.ts))
-keeps the x402 shape — 402, sign, retry — and changes where the money waits. The buyer signs
-`ReceiveWithAuthorization` (only the escrow can redeem it, so it can't be front-run) with a nonce
-**derived from the job id and refund deadline**, recomputed by the client and by the contract — so a
-signature can only ever fund this job. The broker still offers the stock `exact` scheme after it, so
-any x402 client can pay.
 
 ---
 
 ## Quickstart
 
-Needs Node ≥ 20.11, pnpm, and for the contracts Foundry and `cargo-stylus`.
+Needs Node ≥ 20.11, pnpm and Foundry. The indexer needs Node 22; the CRE workflow needs Bun.
 
 ```bash
-cp .env.example .env                         # operator key (facilitator + escrow attester), demo payer
-scripts/deploy-testnet.sh arbitrum-sepolia   # registry (Stylus) + escrow + log, wired, verified, written to .env
+cp .env.example .env                          # operator key (facilitator + escrow attester), demo payer
+scripts/deploy-testnet.sh monad-testnet       # registry + escrow + log + refund keeper, wired, Sourcify-verified
+scripts/faucet-ausd.sh                        # 10,000 test AUSD for the demo buyer, from Agora's faucet
 pnpm build
-pnpm broker                                  # coordinator + facilitator on :8402
-node packages/cli/dist/index.js init         # then: start — your provider node
-pnpm app                                     # job board on :3002
+pnpm broker                                   # coordinator + facilitator on :8402
+node packages/cli/dist/index.js init          # then: start — your provider node
+pnpm app                                      # job board on :3002
 ```
 
-Buy a job from the terminal, paying from an address with no ETH:
+Or the whole thing offline on Anvil: `scripts/local-stack.sh`, then `scripts/local-stack-run.sh broker|provider|app|landing`.
+
+Buy a job from the terminal, paying from an address with no MON:
 
 ```bash
-XORV_PAYER_KEY=0x… node packages/cli/dist/index.js run "Explain a Merkle tree, briefly." --max 0.05
+XORV_PAYER_KEY=0x… node packages/cli/dist/index.js run "Explain a Merkle tree, briefly." --max 0.25
+```
+
+Give an agent a goal and a budget:
+
+```bash
+MOONSHOT_API_KEY=… XORV_PAYER_KEY=0x… node packages/agent/dist/index.js \
+  "Write a Solidity function that checks an EIP-712 signature, and have a second model review it" --budget 0.30
 ```
 
 ### The CLI
@@ -157,21 +158,18 @@ XORV_PAYER_KEY=0x… node packages/cli/dist/index.js run "Explain a Merkle tree,
 | Command | What it does |
 |---|---|
 | `xorv init` / `start` | Set up and run a provider node: registers (sponsored on chain), holds the control channel, runs sandboxed jobs |
-| `xorv run "…"` | Buy a job over x402 — escrowed when the broker offers it; `--token USDG\|USDC` |
+| `xorv run "…"` | Buy a job over x402 — escrowed when the broker offers it; `--token AUSD\|USDC` |
 | `xorv test` / `doctor` | Run each adapter locally for free; every reason the node might not be earning |
 | `xorv earnings` / `wallet` / `status` | What this machine has made; payout address and balances; who's live |
 
-Adapters: `claude-code` · `codex` · `grok` · `opencode` · `openai-compatible` · `echo`.
+Adapters: `claude-code` · `codex` · `grok` · `opencode` · `kimi` · `qwen` · `openai-compatible` · `echo`.
 
 ### For agents: the MCP server
 
 ```bash
-claude mcp add xorv -- node /absolute/path/to/xorv-arbitrum/packages/mcp/dist/index.js
+claude mcp add xorv -- node /absolute/path/to/xorv-monad/packages/mcp/dist/index.js
 # XORV_PAYER_KEY=0x…   XORV_MAX_USD=0.05   (hard ceiling per call)
 ```
-
-An agent discovers capacity, pays through the escrow, and gets the answer back with the escrow
-deposit and release transactions — or the refund, if the job failed.
 
 ---
 
@@ -179,12 +177,14 @@ deposit and release transactions — or the refund, if the job failed.
 
 | Path | What |
 |---|---|
-| [`contracts/`](contracts) | Foundry: `XorvEscrow`, `XorvLog`, tests, deploy script. [`contracts/stylus/registry`](contracts/stylus/registry): the Rust registry |
+| [`contracts/`](contracts) | Foundry: `XorvEscrow`, `XorvRegistry`, `XorvLog`, `XorvRefundKeeper`, tests, deploy script |
+| [`indexer/`](indexer) | Envio HyperIndex: `config.yaml`, `schema.graphql`, handlers, lifecycle tests |
+| [`cre/`](cre) | Chainlink CRE workflow: the refund keeper |
 | [`packages/protocol`](packages/protocol) | Networks, stablecoins, the x402 escrow scheme, registry helpers |
 | [`services/broker`](services/broker) | Matcher, x402 resource server, facilitator/attester, escrow settlement, reputation cache |
-| [`packages/cli`](packages/cli) · [`packages/mcp`](packages/mcp) | Provider node + buyer CLI; MCP server for agents |
+| [`packages/cli`](packages/cli) · [`packages/mcp`](packages/mcp) · [`packages/agent`](packages/agent) | Provider node + buyer CLI; MCP server; the Kimi/Qwen agent |
 | [`apps/app`](apps/app) · [`apps/landing`](apps/landing) | Job board (escrow state, refund button); marketing site |
-| [`scripts/`](scripts) | `deploy-testnet.sh`, `e2e-local.sh`, `interop-nitro.sh` |
+| [`scripts/`](scripts) | `deploy-testnet.sh`, `local-stack.sh`, `e2e-local.sh`, `faucet-ausd.sh` |
 
 ## Security
 
@@ -194,13 +194,28 @@ container; a job cannot read `~/.xorv` (your payout key), `~/.ssh`, cloud creden
 See [`SECURITY.md`](SECURITY.md).
 
 **On terms of service:** most consumer AI subscriptions are licensed to an individual, and reselling
-that capacity may breach them. Run Xorv against quota you're entitled to share, a plan that permits
-it, or your own local models via the OpenAI-compatible adapter.
+that capacity may breach them. Run Xorv against quota you're entitled to share, a plan or API that
+permits it (Kimi and Qwen are sold through their APIs), or your own local models.
 
-## Lineage
+## Pre-existing work, attribution and AI tools
 
-Xorv was first built on Hedera (x402 bounty, July 2026), then ported to Arc. This repository is the
-Arbitrum version, and the first with escrow and on-chain reputation.
+**Pre-existing (not built during Metropolis).** Xorv was first built on Hedera (July 2026) and ported
+to Arc and then Arbitrum ([github.com/nickthelegend/xorv-arbitrum](https://github.com/nickthelegend/xorv-arbitrum), MIT).
+This repository's first commit imports that code unchanged: the provider node and job sandbox, the AI
+tool adapters (Claude Code, Codex, Grok, OpenCode, OpenAI-compatible), the broker, the web app and
+landing page, the x402 escrow scheme, `XorvEscrow` and `XorvLog`.
+
+**Built during Metropolis** (every commit after the first): the Monad port (networks, AUSD, MON gas,
+Monadscan, Anvil local stack, Monad fork tests), `XorvRegistry` in Solidity (ported from Rust/Stylus,
+which Monad doesn't have), `XorvRefundKeeper` and the Chainlink CRE workflow, the Envio indexer, the
+Kimi and Qwen adapters, `xorv-agent`, and the deploy and test scripts.
+
+**Third-party code.** OpenZeppelin Contracts 5.4 and forge-std (MIT), as git submodules. Circle's
+`stablecoin-evm` (Apache-2.0) is fetched by `scripts/local-stack.sh` for local runs, not vendored.
+The Envio and Chainlink CRE SDKs, x402, viem and the MCP SDK are npm dependencies under their own licences.
+
+**AI coding tools.** This project was built with Claude Code (Anthropic's Claude) as a coding agent,
+directed and reviewed by the author.
 
 ## License
 

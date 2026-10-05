@@ -42,7 +42,7 @@
       "name": "provider",
       "runtimeExecutable": "env",
       "runtimeArgs": [
-        "XORV_HOME=/Users/jaibajrang/.xorv-arbitrum-demo/provider",
+        "XORV_HOME=/Users/jaibajrang/.xorv-monad-demo/provider",
         "XORV_BROKER_URL=http://localhost:8402",
         "XORV_SANDBOX=seatbelt",
         "node",

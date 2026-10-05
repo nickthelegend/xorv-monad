@@ -62,15 +62,14 @@ demo/intro-hf/.tmp/
 demo/intro-hf/*.mp4
 demo/intro-hf/work-*/
 
-# Foundry / Stylus build output
+# Foundry build output
 contracts/cache/
 contracts/out/
 contracts/broadcast/*/31337/
-contracts/stylus/**/target/
 .env.local-stack
 
 # forge run logs. Local and forked runs write here under real chain ids (a
-# fork of Arbitrum Sepolia is 421614), so committing them records addresses
+# fork of Monad testnet is 10143), so committing them records addresses
 # that do not exist on that chain. deployments/<network>.json is the record.
 contracts/broadcast/
 

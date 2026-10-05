@@ -4,17 +4,17 @@ services:
     ports:
       - "8402:8402"
     environment:
-      # The operator pays the gas (ETH) for every settlement — fund it with
-      # Arbitrum Sepolia ETH. Its address is derived from the key.
+      # The operator pays the gas (MON) for every settlement — fund it with
+      # Monad testnet MON (faucet.monad.xyz). Its address is derived from the key.
       XORV_OPERATOR_KEY: ${XORV_OPERATOR_KEY:?set this in .env}
-      # eip155:421614 Arbitrum Sepolia · eip155:46630 Robinhood Chain Testnet
-      XORV_NETWORK: ${XORV_NETWORK:-eip155:421614}
+      # eip155:10143 Monad testnet · eip155:143 Monad
+      XORV_NETWORK: ${XORV_NETWORK:-eip155:10143}
       XORV_RPC_URL: ${XORV_RPC_URL:-}
-      # Default stablecoin: USDG (blank) or USDC, or a token address.
+      # Default stablecoin: AUSD (blank) or USDC, or a token address.
       XORV_STABLECOIN: ${XORV_STABLECOIN:-}
-      # Pays for "run without a wallet" in the job board. Needs USDG/USDC, no ETH.
+      # Pays for "run without a wallet" in the job board. Needs AUSD/USDC, no MON.
       XORV_DEMO_PAYER_KEY: ${XORV_DEMO_PAYER_KEY:-}
-      # The XorvLog contract. Deploy with `pnpm deploy:log`. Blank is allowed —
+      # The XorvLog contract. Deployed by scripts/deploy-testnet.sh. Blank is allowed —
       # the network runs, it just records nothing publicly.
       XORV_LOG_ADDRESS: ${XORV_LOG_ADDRESS:-}
       XORV_LOG_FROM_BLOCK: ${XORV_LOG_FROM_BLOCK:-}

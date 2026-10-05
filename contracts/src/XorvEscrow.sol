@@ -57,7 +57,7 @@ import {IXorvRegistry} from "./interfaces/IXorvRegistry.sol";
  * ## Reputation is a side effect of settlement
  *
  * Every release, attester refund and reassignment reports an outcome to the
- * provider registry (an Arbitrum Stylus contract written in Rust). A registry
+ * provider registry (XorvRegistry). A registry
  * that reverts or runs out of gas is caught and logged; it can never hold a
  * payment hostage.
  */
@@ -120,7 +120,7 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     /// And may not park a buyer's money for longer than this.
     uint40 public constant MAX_JOB_DURATION = 7 days;
 
-    /// Gas forwarded to the registry. Enough for a Stylus storage update with room to spare.
+    /// Gas forwarded to the registry. Enough for the registry's worst-case (first-outcome) write with room to spare.
     uint256 public constant REGISTRY_GAS_LIMIT = 150_000;
 
     /// Gas that must remain before the registry call so it receives its whole budget:
@@ -146,7 +146,7 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     /// The broker's settlement key: funds jobs, releases on delivery, refunds on failure.
     address public attester;
 
-    /// Provider registry (Stylus). Zero disables outcome reporting.
+    /// Provider registry. Zero disables outcome reporting.
     IXorvRegistry public registry;
 
     /// Protocol fee applied to jobs funded from now on, and who receives it.
@@ -483,7 +483,7 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
      *      succeeds — can supply enough gas for the payment but too little for
      *      the registry. Under EIP-150 the callee then gets 63/64 of whatever
      *      is left, runs out, and the provider's reputation silently never
-     *      moves. This was found on a live Nitro node, where `estimateGas`
+     *      moves. This was found on a live dev node, where `estimateGas`
      *      produced exactly that transaction every time.
      *
      *      So the full budget is required *before* the call: with less than

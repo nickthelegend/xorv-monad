@@ -65,11 +65,10 @@ interactions, a packed 3-slot `Job` struct, and events for every state change.
 
 The unit tests use a faithful EIP-3009 mock. The fork tests use the real
 thing: they sign exactly as a wallet does, against each token's on-chain
-`DOMAIN_SEPARATOR`, and run fund → release on
+`DOMAIN_SEPARATOR`, and run fund → release → reputation on a Monad testnet fork against
 
-- **Paxos USDG** on Arbitrum Sepolia (`0xFFC9…1892`) — EIP-3009 lives in a facet behind the proxy, and there is no `version()`; the domain is `("Global Dollar", "1")`
-- **Paxos USDG** on Robinhood Chain Testnet (`0x7E95…802F`)
-- **Circle USDC** on Arbitrum Sepolia (`0x75fa…AA4d`), domain `("USD Coin", "2")`
+- **Agora AUSD** (`0xa901…22dC`): `name()` is "AUSD" but the EIP-712 domain is `("Agora Dollar", "1")`. The buyer is funded from Agora's own testnet faucet, because `deal` can't write AUSD's balance layout.
+- **Circle test USDC** (`0x534b…43A3`): domain `("USDC", "2")`.
 
 ```bash
 FORK_TESTS=1 forge test --match-contract Fork
@@ -80,25 +79,25 @@ FORK_TESTS=1 forge test --match-contract Fork
 Base's [commerce-payments](https://github.com/base/commerce-payments)
 `AuthCaptureEscrow` (which x402's `auth-capture` scheme targets) uses the same
 core trick — an EIP-3009 nonce derived from a hash of the payment terms. It is
-not deployed on any Arbitrum chain, and its authorize/capture/void model has no
+not deployed on Monad, and its authorize/capture/void model has no
 notion of a job moving between providers, a result hash, or reputation.
 XorvEscrow is the job-shaped version of that idea.
+
+## The refund keeper
+
+[`XorvRefundKeeper`](src/XorvRefundKeeper.sol) is a Chainlink CRE consumer. It accepts DON-signed reports only from the KeystoneForwarder and refunds each listed job through the escrow's permissionless post-deadline `refund`. The money can only go to the job's buyer. Anything no longer refundable is skipped without reverting the batch. The workflow that drives it is in [`../cre`](../cre).
 
 ## Running
 
 ```bash
 git submodule update --init --recursive   # forge-std, openzeppelin-contracts
-forge test                                 # 44 unit/fuzz + 4 invariants, offline
+forge test                                 # 109 tests, offline: escrow, registry, keeper, invariants
 FORK_TESTS=1 forge test --match-contract Fork
 ```
 
 ## Deploying
 
 ```bash
-# 1. Stylus registry (Rust) — see stylus/registry/README.md
-# 2. Escrow + log; the stablecoin allowlist is chosen by chain id
-XORV_OPERATOR_KEY=0x… XORV_REGISTRY_ADDRESS=0x… \
-  forge script script/Deploy.s.sol --rpc-url arbitrum_sepolia --broadcast
-# 3. Point the registry at the escrow
-cast send $XORV_REGISTRY_ADDRESS "setEscrow(address)" $XORV_ESCROW_ADDRESS --private-key $XORV_OPERATOR_KEY --rpc-url arbitrum_sepolia
+# All four contracts, wired, verified on Sourcify; writes deployments/monad-testnet.json
+../scripts/deploy-testnet.sh monad-testnet
 ```

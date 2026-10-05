@@ -42,5 +42,5 @@
     "typescript": "^5",
     "vitest": "^3.2.4"
   },
-  "description": "Xorv job board — post AI jobs, pay per job in stablecoins (USDG/USDC) over x402 on Arbitrum, watch them run live."
+  "description": "Xorv job board — post AI jobs, pay per job in stablecoins (AUSD/USDC) over x402 on Monad, watch them run live."
 }

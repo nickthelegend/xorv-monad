@@ -8,7 +8,7 @@
  * so a provider never needs MON.
  *
  * The ABI below is IXorvRegistry (contracts/src/interfaces/IXorvRegistry.sol),
- * which `cargo stylus export-abi` matches selector for selector.
+ * which the Solidity XorvRegistry implements selector for selector.
  */
 
 import {

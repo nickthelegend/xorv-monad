@@ -236,7 +236,7 @@ contract XorvEscrowFundTest is XorvEscrowTestBase {
     }
 
     function test_fund_fromSmartContractWallet() public {
-        // ERC-1271: a buyer paying from a smart account (e.g. an ERC-4337 wallet on Robinhood Chain).
+        // ERC-1271: a buyer paying from a smart account (e.g. an ERC-4337 wallet).
         MockSmartWallet wallet = new MockSmartWallet(buyer);
         usdg.mint(address(wallet), 10e6);
         uint40 deadline = _deadline();
@@ -508,7 +508,7 @@ contract XorvEscrowRegistryTest is XorvEscrowTestBase {
         assertEq(uint8(escrow.getJob(JOB).status), uint8(XorvEscrow.Status.Funded));
     }
 
-    /// Regression: found on a Nitro node. A gas limit that covers the payment
+    /// Regression: found on a live dev node. A gas limit that covers the payment
     /// but not the registry used to succeed with the reputation update skipped.
     function test_underfundedGasNeverSkipsReputation() public {
         registry.setMode(MockRegistry.Mode.Expensive);
