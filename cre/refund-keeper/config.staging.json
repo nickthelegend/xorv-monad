@@ -1,0 +1,9 @@
+{
+  "schedule": "*/30 * * * * *",
+  "indexerUrl": "https://indexer.dev.hyperindex.xyz/SET_AFTER_ENVIO_DEPLOY/v1/graphql",
+  "chainSelectorName": "monad-testnet",
+  "escrowAddress": "0x0000000000000000000000000000000000000001",
+  "keeperAddress": "0x0000000000000000000000000000000000000002",
+  "maxBatch": 50,
+  "gasLimit": "2000000"
+}
