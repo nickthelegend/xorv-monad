@@ -15,6 +15,8 @@ export type AdapterKind =
   | "grok"
   | "opencode"
   | "openai-compatible"
+  | "kimi"
+  | "qwen"
   | "echo";
 
 /** Every adapter Xorv knows how to drive, in the order the wizard offers them. */
@@ -23,6 +25,8 @@ export const ADAPTER_KINDS: AdapterKind[] = [
   "codex",
   "grok",
   "opencode",
+  "kimi",
+  "qwen",
   "openai-compatible",
   "echo",
 ];

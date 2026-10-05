@@ -200,6 +200,8 @@ describe("defaultCapability", () => {
       "grok",
       "opencode",
       "openai-compatible",
+      "kimi",
+      "qwen",
       "echo",
     ] as const) {
       const capability = mod.defaultCapability(kind);

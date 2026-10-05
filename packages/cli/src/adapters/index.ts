@@ -8,7 +8,7 @@ import { ClaudeCodeAdapter } from "./claude-code.js";
 import { CodexAdapter } from "./codex.js";
 import { EchoAdapter } from "./echo.js";
 import { GrokAdapter } from "./grok.js";
-import { OpenAiCompatibleAdapter } from "./openai-compatible.js";
+import { KIMI, OpenAiCompatibleAdapter, QWEN } from "./openai-compatible.js";
 import { OpenCodeAdapter } from "./opencode.js";
 
 const factories: Record<AdapterKind, () => JobAdapter> = {
@@ -17,6 +17,8 @@ const factories: Record<AdapterKind, () => JobAdapter> = {
   grok: () => new GrokAdapter(),
   opencode: () => new OpenCodeAdapter(),
   "openai-compatible": () => new OpenAiCompatibleAdapter(),
+  kimi: () => new OpenAiCompatibleAdapter(KIMI),
+  qwen: () => new OpenAiCompatibleAdapter(QWEN),
   echo: () => new EchoAdapter(),
 };
 

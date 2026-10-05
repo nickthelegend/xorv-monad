@@ -1,12 +1,12 @@
-import { Claude, Codex, Grok, OpenAI, OpenCode } from "@lobehub/icons";
+import { Claude, Codex, Grok, Kimi, OpenAI, OpenCode, Qwen } from "@lobehub/icons";
 import { Reveal } from "@/components/ui/reveal";
 import { Section, SectionHeading } from "@/components/ui/kit";
 
 /**
  * What a node can sell.
  *
- * A table, because this is reference material — six rows with the same three
- * facts each. Six cards would take four times the space to say the same thing
+ * A table, because this is reference material — rows with the same three
+ * facts each. Cards would take four times the space to say the same thing
  * and would imply a hierarchy that isn't there.
  */
 const MARKS: Record<string, React.ReactNode> = {
@@ -14,6 +14,8 @@ const MARKS: Record<string, React.ReactNode> = {
   codex: <Codex size={16} />,
   grok: <Grok size={16} />,
   opencode: <OpenCode size={16} />,
+  kimi: <Kimi size={16} />,
+  qwen: <Qwen size={16} />,
   "openai-compatible": <OpenAI size={16} />,
 };
 
@@ -27,6 +29,8 @@ const ADAPTERS = [
   { name: "Codex", id: "codex", reports: "Shell commands, file changes", live: true },
   { name: "Grok Code", id: "grok", reports: "Answer and reasoning", live: true },
   { name: "OpenCode", id: "opencode", reports: "Answer", live: true },
+  { name: "Kimi", id: "kimi", reports: "Answer — Moonshot API key", live: true },
+  { name: "Qwen", id: "qwen", reports: "Answer — Alibaba Model Studio key", live: true },
   {
     name: "OpenAI-compatible",
     id: "openai-compatible",

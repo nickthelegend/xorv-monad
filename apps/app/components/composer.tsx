@@ -48,6 +48,8 @@ const MODELS: ModelOption[] = [
   { id: "codex", label: "Codex" },
   { id: "grok", label: "Grok" },
   { id: "opencode", label: "OpenCode" },
+  { id: "kimi", label: "Kimi" },
+  { id: "qwen", label: "Qwen" },
   { id: "openai-compatible", label: "OpenAI-compatible", hint: "local" },
 ];
 

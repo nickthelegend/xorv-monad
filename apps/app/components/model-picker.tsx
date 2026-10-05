@@ -1,6 +1,6 @@
 "use client";
 
-import { Claude, Codex, Grok, OpenAI, OpenCode } from "@lobehub/icons";
+import { Claude, Codex, Grok, Kimi, OpenAI, OpenCode, Qwen } from "@lobehub/icons";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /**
@@ -46,6 +46,10 @@ function mark(id: string): ReactNode {
       return <Grok size={size} />;
     case "opencode":
       return <OpenCode size={size} />;
+    case "kimi":
+      return <Kimi size={size} />;
+    case "qwen":
+      return <Qwen size={size} />;
     case "openai-compatible":
       return <OpenAI size={size} />;
     case "echo":

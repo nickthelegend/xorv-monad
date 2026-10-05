@@ -34,7 +34,7 @@ describe("adapter registry", () => {
   it("builds every declared kind", () => {
     const kinds = allAdapters().map((a) => a.kind).sort();
     expect(kinds).toEqual(
-      ["claude-code", "codex", "echo", "grok", "openai-compatible", "opencode"].sort(),
+      ["claude-code", "codex", "echo", "grok", "kimi", "openai-compatible", "opencode", "qwen"].sort(),
     );
   });
 
@@ -51,7 +51,7 @@ describe("adapter registry", () => {
 
   it("probes availability without throwing, even when a CLI is missing", async () => {
     const results = await detectAvailable();
-    expect(results).toHaveLength(6);
+    expect(results).toHaveLength(8);
     for (const r of results) expect(typeof r.available).toBe("boolean");
     // Echo needs nothing installed and must always be usable.
     expect(results.find((r) => r.adapter.kind === "echo")!.available).toBe(true);

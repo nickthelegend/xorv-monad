@@ -201,6 +201,9 @@ export function defaultCapability(adapter: AdapterKind): Capability {
     opencode: { name: "OpenCode", price: 50_000 },
     // Local models cost electricity, not tokens — this one can be genuinely tiny.
     "openai-compatible": { name: "OpenAI-compatible endpoint", price: 5_000 },
+    // Hosted API models: priced near their token cost for a typical job.
+    kimi: { name: "Kimi", price: 50_000 },
+    qwen: { name: "Qwen", price: 50_000 },
     echo: { name: "Echo (test)", price: 1_000 },
   };
   const preset = presets[adapter];

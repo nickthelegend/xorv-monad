@@ -301,6 +301,14 @@ export function probeAuth(kind: AdapterKind, home = os.homedir()): AuthProbe {
       return process.env.XAI_API_KEY || process.env.GROK_API_KEY
         ? { authed: true, hint: "" }
         : { authed: null, hint: "set XAI_API_KEY if jobs fail" };
+    case "kimi":
+      return process.env.MOONSHOT_API_KEY || process.env.XORV_KIMI_API_KEY
+        ? { authed: true, hint: "" }
+        : { authed: false, hint: "set MOONSHOT_API_KEY (platform.moonshot.ai)" };
+    case "qwen":
+      return process.env.DASHSCOPE_API_KEY || process.env.XORV_QWEN_API_KEY
+        ? { authed: true, hint: "" }
+        : { authed: false, hint: "set DASHSCOPE_API_KEY and XORV_QWEN_BASE_URL (Model Studio)" };
     case "openai-compatible":
       return process.env.XORV_OPENAI_BASE_URL
         ? { authed: true, hint: "" }
