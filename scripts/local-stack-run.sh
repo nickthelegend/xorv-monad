@@ -5,6 +5,7 @@
 #   scripts/local-stack-run.sh provider   # a node selling Claude Code and Codex (real models, no echo)
 #   scripts/local-stack-run.sh app        # job board on :3302
 #   scripts/local-stack-run.sh landing    # marketing site on :3300
+#   scripts/local-stack-run.sh indexer    # Envio indexer over the local chain (GraphQL :8082)
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ENV_FILE="$ROOT/.env.local-stack"
@@ -21,7 +22,7 @@ export XORV_BROKER_URL="http://localhost:$BROKER_PORT"
 export XORV_EXPLORER_URL="http://localhost:$APP_PORT/chain"
 cd "$ROOT"
 
-case "${1:?component: broker|provider|app|landing}" in
+case "${1:?component: broker|provider|app|landing|indexer}" in
   broker)
     exec env XORV_BROKER_PORT="$BROKER_PORT" XORV_DB="$ROOT/data/local-stack.db" \
       XORV_CORS_ORIGINS="http://localhost:$APP_PORT,http://localhost:$LANDING_PORT" \
@@ -35,7 +36,9 @@ case "${1:?component: broker|provider|app|landing}" in
       const [file, network, broker, address, key] = process.argv.slice(1);
       let prior = {};
       try { prior = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-      const cap = (id, name, price) => ({ id, adapter: id, displayName: name, model: null, priceUsdMicros: price, maxConcurrency: 1 });
+      // XORV_CODEX_MODEL pins the Codex model, for logins that cannot use the default one.
+      const models = { codex: process.env.XORV_CODEX_MODEL || null };
+      const cap = (id, name, price) => ({ id, adapter: id, displayName: name, model: models[id] ?? null, priceUsdMicros: price, maxConcurrency: 1 });
       fs.writeFileSync(file, JSON.stringify({
         nodeId: prior.nodeId || require("crypto").randomBytes(12).toString("hex"),
         label: "local-stack-node",
@@ -56,6 +59,9 @@ case "${1:?component: broker|provider|app|landing}" in
   landing)
     exec env NEXT_PUBLIC_XORV_BROKER_URL="$XORV_BROKER_URL" NEXT_PUBLIC_XORV_APP_URL="http://localhost:$APP_PORT" \
       pnpm --filter xorv-landing exec next dev -p "$LANDING_PORT"
+    ;;
+  indexer)
+    exec "$ROOT/indexer/local.sh"
     ;;
   *) echo "unknown component $1" >&2; exit 1 ;;
 esac

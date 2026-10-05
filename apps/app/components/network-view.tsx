@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, formatUsd, type NetworkInfo } from "@/lib/api";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
 import { XORV_CHAIN, explorerToken, stablecoinSymbol } from "@/lib/chains";
+import { IndexedHistoryPanel } from "@/components/indexed-history";
 
 interface Receipt {
   sequence: number;
@@ -131,6 +132,8 @@ export function NetworkView() {
           </div>
         </Panel>
       ) : null}
+
+      <IndexedHistoryPanel />
 
       <Panel className="p-5">
         <h2 className="text-[13px] font-medium text-fg">Audit log</h2>
