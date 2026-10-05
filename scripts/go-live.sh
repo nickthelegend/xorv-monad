@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
-# Take the public deployment live on a funded testnet, end to end:
+# Take the public deployment live on Monad testnet, end to end:
 #
-#   1. deploy XorvRegistry (Stylus), XorvEscrow and XorvLog   (deploy-testnet.sh)
+#   1. deploy XorvRegistry, XorvEscrow and XorvLog            (deploy-testnet.sh)
 #   2. point the Railway broker at them                       (railway variables)
 #   3. point the landing page at them and redeploy both sites (vercel env + deploy-web.sh)
 #   4. wait for the broker to come back and check it reports the contracts
 #
 #   scripts/go-live.sh
 #
-# Arbitrum Sepolia only: that is the chain the public broker and both sites
-# are configured for. (Robinhood Chain Testnet deploys with deploy-testnet.sh,
-# but the sites have no Robinhood mode to point at it.)
-#
-# The only prerequisite is gas: the operator (XORV_OPERATOR_KEY in .env) needs
-# ~0.001 ETH on the target chain. (--no-sensitive and no stdin: without them
-# `vercel env add` waits on an interactive prompt despite --yes.) Everything else — keys, project ids — is
-# already in the repo's config. Safe to re-run: it redeploys fresh contracts.
+# Prerequisites: MON for gas on the operator (XORV_OPERATOR_KEY in .env,
+# ~0.7 MON), and deployments/hosting.env naming this project's own Railway and
+# Vercel projects. Only contract addresses are written to the hosts: secrets
+# (the operator key, the demo payer key) are set by the owner in each
+# dashboard, never by a script. (--no-sensitive and no stdin: without them
+# `vercel env add` waits on an interactive prompt despite --yes.)
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-TARGET=arbitrum-sepolia
-RAILWAY_PROJECT=${RAILWAY_PROJECT_ID:-d82a3ea6-6c25-4b47-b3d9-35056ec3eae5}
-RAILWAY_SERVICE=${RAILWAY_SERVICE_ID:-d0aefba5-343f-4822-9b3a-a9506b6b78db}
+TARGET=monad-testnet
+# No defaults: see deploy-web.sh. Monad's own projects live in deployments/hosting.env.
+[ -f "$ROOT/deployments/hosting.env" ] && { set -a; . "$ROOT/deployments/hosting.env"; set +a; }
+RAILWAY_PROJECT=${RAILWAY_PROJECT_ID:?set RAILWAY_PROJECT_ID (the Monad broker project)}
+RAILWAY_SERVICE=${RAILWAY_SERVICE_ID:?set RAILWAY_SERVICE_ID}
 RAILWAY_ENV=${RAILWAY_ENVIRONMENT:-production}
-BROKER=${XORV_PUBLIC_BROKER:-https://broker-production-38c5.up.railway.app}
-ORG=${VERCEL_ORG_ID:-team_gwapD8j8P5T3NxIU746NjNxe}
-LANDING=${VERCEL_LANDING_PROJECT_ID:-prj_6g6dffm4uITc7nV1OapLAbYLsenl}
+BROKER=${XORV_PUBLIC_BROKER:?set XORV_PUBLIC_BROKER (the Monad broker URL)}
+ORG=${VERCEL_ORG_ID:?set VERCEL_ORG_ID}
+LANDING=${VERCEL_LANDING_PROJECT_ID:?set VERCEL_LANDING_PROJECT_ID}
 
 say() { printf '\n\033[1m── %s\033[0m\n' "$*"; }
 

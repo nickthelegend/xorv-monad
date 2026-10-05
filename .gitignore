@@ -82,3 +82,4 @@ videos/xorv-demo/renders/
 videos/xorv-demo/snapshots/
 videos/xorv-demo/.thumbnails/
 videos/xorv-demo/assets/footage/
+deployments/hosting.env

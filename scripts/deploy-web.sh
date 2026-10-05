@@ -11,12 +11,16 @@
 #   scripts/deploy-web.sh app        # just the job board
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-ORG=${VERCEL_ORG_ID:-team_gwapD8j8P5T3NxIU746NjNxe}
+# No defaults on purpose: this repo was copied from the Arbitrum port, and a
+# default pointing at its projects would overwrite that live deployment.
+# deployments/hosting.env (gitignored) or the environment must name Monad's own.
+[ -f "$ROOT/deployments/hosting.env" ] && { set -a; . "$ROOT/deployments/hosting.env"; set +a; }
+ORG=${VERCEL_ORG_ID:?set VERCEL_ORG_ID}
 # Plain functions, not an associative array: macOS still ships bash 3.2.
 project_id() {
   case "$1" in
-    landing) echo "${VERCEL_LANDING_PROJECT_ID:-prj_6g6dffm4uITc7nV1OapLAbYLsenl}" ;;
-    app) echo "${VERCEL_APP_PROJECT_ID:-prj_1GzWNYomrVisVAuIS0X6MWvOqa6n}" ;;
+    landing) echo "${VERCEL_LANDING_PROJECT_ID:?set VERCEL_LANDING_PROJECT_ID (the Monad landing project)}" ;;
+    app) echo "${VERCEL_APP_PROJECT_ID:?set VERCEL_APP_PROJECT_ID (the Monad app project)}" ;;
   esac
 }
 WHICH=${1:-all}

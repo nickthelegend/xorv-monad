@@ -6,18 +6,17 @@
 #        │                         │
 #        └── signs ReceiveWithAuthorization     └── fund / release on XorvEscrow → recordOutcome on XorvRegistry
 #
-# Two modes, because no single local chain has both halves:
+# Two modes, both with every contract deployed:
 #
-#   MODE=nitro  A Nitro dev node (real Arbitrum node software). Deploys the
-#               Stylus registry, a test EIP-3009 token, XorvEscrow and XorvLog,
-#               and proves Solidity → Stylus reputation updates through the
-#               real broker. Needs a node at NITRO_RPC (default :8547).
+#   MODE=anvil  A fresh Anvil node (default). Deploys a test EIP-3009 token,
+#               XorvRegistry, XorvEscrow and XorvLog, and proves escrow →
+#               registry reputation updates through the real broker.
 #
-#   MODE=fork   anvil forking Arbitrum Sepolia. Settles in the *real* Paxos
-#               USDG contract (its EIP-3009 facet, its domain), with balances
-#               written into its storage. No registry: anvil can't run Stylus.
+#   MODE=fork   Anvil forking Monad testnet. Settles in the *real* Agora AUSD
+#               contract (its EIP-3009, its "Agora Dollar" domain), funded
+#               from Agora's own testnet faucet.
 #
-# Usage: MODE=nitro scripts/e2e-local.sh    |    MODE=fork scripts/e2e-local.sh
+# Usage: scripts/e2e-local.sh    |    MODE=fork scripts/e2e-local.sh
 set -euo pipefail
 
 # Start from nothing: an XORV_* variable inherited from the caller — say a
@@ -28,7 +27,7 @@ set -euo pipefail
 for v in $(env | sed -n 's/^\(XORV_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-MODE=${MODE:-nitro}
+MODE=${MODE:-anvil}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/xorv-e2e.XXXXXX")
 BROKER_PORT=${BROKER_PORT:-8499}
 BROKER="http://127.0.0.1:$BROKER_PORT"
@@ -50,54 +49,46 @@ PROV_KEY=$(newkey);  PROV=$(cast wallet address "$PROV_KEY")
 # ---------------------------------------------------------------------------
 # chain + contracts
 # ---------------------------------------------------------------------------
-if [ "$MODE" = nitro ]; then
-  RPC=${NITRO_RPC:-http://127.0.0.1:8547}
-  NETWORK=eip155:412346
-  DEV_KEY=${NITRO_DEV_KEY:-0xb6b15c8cb491557369f3c7d2c287b053eb229daa9c22138887752191c9520659}
-  cast chain-id --rpc-url "$RPC" >/dev/null || { echo "no Nitro dev node at $RPC" >&2; exit 1; }
-  cast send -q --rpc-url "$RPC" --private-key "$DEV_KEY" "$OP" --value 1ether
-
-  say "deploying XorvRegistry (Rust / Stylus)"
-  REGISTRY=$(cd "$ROOT/contracts/stylus/registry" && cargo stylus deploy --no-verify \
-    --endpoint "$RPC" --private-key "$OP_KEY" --constructor-args "$OP" 2>&1 | strip \
-    | grep -oE 'deployed code at address: 0x[0-9a-fA-F]{40}' | tail -n1 | awk '{print $NF}')
-  [ -n "$REGISTRY" ] || { echo "registry deploy failed" >&2; exit 1; }
-  echo "   $REGISTRY"
-
-  cd "$ROOT/contracts"; forge build -q
-  TOKEN=$(forge create --rpc-url "$RPC" --private-key "$OP_KEY" --broadcast \
-    test/mocks/MockERC3009.sol:MockERC3009 --constructor-args "Global Dollar" "1" 2>&1 \
-    | grep -oE 'Deployed to: 0x[0-9a-fA-F]{40}' | awk '{print $NF}')
-  export XORV_STABLECOIN=$TOKEN XORV_STABLECOIN_NAME="Global Dollar" XORV_STABLECOIN_VERSION=1 XORV_STABLECOIN_SYMBOL=USDG
-  cast send -q --rpc-url "$RPC" --private-key "$OP_KEY" "$TOKEN" "mint(address,uint256)" "$PAYER" 10000000
-else
-  FORK_PORT=${FORK_PORT:-8612}
-  RPC="http://127.0.0.1:$FORK_PORT"
-  NETWORK=eip155:421614
-  TOKEN=0xFFC95faa3d63Cde504a05B567C600B78C0b41892   # the real Paxos USDG
-  REGISTRY=""
-  anvil --fork-url "${FORK_URL:-https://sepolia-rollup.arbitrum.io/rpc}" --port "$FORK_PORT" --silent &
+if [ "$MODE" = anvil ]; then
+  ANVIL_PORT=${ANVIL_PORT:-8650}
+  RPC="http://127.0.0.1:$ANVIL_PORT"
+  NETWORK=eip155:31337
+  anvil --port "$ANVIL_PORT" --chain-id 31337 --prune-history 300 --silent &
   PIDS+=($!)
   for _ in $(seq 1 60); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break; sleep 0.5; done
   cast rpc --rpc-url "$RPC" anvil_setBalance "$OP" 0xde0b6b3a7640000 >/dev/null
-  # USDG keeps balances in a mapping at storage slot 1 (found by probing).
-  cast rpc --rpc-url "$RPC" anvil_setStorageAt "$TOKEN" "$(cast index address "$PAYER" 1)" \
-    "$(cast to-uint256 10000000)" >/dev/null
-  echo "   payer holds $(cast call "$TOKEN" 'balanceOf(address)(uint256)' "$PAYER" --rpc-url "$RPC") USDG units (real contract)"
+
+  cd "$ROOT/contracts"; forge build -q
+  TOKEN=$(forge create --rpc-url "$RPC" --private-key "$OP_KEY" --broadcast \
+    test/mocks/MockERC3009.sol:MockERC3009 --constructor-args "Agora Dollar" "1" 2>&1 \
+    | grep -oE 'Deployed to: 0x[0-9a-fA-F]{40}' | awk '{print $NF}')
+  export XORV_STABLECOIN=$TOKEN XORV_STABLECOIN_NAME="Agora Dollar" XORV_STABLECOIN_VERSION=1 XORV_STABLECOIN_SYMBOL=AUSD
+  cast send -q --rpc-url "$RPC" --private-key "$OP_KEY" "$TOKEN" "mint(address,uint256)" "$PAYER" 10000000
+else
+  FORK_PORT=${FORK_PORT:-8651}
+  RPC="http://127.0.0.1:$FORK_PORT"
+  NETWORK=eip155:10143
+  TOKEN=0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC   # the real Agora AUSD on Monad testnet
+  FAUCET=0xd236c18D274E54FAccC3dd9DDA4b27965a73ee6C  # Agora's testnet faucet: 10,000 AUSD per call
+  anvil --fork-url "${FORK_URL:-https://testnet-rpc.monad.xyz}" --port "$FORK_PORT" --prune-history 300 --silent &
+  PIDS+=($!)
+  for _ in $(seq 1 60); do cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 && break; sleep 0.5; done
+  cast rpc --rpc-url "$RPC" anvil_setBalance "$OP" 0xde0b6b3a7640000 >/dev/null
+  # The faucet has a 60s global cooldown: step past it, then take AUSD from it as anyone would.
+  cast rpc --rpc-url "$RPC" evm_increaseTime 61 >/dev/null
+  cast send -q --rpc-url "$RPC" --private-key "$OP_KEY" "$FAUCET" "requestFunds(address)" "$PAYER"
+  echo "   payer holds $(cast call "$TOKEN" 'balanceOf(address)(uint256)' "$PAYER" --rpc-url "$RPC") AUSD units (real contract, from Agora's faucet)"
   cd "$ROOT/contracts"; forge build -q
 fi
+PAYER_START=$(cast call "$TOKEN" 'balanceOf(address)(uint256)' "$PAYER" --rpc-url "$RPC" | awk '{print $1}')
 
-say "deploying XorvEscrow + XorvLog (Solidity)"
-OUT=$(XORV_OPERATOR_KEY=$OP_KEY XORV_REGISTRY_ADDRESS=${REGISTRY:-0x0000000000000000000000000000000000000000} \
-  forge script script/Deploy.s.sol --rpc-url "$RPC" --broadcast 2>&1)
+say "deploying XorvRegistry + XorvEscrow + XorvLog"
+OUT=$(XORV_OPERATOR_KEY=$OP_KEY forge script script/Deploy.s.sol --rpc-url "$RPC" --broadcast 2>&1)
+REGISTRY=$(echo "$OUT" | grep -E '^\s*XorvRegistry ' | awk '{print $2}')
 ESCROW=$(echo "$OUT" | grep -E '^\s*XorvEscrow ' | awk '{print $2}')
 LOG=$(echo "$OUT" | grep -E '^\s*XorvLog ' | awk '{print $2}')
 [ -n "$ESCROW" ] || { echo "$OUT" >&2; exit 1; }
-echo "   escrow $ESCROW   log $LOG"
-if [ -n "$REGISTRY" ]; then
-  cast send -q --rpc-url "$RPC" --private-key "$OP_KEY" "$REGISTRY" "setEscrow(address)" "$ESCROW"
-  cast send -q --rpc-url "$RPC" --private-key "$OP_KEY" "$REGISTRY" "setOperator(address)" "$OP"
-fi
+echo "   registry $REGISTRY   escrow $ESCROW   log $LOG"
 FROM_BLOCK=$(cast block-number --rpc-url "$RPC")
 
 # ---------------------------------------------------------------------------
@@ -142,10 +133,10 @@ done
 # ---------------------------------------------------------------------------
 # the buyer
 # ---------------------------------------------------------------------------
-say "xorv run — paying from an address with no ETH"
-echo "   payer ETH before: $(cast balance "$PAYER" --rpc-url "$RPC")"
+say "xorv run — paying from an address with no MON"
+echo "   payer MON before: $(cast balance "$PAYER" --rpc-url "$RPC")"
 RESULT=$(XORV_HOME="$WORK/buyer" XORV_PAYER_KEY=$PAYER_KEY XORV_RPC_URL=$RPC \
-  node packages/cli/dist/index.js run "Say hello to Arbitrum" --broker "$BROKER" --adapter echo --max 0.01 --yes --json 2>"$WORK/run.err" || true)
+  node packages/cli/dist/index.js run "Say hello to Monad" --broker "$BROKER" --adapter echo --max 0.01 --yes --json 2>"$WORK/run.err" || true)
 echo "$RESULT" > "$WORK/run.json"
 [ -s "$WORK/run.json" ] || { echo "xorv run printed nothing:"; cat "$WORK/run.err"; tail -30 "$WORK/broker.log"; exit 1; }
 
@@ -156,7 +147,7 @@ sleep 3
 # verify on chain
 # ---------------------------------------------------------------------------
 say "verifying on chain"
-RPC=$RPC TOKEN=$TOKEN ESCROW=$ESCROW REGISTRY=$REGISTRY PAYER=$PAYER PROV=$PROV BROKER=$BROKER MODE=$MODE \
+PAYER_START=$PAYER_START RPC=$RPC TOKEN=$TOKEN ESCROW=$ESCROW REGISTRY=$REGISTRY PAYER=$PAYER PROV=$PROV BROKER=$BROKER MODE=$MODE \
   node --input-type=module -e '
 import { readFileSync } from "node:fs";
 const run = JSON.parse(readFileSync(process.argv[1], "utf8"));
@@ -173,7 +164,7 @@ check("paid through escrow", run.escrow?.address?.toLowerCase() === process.env.
 check("escrow released", run.escrow?.state === "released", run.escrow?.releaseTx ?? run.escrow?.lastError ?? "");
 const price = BigInt(run.quote.accepts[0].amount);
 check("provider received exactly the price", (await bal(process.env.PROV)) === price, `${price} units`);
-check("buyer paid exactly the price", (await bal(process.env.PAYER)) === 10_000_000n - price);
+check("buyer paid exactly the price", (await bal(process.env.PAYER)) === BigInt(process.env.PAYER_START) - price);
 check("escrow holds nothing afterwards", (await bal(process.env.ESCROW)) === 0n);
 check("buyer spent no gas", BigInt(await rpc("eth_getBalance", [process.env.PAYER, "latest"])) === 0n);
 const job = (await (await fetch(`${process.env.BROKER}/api/jobs/${run.jobId}`)).json()).job;
@@ -182,9 +173,9 @@ if (process.env.REGISTRY) {
   // getProvider(address) → (nodeId, registeredAt, lastSeen, completed, failed, earned, active)
   const raw = await call(process.env.REGISTRY, "0x55f21eb7" + pad(process.env.PROV));
   const words = raw.slice(2).match(/.{64}/g).map((w) => BigInt("0x" + w));
-  check("Stylus registry: provider registered (sponsored)", words[0] !== 0n);
-  check("Stylus registry: completed = 1", words[3] === 1n);
-  check("Stylus registry: earned = price", words[5] === price);
+  check("registry: provider registered (sponsored)", words[0] !== 0n);
+  check("registry: completed = 1", words[3] === 1n);
+  check("registry: earned = price", words[5] === price);
   const providers = (await (await fetch(`${process.env.BROKER}/api/providers`)).json()).providers;
   check("broker sees the on-chain record", providers[0]?.onchain?.completed === 1, JSON.stringify(providers[0]?.onchain ?? null));
 }
