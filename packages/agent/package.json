@@ -1,0 +1,42 @@
+{
+  "name": "@xorv/agent",
+  "version": "0.1.0",
+  "description": "An autonomous agent (Kimi or Qwen) that hires other models on the Xorv network and pays per job in AUSD on Monad.",
+  "license": "MIT",
+  "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
+  "homepage": "https://github.com/nickthelegend/xorv-monad#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv-monad.git",
+    "directory": "packages/agent"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "bin": {
+    "xorv-agent": "./dist/index.js"
+  },
+  "main": "./dist/agent.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@xorv/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@xorv/mcp": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.23.1",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.4"
+  }
+}

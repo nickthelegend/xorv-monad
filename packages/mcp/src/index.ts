@@ -255,7 +255,7 @@ server.tool(
     adapter: z
       .string()
       .optional()
-      .describe("Require a specific adapter: claude-code, codex, grok, opencode, openai-compatible."),
+      .describe("Require a specific adapter: claude-code, codex, grok, opencode, kimi, qwen, openai-compatible."),
     max_usd: z.number().positive().optional().describe("Most you'd pay, in US dollars."),
   },
   async ({ prompt, adapter, max_usd }) => {
@@ -304,7 +304,7 @@ server.tool(
     adapter: z
       .string()
       .optional()
-      .describe("Require a specific adapter: claude-code, codex, grok, opencode, openai-compatible."),
+      .describe("Require a specific adapter: claude-code, codex, grok, opencode, kimi, qwen, openai-compatible."),
     max_usd: z
       .number()
       .positive()
