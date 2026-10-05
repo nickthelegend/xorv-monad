@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+#
+# Xorv on Monad testnet: every escrowed job, every provider's on-chain track
+# record, and every receipt in the audit log — indexed by HyperIndex, because
+# Monad's public RPC answers at most 100 blocks per eth_getLogs and the app
+# needs the whole history.
+#
+# LOCAL CHAIN VARIANT (Anvil, chain 31337), read over RPC instead of HyperSync.
+# Addresses default to the live Monad testnet deployment (deployments/monad-testnet.json);
+# ENVIO_* env vars override them for a fresh deploy or a local rehearsal.
+name: xorv-indexer-local
+description: Xorv jobs, escrow settlements, provider reputation and receipts on Monad
+disable_default_cross_chain: true
+contracts:
+  - name: XorvEscrow
+    abi_file_path: ./abis/XorvEscrow.json
+    events:
+      - event: JobFunded(bytes32 indexed jobId, address indexed buyer, address indexed provider, address token, uint256 amount, uint40 deadline)
+      - event: JobReleased(bytes32 indexed jobId, address indexed provider, uint256 providerAmount, uint256 fee, bytes32 resultHash, address releasedBy)
+      - event: JobRefunded(bytes32 indexed jobId, address indexed buyer, uint256 amount, bool providerAtFault)
+      - event: JobReassigned(bytes32 indexed jobId, address indexed previousProvider, address indexed newProvider)
+      - event: RegistryCallFailed(bytes32 indexed jobId, address indexed provider, bytes reason)
+  - name: XorvRegistry
+    abi_file_path: ./abis/XorvRegistry.json
+    events:
+      - event: ProviderRegistered(address indexed provider, bytes32 indexed nodeId, string metadataUri)
+      - event: ProviderDeactivated(address indexed provider)
+      - event: Heartbeat(address indexed provider, uint64 timestamp)
+      - event: OutcomeRecorded(address indexed provider, bool success, uint256 amount, uint64 completed, uint64 failed)
+  - name: XorvLog
+    abi_file_path: ./abis/XorvLog.json
+    events:
+      - event: Entry(uint8 indexed kind, bytes32 indexed subject, address indexed author, uint64 seq, string payload)
+chains:
+  - id: 31337
+    start_block: ${ENVIO_START_BLOCK:-0}
+    rpc:
+      - url: ${ENVIO_RPC_URL:-http://127.0.0.1:8648}
+    contracts:
+      - name: XorvEscrow
+        address: "${ENVIO_ESCROW_ADDRESS}"
+      - name: XorvRegistry
+        address: "${ENVIO_REGISTRY_ADDRESS}"
+      - name: XorvLog
+        address: "${ENVIO_LOG_ADDRESS}"

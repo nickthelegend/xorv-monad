@@ -34,6 +34,10 @@ BROKER="http://127.0.0.1:$BROKER_PORT"
 PIDS=()
 cleanup() {
   for pid in "${PIDS[@]:-}"; do [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; done
+  if [ "${INDEXER:-0}" = 1 ]; then
+    pkill -f "envio start --config config.local.yaml" 2>/dev/null || true
+    docker stop xorv-monad-hasura >/dev/null 2>&1 || true
+  fi
   [ "${KEEP:-0}" = 1 ] || rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -213,4 +217,47 @@ check("every purchase carries on-chain proof", run.purchases.every((p) => p.proo
 process.exit(fails ? 1 : 0);
 ' "$WORK/agent-$BRAIN.json" || { echo "--- agent stderr ---"; cat "$WORK/agent-$BRAIN.err"; echo "$AGENT_OUT" | head -40; exit 1; }
   done
+fi
+
+# ---------------------------------------------------------------------------
+# the indexer (INDEXER=1): Envio HyperIndex over this chain, checked against it
+# ---------------------------------------------------------------------------
+# The real indexer (envio start, config.local.yaml) reads this Anvil chain over
+# RPC into its own Postgres schema and Hasura, then the GraphQL totals are
+# compared with what happened above.
+if [ "${INDEXER:-0}" = 1 ]; then
+  say "Envio indexer over this chain"
+  docker exec envio-postgres psql -U postgres -d envio-dev -c "DROP SCHEMA IF EXISTS xorv_monad CASCADE;" >/dev/null 2>&1 || true
+  ENVIO_ESCROW_ADDRESS=$ESCROW ENVIO_REGISTRY_ADDRESS=$REGISTRY ENVIO_LOG_ADDRESS=$LOG ENVIO_RPC_URL=$RPC \
+    ENVIO_START_BLOCK=0 indexer/local.sh >"$WORK/indexer.log" 2>&1 &
+  PIDS+=($!)
+  GQL=http://localhost:${XORV_INDEXER_GRAPHQL_PORT:-8082}/v1/graphql
+  EXPECTED_JOBS=$([ "${AGENT:-0}" = 1 ] && echo 5 || echo 1)
+  for _ in $(seq 1 120); do
+    got=$(curl -s "$GQL" -H 'content-type: application/json' \
+      -d '{"query":"{ Network { jobsFunded jobsReleased } }"}' 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).data.Network[0].jobsReleased)}catch{console.log(0)}})' || true)
+    [ "$got" = "$EXPECTED_JOBS" ] && break
+    sleep 2
+  done
+  GQL=$GQL PROV=$PROV EXPECTED_JOBS=$EXPECTED_JOBS node --input-type=module -e '
+const q = async (query) => (await (await fetch(process.env.GQL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ query }) })).json()).data;
+const d = await q(`{ Network { jobsFunded jobsReleased jobsRefunded volume paidToProviders providers buyers receipts meanSecondsToSettle }
+  Provider(order_by: { earned: desc }) { id registered completed failed scoreBps earned jobsAssigned }
+  Job(order_by: { fundedAt: asc }) { id status amount providerAmount secondsToSettle fundTx settleTx }
+  Receipt { job_id settlementState } DailyStat { day jobsFunded jobsReleased volume } }`);
+let fails = 0;
+const check = (label, ok, extra = "") => { console.log(`${ok ? "✓" : "✗"} ${label}${extra ? "  " + extra : ""}`); if (!ok) fails++; };
+const n = Number(process.env.EXPECTED_JOBS);
+const net = d?.Network?.[0];
+check("indexer caught up: every funded job indexed", net?.jobsFunded === n, JSON.stringify(net));
+check("every job released, none refunded", net?.jobsReleased === n && net?.jobsRefunded === 0);
+check("paid to providers = funded volume (0% fee)", net && net.paidToProviders === net.volume, `${net?.paidToProviders} units`);
+const p = d.Provider.find((x) => x.id === process.env.PROV.toLowerCase());
+check("provider record matches the registry", p?.registered && Number(p.completed) === n && Number(p.failed) === 0, JSON.stringify(p));
+check("provider score as the registry computes it", p && p.scoreBps === Math.floor(((n + 1) * 10000) / (n + 2)));
+check("each job has its whole lifecycle", d.Job.every((j) => j.status === "Released" && j.fundTx && j.settleTx && j.providerAmount === j.amount));
+check("receipts linked to their jobs", d.Receipt.length >= 1 && d.Receipt.every((r) => r.job_id && r.settlementState === "released"), `${d.Receipt.length} receipts`);
+check("daily totals aggregate the jobs", d.DailyStat.reduce((a, x) => a + x.jobsReleased, 0) === n);
+process.exit(fails ? 1 : 0);
+' || { echo "--- indexer log ---"; tail -40 "$WORK/indexer.log"; exit 1; }
 fi
