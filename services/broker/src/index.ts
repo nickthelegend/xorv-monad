@@ -127,6 +127,9 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
       : "off — providers are paid directly (set XORV_ESCROW_ADDRESS)",
   );
   line("reputation", config.registryAddress ? `${config.registryAddress} ` : "off (set XORV_REGISTRY_ADDRESS)");
+  if (process.env.XORV_CLEANVERSE_MOCK?.trim() === "1") {
+    line("identity", "CLEANVERSE MOCK — the escrow's A-Pass is a local stand-in, not Cleanverse's");
+  }
   console.log("");
   void bootChecks();
 });

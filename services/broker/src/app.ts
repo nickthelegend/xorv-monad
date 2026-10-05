@@ -240,7 +240,7 @@ export function createApp(deps: AppDeps) {
     deps.identity !== undefined
       ? deps.identity
       : config.escrowAddress
-        ? chainIdentity(chain, config.escrowAddress)
+        ? chainIdentity(chain, config.escrowAddress, { mock: process.env.XORV_CLEANVERSE_MOCK?.trim() === "1" })
         : null;
   const identity = identitySource
     ? new IdentityBook(identitySource, { log: (m) => console.error(`[broker] ${m}`) })

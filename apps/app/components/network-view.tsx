@@ -234,9 +234,12 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
       </p>
       <div className="mt-4 border-t border-[var(--line)] pt-1">
         {info.escrow ? (
-          <Row label="identity gate">
+          <Row label="identity gate" wrap>
             {gate ? (
               <span>
+                {gate.mock ? (
+                  <span className="mr-1.5 rounded border border-warn/40 px-1 py-px text-[10.5px] font-medium text-warn">MOCK A-PASS</span>
+                ) : null}
                 Cleanverse CVI · buyer and provider need an active A-Pass{" "}
                 <Ext href={explorerAddress(gate.address)}>gate ↗</Ext>
                 {gate.apass ? (
@@ -258,16 +261,17 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
         ) : null}
         {signer ? (
           <>
-            <Row label="operator signer">
+            <Row label="operator signer" wrap>
               <span>
                 {signer.mode === "privy-mock" ? (
                   <span className="mr-1.5 rounded border border-warn/40 px-1 py-px text-[10.5px] font-medium text-warn">MOCK</span>
                 ) : null}
-                {signer.description}
+                {signer.mode === "key" ? "a local key, unrestricted" : "Privy server wallet, policy-locked"}
+                <span className="block text-[11.5px] text-fg-4">{signer.description}</span>
               </span>
             </Row>
             {signer.policy ? (
-              <Row label="policy allows">
+              <Row label="policy allows" wrap>
                 <span className="text-[12px] text-fg-2">
                   {signer.policy.allows.map((rule) => rule.replace(/ on \d+$/, "")).join(" · ")}
                   <span className="block text-[11.5px] text-fg-4">
@@ -277,7 +281,7 @@ function TrustPanel({ info }: { info: NetworkInfo }) {
               </Row>
             ) : null}
             {signer.refusals.length ? (
-              <Row label="refused">
+              <Row label="refused" wrap>
                 <span className="text-[12px] text-fail">
                   {signer.refusals.length} transaction{signer.refusals.length === 1 ? "" : "s"} · last: {signer.refusals.at(-1)!.reason}
                 </span>

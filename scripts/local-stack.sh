@@ -12,6 +12,10 @@
 # it does is the same code path as Monad testnet.
 #
 #   scripts/local-stack.sh            # (re)deploy on the running node, or start one
+#   SIGNER=privy-mock scripts/local-stack.sh       # operator signs through PRIVY MOCK MODE
+#   CLEANVERSE=mock scripts/local-stack.sh         # escrow gated by a MOCK A-Pass (labelled as such);
+#                                                  # the real A-Pass lives on Monad testnet, so the
+#                                                  # real-contract proof is MODE=fork CLEANVERSE=1 e2e
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -84,6 +88,20 @@ REGISTRY=$(node -e 'console.log(require(process.argv[1]).registry)' "$DEP")
 LOG=$(node -e 'console.log(require(process.argv[1]).log)' "$DEP")
 FROM_BLOCK=$(node -e 'console.log(require(process.argv[1]).fromBlock)' "$DEP")
 
+CLEANVERSE=${CLEANVERSE:-off}
+SIGNER=${SIGNER:-key}
+if [ "$CLEANVERSE" = mock ]; then
+  say "Cleanverse CVI — MOCK A-Pass (Cleanverse's contracts exist only on Monad testnet)"
+  cd "$ROOT/contracts"
+  APASS=$(create "$OP_KEY" test/mocks/MockAPass.sol:MockAPass)
+  GATE=$(create "$OP_KEY" src/CleanverseGate.sol:CleanverseGate "$APASS" 0x0000000000000000000000000000000000000000 0x0000000000000000000000000000000000000000)
+  [ -n "$GATE" ] || { echo "CleanverseGate deploy failed" >&2; exit 1; }
+  send "$OP_KEY" "$ESCROW" "setIdentityGate(address)" "$GATE"
+  send "$OP_KEY" "$APASS" "set(address,bool)" "$PAYER" true
+  send "$OP_KEY" "$APASS" "set(address,bool)" "$PROV" true
+  echo "   gate $GATE over MOCK A-Pass $APASS · buyer and provider verified"
+fi
+
 cat >"$OUT" <<ENV
 # Written by scripts/local-stack.sh — a local Anvil node with real contracts. Not for any public network.
 XORV_NETWORK=eip155:31337
@@ -101,6 +119,8 @@ XORV_ESCROW_ADDRESS=$ESCROW
 XORV_REGISTRY_ADDRESS=$REGISTRY
 XORV_LOG_ADDRESS=$LOG
 XORV_LOG_FROM_BLOCK=$FROM_BLOCK
+XORV_SIGNER=$SIGNER
+XORV_CLEANVERSE_MOCK=$([ "$CLEANVERSE" = mock ] && echo 1 || echo 0)
 NEXT_PUBLIC_XORV_NETWORK=eip155:31337
 NEXT_PUBLIC_XORV_RPC_URL=$RPC
 NEXT_PUBLIC_XORV_STABLECOIN=$PROXY

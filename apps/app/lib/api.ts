@@ -146,7 +146,15 @@ export interface NetworkInfo {
     url: string;
     deadlineSeconds: number;
     /** Cleanverse CVI: when set, only A-Pass holders can fund the escrow or be paid by it. */
-    identityGate?: { address: string; kind: "cleanverse"; apass: string | null; validator: string | null; pool: string | null } | null;
+    identityGate?: {
+      address: string;
+      kind: "cleanverse";
+      apass: string | null;
+      validator: string | null;
+      pool: string | null;
+      /** A local stand-in A-Pass, not Cleanverse's. */
+      mock?: boolean;
+    } | null;
   } | null;
   /** XorvRegistry, the contract holding provider reputation. */
   registry?: { address: string; url: string } | null;

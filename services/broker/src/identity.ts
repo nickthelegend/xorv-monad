@@ -20,6 +20,8 @@ export interface GateInfo {
   validator: string | null;
   /** Validator pool whose compliance rules also apply; null for the A-Pass alone. */
   pool: string | null;
+  /** The A-Pass is a local stand-in (scripts/local-stack.sh CLEANVERSE=mock), not Cleanverse's. */
+  mock?: boolean;
 }
 
 export interface IdentitySource {
@@ -30,7 +32,11 @@ export interface IdentitySource {
 
 const ZERO = /^0x0{40}$/i;
 
-export function chainIdentity(chain: Pick<ChainLike, "publicClient">, escrow: string): IdentitySource {
+export function chainIdentity(
+  chain: Pick<ChainLike, "publicClient">,
+  escrow: string,
+  opts: { mock?: boolean } = {},
+): IdentitySource {
   const pub = chain.publicClient;
   let gateAddress: Address | null | undefined;
   return {
@@ -42,7 +48,7 @@ export function chainIdentity(chain: Pick<ChainLike, "publicClient">, escrow: st
           .then((a) => (ZERO.test(a) ? null : a))
           .catch(() => null);
       const [apass, validator, pool] = await Promise.all([view("apass"), view("validator"), view("pool")]);
-      return { address: gateAddress, kind: "cleanverse", apass, validator, pool };
+      return { address: gateAddress, kind: "cleanverse", apass, validator, pool, ...(opts.mock ? { mock: true } : {}) };
     },
     async verified(addresses) {
       if (gateAddress === undefined) await this.gate();

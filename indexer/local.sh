@@ -39,4 +39,7 @@ export PATH="$HOME/.nvm/versions/node/v22.22.2/bin:$PATH"
 export ENVIO_TUI=false ENVIO_PG_HOST=localhost ENVIO_PG_PORT="$PG_PORT" ENVIO_PG_USER=postgres ENVIO_PG_PASSWORD=testing \
   ENVIO_PG_DATABASE=envio-dev ENVIO_PG_SCHEMA="$SCHEMA" ENVIO_INDEXER_PORT="${ENVIO_INDEXER_PORT:-9871}" \
   HASURA_GRAPHQL_ENDPOINT="http://localhost:$HASURA_PORT/v1/metadata" HASURA_GRAPHQL_ADMIN_SECRET=testing
-exec pnpm exec envio start --config config.local.yaml
+# A local chain is redeployed from scratch (new addresses), and Envio refuses to
+# resume an index built for different ones. Start the index over by default;
+# ENVIO_KEEP=1 resumes instead, for restarting the indexer on an unchanged chain.
+exec pnpm exec envio start --config config.local.yaml $([ "${ENVIO_KEEP:-0}" = 1 ] || echo -r)

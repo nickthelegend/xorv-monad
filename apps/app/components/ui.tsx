@@ -155,12 +155,15 @@ export function Ext({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-/** A label/value row. The app's densest and most-used primitive. */
-export function Row({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * A label/value row. The app's densest and most-used primitive.
+ * Values truncate to one line; `wrap` lets a sentence-long value wrap instead.
+ */
+export function Row({ label, children, wrap }: { label: string; children: ReactNode; wrap?: boolean }) {
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="shrink-0 text-[12.5px] text-fg-4">{label}</span>
-      <span className="min-w-0 truncate text-right text-[12.5px] text-fg-2">{children}</span>
+      <span className={`min-w-0 text-right text-[12.5px] text-fg-2 ${wrap ? "break-words" : "truncate"}`}>{children}</span>
     </div>
   );
 }
