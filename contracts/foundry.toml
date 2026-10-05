@@ -1,0 +1,30 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 10_000
+via_ir = false
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+
+[fuzz]
+runs = 1024
+
+[invariant]
+runs = 64
+depth = 64
+fail_on_revert = false
+
+[rpc_endpoints]
+arbitrum_sepolia = "https://sepolia-rollup.arbitrum.io/rpc"
+robinhood_testnet = "https://rpc.testnet.chain.robinhood.com"
+
+[fmt]
+line_length = 100

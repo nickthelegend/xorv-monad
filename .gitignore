@@ -1,0 +1,84 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# secrets — never commit keys
+.env
+.env.local
+.env.*.local
+*.pem
+.xorv/
+
+# reference clones (not part of this repo)
+references_/
+
+# runtime state
+data/
+*.db
+*.sqlite
+*.log
+logs/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# tooling caches
+.turbo/
+.eslintcache
+coverage/
+
+# Video project — the source and the finished render are tracked; everything
+# below is regenerable from SCRIPT.md / STORYBOARD.md and would only bloat the
+# repo (voice wavs, a MusicGen bed, site capture, snapshot sheets).
+videos/*/assets/voice/
+videos/*/assets/bgm/
+videos/*/capture/
+videos/*/snapshots/
+videos/*/.hyperframes/
+videos/*/node_modules/
+videos/*/.thumbnails/
+videos/*/.waveform-cache/
+videos/*/audio_engine_meta.json
+
+# Hedera-specific agent skills, not part of this project
+.agents/
+demo/take*/
+demo/out/
+demo/scenes/
+demo/audio/
+demo/intro-hf/audio/
+demo/intro-hf/.tmp/
+demo/intro-hf/*.mp4
+demo/intro-hf/work-*/
+
+# Foundry / Stylus build output
+contracts/cache/
+contracts/out/
+contracts/broadcast/*/31337/
+contracts/stylus/**/target/
+.env.local-stack
+
+# forge run logs. Local and forked runs write here under real chain ids (a
+# fork of Arbitrum Sepolia is 421614), so committing them records addresses
+# that do not exist on that chain. deployments/<network>.json is the record.
+contracts/broadcast/
+
+# demo video: raw screencast frames and renders are large; the edit sources are tracked
+videos/raw/take*/
+videos/raw/*.mp4
+videos/raw/*.log
+videos/xorv-demo/renders/
+videos/xorv-demo/snapshots/
+videos/xorv-demo/.thumbnails/
+videos/xorv-demo/assets/footage/

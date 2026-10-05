@@ -1,0 +1,10 @@
+{
+  "network": "eip155:421614",
+  "escrow": "0x383F5153db8Bb18c7c25157Fb3493645A465EeF3",
+  "registry": "0x38b65014fee7c87d5e13afbc555388f612a7a2a1",
+  "log": "0x135738387e4bEC5573914F1A2A812728b9b268C8",
+  "fromBlock": 315016130,
+  "operator": "0xeEE4CA97A7Af69B42d9cafD3955735C1130eB51E",
+  "registryDeployTx": "0x671a8fbf022a875ccb20dd44191fc19e59f132080f7263cbfba48bef236c0046",
+  "deployedAt": "2026-10-02T14:50:46Z"
+}

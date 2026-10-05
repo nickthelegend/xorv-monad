@@ -1,0 +1,28 @@
+# Never upload secrets or local state to Vercel.
+.env
+.env.*
+!.env.example
+*.pem
+data/
+*.db
+*.sqlite
+
+# Rebuilt remotely.
+node_modules
+**/node_modules
+.next
+**/.next
+dist
+**/dist
+*.tsbuildinfo
+
+# Not part of the web apps' build.
+.git
+.claude
+.agents
+.github
+videos
+
+# Contracts (Rust target/, Foundry libs and build output) are not part of the web apps.
+contracts/
+deployments/

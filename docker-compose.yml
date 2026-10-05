@@ -1,0 +1,43 @@
+services:
+  broker:
+    build: .
+    ports:
+      - "8402:8402"
+    environment:
+      # The operator pays the gas (ETH) for every settlement — fund it with
+      # Arbitrum Sepolia ETH. Its address is derived from the key.
+      XORV_OPERATOR_KEY: ${XORV_OPERATOR_KEY:?set this in .env}
+      # eip155:421614 Arbitrum Sepolia · eip155:46630 Robinhood Chain Testnet
+      XORV_NETWORK: ${XORV_NETWORK:-eip155:421614}
+      XORV_RPC_URL: ${XORV_RPC_URL:-}
+      # Default stablecoin: USDG (blank) or USDC, or a token address.
+      XORV_STABLECOIN: ${XORV_STABLECOIN:-}
+      # Pays for "run without a wallet" in the job board. Needs USDG/USDC, no ETH.
+      XORV_DEMO_PAYER_KEY: ${XORV_DEMO_PAYER_KEY:-}
+      # The XorvLog contract. Deploy with `pnpm deploy:log`. Blank is allowed —
+      # the network runs, it just records nothing publicly.
+      XORV_LOG_ADDRESS: ${XORV_LOG_ADDRESS:-}
+      XORV_LOG_FROM_BLOCK: ${XORV_LOG_FROM_BLOCK:-}
+      XORV_LOG_WINDOW_BLOCKS: ${XORV_LOG_WINDOW_BLOCKS:-}
+      XORV_ESCROW_ADDRESS: ${XORV_ESCROW_ADDRESS:-}
+      XORV_REGISTRY_ADDRESS: ${XORV_REGISTRY_ADDRESS:-}
+      # How this broker is reachable from OUTSIDE the container. It is used for
+      # receipt links and quote URLs, and the default is genuinely wrong here: a
+      # container publishing 8402 to some other host port, or sitting behind a
+      # tunnel, is not at localhost:8402 as far as anyone else is concerned.
+      #
+      # Provider nodes no longer depend on it — they derive the control-channel
+      # URL from the address they actually reached the broker on, because
+      # getting this wrong used to leave a node reporting `online` while every
+      # dispatched job silently died.
+      XORV_BROKER_URL: ${XORV_BROKER_URL:-http://localhost:8402}
+      XORV_CORS_ORIGINS: ${XORV_CORS_ORIGINS:-http://localhost:3000,http://localhost:3002}
+      # Behind a reverse proxy, set this so rate limiting sees real client IPs.
+      XORV_TRUST_PROXY: ${XORV_TRUST_PROXY:-0}
+    volumes:
+      # Jobs and lifetime earnings. Without this they go with the container.
+      - xorv-data:/data
+    restart: unless-stopped
+
+volumes:
+  xorv-data:

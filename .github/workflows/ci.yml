@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # The broker's persistence layer uses node:sqlite, which is only present
+    # from 22.5. The CLI itself still supports 20.11 — that's checked below.
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.x", "24.x"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Build first: workspace packages resolve each other through their built
+      # `dist` types, so a typecheck before the build can't find @xorv/protocol.
+      - name: Build
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Every test in the repo runs with no credentials and no network:
+      # the two pieces that would touch the chain — the facilitator and the
+      # audit-log writer — are stubbed, so CI proves the logic without spending
+      # testnet stablecoins or depending on an Arbitrum RPC being up.
+      - name: Test
+        run: pnpm test
+
+      - name: Build the frontends
+        run: pnpm build:all
+
+  cli-node-floor:
+    name: CLI runs on its minimum Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.29.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20.11"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @xorv/protocol build
+      - run: pnpm --filter @xorv/cli build
+      # The floor that matters for `npm i -g @xorv/cli`: it has to at least start.
+      - run: node packages/cli/dist/index.js --version
+
+  secrets:
+    name: No keys in the tree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for committed key material
+        run: |
+          # A private key in a repo that handles money is the one mistake worth
+          # failing the build over.
+          if grep -rIn --exclude-dir=node_modules --exclude-dir=.git \
+               -E '(ghp_[A-Za-z0-9]{30,}|30740201010420[0-9a-f]{40,}|"privateKey"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{60,}")' .; then
+            echo "::error::possible secret committed"
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::.env is tracked"
+            exit 1
+          fi
+          echo "clean"
+
+  contracts:
+    name: Solidity — unit, fuzz, invariants
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge build --sizes
+      - run: forge test -vv
+      # Against the real USDG and USDC contracts on forks of the live testnets.
+      # Needs the public RPCs, so a flaky endpoint doesn't block the suite above.
+      - run: FORK_TESTS=1 forge test --match-contract Fork -vv
+        continue-on-error: true
+
+  stylus:
+    name: Rust / Stylus registry
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/stylus/registry
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins the version and the wasm target.
+      - run: rustup show
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test

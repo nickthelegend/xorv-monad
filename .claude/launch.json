@@ -1,0 +1,57 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "landing",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "xorv-landing", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "app",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "xorv-app", "dev"],
+      "port": 3002
+    },
+    {
+      "name": "tunnel",
+      "runtimeExecutable": "cloudflared",
+      "runtimeArgs": [
+        "tunnel",
+        "--no-autoupdate",
+        "--metrics",
+        "localhost:8412",
+        "--url",
+        "http://localhost:8402"
+      ],
+      "port": 8412
+    },
+    {
+      "name": "broker",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "XORV_BROKER_URL=https://surround-ports-prime-audience.trycloudflare.com",
+        "XORV_CORS_ORIGINS=",
+        "XORV_TRUST_PROXY=1",
+        "node",
+        "services/broker/dist/index.js"
+      ],
+      "port": 8402
+    },
+    {
+      "name": "provider",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "XORV_HOME=/Users/jaibajrang/.xorv-arbitrum-demo/provider",
+        "XORV_BROKER_URL=http://localhost:8402",
+        "XORV_SANDBOX=seatbelt",
+        "node",
+        "packages/cli/dist/index.js",
+        "start",
+        "--port",
+        "8411"
+      ],
+      "port": 8411
+    }
+  ]
+}

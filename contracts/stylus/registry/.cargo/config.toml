@@ -1,0 +1,6 @@
+# Rust's wasm32 default reserves a 1 MiB shadow stack (16 WebAssembly pages). Stylus charges for
+# every page a program's memory footprint needs on each call, so that default alone costs
+# ~15k gas per call. This contract's call depth is shallow and its largest local is a 256-byte
+# string, so a 32 KiB stack is ample (the value the Stylus examples use).
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=32768"]

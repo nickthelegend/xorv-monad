@@ -1,0 +1,19 @@
+# The broker image needs only the workspace manifests, packages/protocol and
+# services/broker (see Dockerfile). Everything else is upload weight.
+contracts/
+apps/
+packages/cli/
+packages/mcp/
+deployments/
+scripts/
+brand/
+**/node_modules
+**/dist
+**/.next
+.env
+.env.*
+!.env.example
+data/
+.claude/
+.agents/
+.github/

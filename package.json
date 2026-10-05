@@ -1,0 +1,48 @@
+{
+  "name": "xorv-arbitrum",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Xorv \u2014 a decentralized AI capacity network. Rent out your idle Claude/Codex/Grok subscription, get paid per job in stablecoins (USDG/USDC) over x402 on Arbitrum.",
+  "license": "MIT",
+  "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
+  "homepage": "https://github.com/nickthelegend/xorv-arbitrum#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv-arbitrum.git"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "packageManager": "pnpm@10.29.2",
+  "scripts": {
+    "build": "pnpm -r --filter=./packages/** --filter=./services/** build",
+    "build:all": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r --filter=./packages/** --filter=./services/** --filter=xorv-app test",
+    "broker": "pnpm --filter @xorv/broker dev",
+    "app": "pnpm --filter xorv-app dev",
+    "landing": "pnpm --filter xorv-landing dev",
+    "cli": "pnpm --filter @xorv/cli dev",
+    "mcp": "pnpm --filter @xorv/mcp dev",
+    "setup": "pnpm --filter @xorv/broker setup",
+    "deploy:log": "pnpm dlx tsx scripts/deploy-log.mts",
+    "m1": "pnpm dlx tsx scripts/m1-settle.mts",
+    "balances": "pnpm --filter @xorv/broker balances"
+  },
+  "keywords": [
+    "x402",
+    "usdg",
+    "arbitrum",
+    "usdc",
+    "ai-agents",
+    "micropayments",
+    "claude-code",
+    "marketplace",
+    "agentic-payments",
+    "eip-3009"
+  ],
+  "devDependencies": {
+    "solc": "0.8.28"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "name": "@xorv/protocol",
+  "version": "0.1.0",
+  "description": "Shared Xorv protocol types, money math, Arbitrum plumbing and x402 wiring.",
+  "license": "MIT",
+  "author": "Nivesh Gajengi <niveshgajengi@gmail.com>",
+  "homepage": "https://github.com/nickthelegend/xorv-arbitrum#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nickthelegend/xorv-arbitrum.git",
+    "directory": "packages/protocol"
+  },
+  "bugs": "https://github.com/nickthelegend/xorv-arbitrum/issues",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./escrow": "./dist/escrow.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "x402",
+    "usdg",
+    "arbitrum",
+    "usdc",
+    "eip-3009",
+    "xorv"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@x402/core": "~2.21.0",
+    "@x402/evm": "~2.21.0",
+    "viem": "^2.40.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "typescript": "~5.9.0",
+    "vitest": "^3.2.4"
+  }
+}

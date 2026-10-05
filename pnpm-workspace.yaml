@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "services/*"
+  - "apps/*"
+
+# Packages whose install scripts are allowed to run.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
