@@ -34,6 +34,7 @@ import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { MemoryEscrow } from "../src/escrow.js";
 import type { ReputationSource } from "../src/reputation.js";
+import type { IdentitySource } from "../src/identity.js";
 import { ESCROW_SCHEME } from "@xorv/protocol";
 
 // ---------------------------------------------------------------------------
@@ -193,6 +194,7 @@ export async function boot(
     failSettle?: boolean;
     clientScheme?: string;
     reputation?: ReputationSource;
+    identity?: IdentitySource;
     /** Escrow refund deadline in seconds; tests of the deadline path set it tiny. */
     deadlineSeconds?: number;
     /** How long payment verification takes, as an RPC read would. */
@@ -217,6 +219,7 @@ export async function boot(
     // direct-payment path, which is what a broker without XORV_ESCROW_ADDRESS runs.
     escrow: opts.escrow ?? null,
     reputation: opts.reputation ?? null,
+    identity: opts.identity ?? null,
     // Uses the network table's stablecoins (AUSD first, then USDC) — nothing
     // is read from the chain, so the whole suite stays off the network.
   });

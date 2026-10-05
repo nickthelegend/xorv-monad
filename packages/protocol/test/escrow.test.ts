@@ -54,11 +54,17 @@ function fakePublic(state: {
   used?: boolean;
   allowed?: boolean;
   jobStatus?: number;
+  /** CVI-verified accounts (lowercase); setting it puts an identity gate on the escrow. */
+  verified?: string[];
 }): PublicClient {
   return {
     verifyTypedData: (args: Parameters<typeof verifyTypedData>[0]) => verifyTypedData(args),
-    readContract: async ({ functionName }: { functionName: string }) => {
+    readContract: async ({ functionName, args }: { functionName: string; args?: unknown[] }) => {
       switch (functionName) {
+        case "identityGate":
+          return state.verified ? "0x00000000000000000000000000000000000Ca7e5" : "0x0000000000000000000000000000000000000000";
+        case "isVerified":
+          return state.verified!.includes(String(args![0]).toLowerCase());
         case "balanceOf":
           return state.balance ?? 10_000_000n;
         case "authorizationState":
@@ -150,6 +156,19 @@ describe("EscrowFacilitatorScheme.verify", () => {
     const p = await signedPayload();
     const v = await facilitator().verify(p, requirements());
     expect(v).toEqual({ isValid: true, payer: buyer.address });
+  });
+
+  it("with a Cleanverse gate, accepts CVI-verified parties and names whichever is not", async () => {
+    const p = await signedPayload();
+    const both = [buyer.address.toLowerCase(), PROVIDER.toLowerCase()];
+    expect(await facilitator({ verified: both }).verify(p, requirements())).toEqual({ isValid: true, payer: buyer.address });
+
+    const noBuyer = await facilitator({ verified: [PROVIDER.toLowerCase()] }).verify(p, requirements());
+    expect(noBuyer).toMatchObject({ isValid: false, invalidReason: "identity_not_verified" });
+    expect(noBuyer.invalidMessage).toContain(`buyer ${buyer.address} holds no active Cleanverse A-Pass`);
+
+    const noProvider = await facilitator({ verified: [buyer.address.toLowerCase()] }).verify(p, requirements());
+    expect(noProvider.invalidMessage).toMatch(/^provider 0x[0-9a-fA-F]{40} holds no active Cleanverse A-Pass/);
   });
 
   it("rejects a signature from someone else", async () => {

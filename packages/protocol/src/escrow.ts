@@ -305,6 +305,29 @@ const ERC20_READ_ABI = [
   },
 ] as const;
 
+/** IIdentityGate, plus CleanverseGate's views for describing it. */
+export const IDENTITY_GATE_ABI = [
+  { name: "isVerified", type: "function", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ type: "bool" }] },
+  { name: "apass", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "validator", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { name: "pool", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+/** The escrow's identity gate, or null when anyone may transact. */
+export async function readIdentityGate(pub: PublicClient, escrow: Address): Promise<Address | null> {
+  const gate = (await pub.readContract({ address: escrow, abi: XORV_ESCROW_ABI, functionName: "identityGate" })) as Address;
+  return /^0x0{40}$/i.test(gate) ? null : gate;
+}
+
+/** Each account's standing with the gate, in order. */
+export async function identityVerified(pub: PublicClient, gate: Address, accounts: Address[]): Promise<boolean[]> {
+  return Promise.all(
+    accounts.map((account) =>
+      pub.readContract({ address: gate, abi: IDENTITY_GATE_ABI, functionName: "isVerified", args: [account] }) as Promise<boolean>,
+    ),
+  );
+}
+
 function invalid(reason: string, message: string, payer?: string): VerifyResponse {
   return { isValid: false, invalidReason: reason, invalidMessage: message, payer };
 }
@@ -426,6 +449,19 @@ export class EscrowFacilitatorScheme implements SchemeNetworkFacilitator {
     }
     if ((balance as bigint) < BigInt(auth.value)) {
       return invalid("insufficient_funds", `balance ${balance} < ${auth.value}`, payer);
+    }
+    // The escrow would revert IdentityNotVerified; say so before anything is signed.
+    const gate = await readIdentityGate(pub, extra.escrow);
+    if (gate) {
+      // A missing provider is refused at settle; check whoever is named.
+      const parties = [getAddress(auth.from), ...(extra.provider ? [extra.provider] : [])];
+      const [buyerOk, providerOk = true] = await identityVerified(pub, gate, parties);
+      if (!buyerOk) {
+        return invalid("identity_not_verified", `buyer ${auth.from} holds no active Cleanverse A-Pass; this escrow requires CVI-verified parties`, payer);
+      }
+      if (!providerOk) {
+        return invalid("identity_not_verified", `provider ${extra.provider} holds no active Cleanverse A-Pass; this escrow requires CVI-verified parties`, payer);
+      }
     }
     return { isValid: true, payer };
   }

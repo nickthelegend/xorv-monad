@@ -303,19 +303,31 @@ export async function runCommand(prompt: string, opts: RunOptions): Promise<void
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
-    const body = (await res.json()) as { jobId?: string; error?: string };
+    const body = (await res.json().catch(() => ({}))) as { jobId?: string; error?: string };
     if (!res.ok || !body.jobId) {
-      throw new Error(body.error ?? `broker returned ${res.status}`);
+      const reason = refusalReason(res);
+      throw new PaymentRefused(body.error ?? explainRefusal(reason, payerAddress) ?? `broker returned ${res.status}`, reason);
     }
     jobId = body.jobId;
     settleTx = readSettlementTx(httpClient, res);
   } catch (err) {
     if (!opts.json) paySpin?.fail(`payment failed: ${err instanceof Error ? err.message : String(err)}`);
-    await failOut(opts.json, "payment", err, [
-      `common causes: the payer holds no ${symbol} (try --token with another`,
-      "stablecoin), or is the same address as the provider (you can't pay yourself)",
-      "check with: xorv wallet",
-    ]);
+    await failOut(
+      opts.json,
+      "payment",
+      err,
+      err instanceof PaymentRefused && err.reason === "identity_not_verified"
+        ? [
+            "this broker's escrow is gated by Cleanverse CVI: buyer and provider each need an active A-Pass",
+            `get one for ${payerAddress} through Cleanverse (cleanverse.com), then run this again`,
+            "nothing was signed on chain and no money moved",
+          ]
+        : [
+            `common causes: the payer holds no ${symbol} (try --token with another`,
+            "stablecoin), or is the same address as the provider (you can't pay yourself)",
+            "check with: xorv wallet",
+          ],
+    );
   }
 
   paySpin?.succeed(`paid ${ui.c.money(quote.priceLabel)} in ${symbol} — job ${ui.c.bold(jobId)}`);
@@ -681,4 +693,44 @@ async function payerBalances(
     }),
   );
   return out;
+}
+
+/** A payment the broker's facilitator refused, with the x402 reason code. */
+class PaymentRefused extends Error {
+  constructor(message: string, readonly reason: string | null) {
+    super(message);
+  }
+}
+
+/**
+ * Why the facilitator refused, from the second 402's PAYMENT-REQUIRED header.
+ * x402 carries only the reason code there; the facilitator's own message stays
+ * on the server, so the common codes are spelled out by `explainRefusal`.
+ */
+function refusalReason(res: Response): string | null {
+  const header = res.headers.get("payment-required");
+  if (res.status !== 402 || !header) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(header, "base64").toString("utf8")) as { error?: unknown };
+    return typeof decoded.error === "string" && decoded.error ? decoded.error : null;
+  } catch {
+    return null;
+  }
+}
+
+function explainRefusal(reason: string | null, payer: string): string | null {
+  switch (reason) {
+    case null:
+      return null;
+    case "identity_not_verified":
+      return `refused: ${payer} or the provider holds no active Cleanverse A-Pass, and this escrow only moves money between CVI-verified parties`;
+    case "insufficient_funds":
+      return `refused: ${payer} doesn't hold enough to cover the price`;
+    case "invalid_signature":
+      return "refused: the payment signature didn't verify";
+    case "asset_not_allowed":
+      return "refused: the escrow doesn't accept that token";
+    default:
+      return `refused by the facilitator: ${reason}`;
+  }
 }

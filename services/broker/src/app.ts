@@ -67,6 +67,7 @@ import {
 } from "@xorv/protocol";
 import { chainEscrow, type EscrowOps } from "./escrow.js";
 import { ReputationBook, chainReputation, type ReputationSource } from "./reputation.js";
+import { IdentityBook, chainIdentity, type IdentitySource } from "./identity.js";
 import type { BrokerConfig } from "./config.js";
 import type { ChainLike } from "./chain.js";
 import type { Hub } from "./hub.js";
@@ -141,6 +142,8 @@ export interface AppDeps {
   escrow?: EscrowOps | null;
   /** Override the reputation registry . `null` turns on-chain reputation off. */
   reputation?: ReputationSource | null;
+  /** Override the Cleanverse identity gate. `null` turns it off. */
+  identity?: IdentitySource | null;
   /**
    * The persisted audit-log index. When present, log reads are served from it
    * and never touch the RPC on the request path.
@@ -232,6 +235,17 @@ export function createApp(deps: AppDeps) {
   const reputation = reputationSource
     ? new ReputationBook(reputationSource, { log: (m) => console.error(`[broker] ${m}`) })
     : null;
+  /** Cleanverse CVI standing, when the escrow has an identity gate. */
+  const identitySource: IdentitySource | null =
+    deps.identity !== undefined
+      ? deps.identity
+      : config.escrowAddress
+        ? chainIdentity(chain, config.escrowAddress)
+        : null;
+  const identity = identitySource
+    ? new IdentityBook(identitySource, { log: (m) => console.error(`[broker] ${m}`) })
+    : null;
+  if (identity) void identity.load().then(() => identity.refresh(registry.live().map((p) => p.address)));
   let sweeps = 0;
 
   /** Re-read the on-chain record of whoever an escrow settlement just touched. */
@@ -388,6 +402,8 @@ export function createApp(deps: AppDeps) {
             address: escrow.address,
             url: explorerAddress(config.network, escrow.address),
             deadlineSeconds: config.escrowDeadlineSeconds,
+            // Cleanverse CVI: who may fund, and be paid by, this escrow.
+            identityGate: identity?.gate() ?? null,
           }
         : null,
       registry: reputation
@@ -438,6 +454,7 @@ export function createApp(deps: AppDeps) {
         region: p.region,
         stats: p.stats,
         onchain: p.onchain ?? null,
+        identity: identity?.get(p.address) ?? null,
       })),
       registry: reputation
         ? { address: reputation.address, url: explorerAddress(config.network, reputation.address) }
@@ -463,6 +480,7 @@ export function createApp(deps: AppDeps) {
     // Sponsored into XorvRegistry in the background: the provider needs no MON,
     // and a slow block must not hold up a node that is ready to work.
     if (reputation) void reputation.onRegistered(provider, `${config.publicUrl}/api/providers/${provider.id}`);
+    if (identity) void identity.refresh([provider.address]);
 
     return c.json({
       provider: stripSecrets(provider),
@@ -630,8 +648,9 @@ export function createApp(deps: AppDeps) {
       adapter: body.adapter ?? null,
       maxPriceUsdMicros: maxPrice,
       // A node whose socket just dropped still has a recent heartbeat; quoting
-      // it sells a job that can't be delivered.
-      exclude: unreachableProviders(),
+      // it sells a job that can't be delivered. Nor can a provider the escrow's
+      // identity gate would refuse to pay.
+      exclude: [...unreachableProviders(), ...unverifiedProviders()],
     });
     if (!match) {
       const live = registry.live().length;
@@ -640,8 +659,10 @@ export function createApp(deps: AppDeps) {
           error:
             live === 0
               ? "no providers are online right now — try again in a few minutes"
-              : noMatchReason(
-                  registry.live(),
+              : unverifiedProviders().length === live
+                ? "no provider online holds an active Cleanverse A-Pass — this escrow only pays CVI-verified providers"
+                : noMatchReason(
+                  registry.live().filter((p) => !identity?.blocked(p.address)),
                   body.adapter ?? null,
                   maxPrice,
                   inFlightByProvider(),
@@ -1213,6 +1234,12 @@ export function createApp(deps: AppDeps) {
     return counts;
   }
 
+  /** Providers the Cleanverse gate is known to refuse. */
+  function unverifiedProviders(): string[] {
+    if (!identity) return [];
+    return registry.live().filter((p) => identity.blocked(p.address)).map((p) => p.id);
+  }
+
   /** Providers heartbeating but without an open control channel: they can't be sent a job. */
   function unreachableProviders(): string[] {
     const hub = deps.getHub();
@@ -1721,6 +1748,10 @@ export function createApp(deps: AppDeps) {
       const everyMinute = sweeps++ % 4 === 0;
       if (reputation && everyMinute) {
         for (const provider of registry.live()) void reputation.refresh(provider);
+      }
+      // A freeze or revocation by Cleanverse shows up here within a minute.
+      if (identity && everyMinute) {
+        void identity.load().then(() => identity.refresh(registry.live().map((p) => p.address)));
       }
       if (escrow && everyMinute) void reconcileEscrow();
     },

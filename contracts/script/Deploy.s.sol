@@ -6,6 +6,7 @@ import {XorvEscrow} from "../src/XorvEscrow.sol";
 import {XorvLog} from "../src/XorvLog.sol";
 import {XorvRegistry} from "../src/XorvRegistry.sol";
 import {XorvRefundKeeper} from "../src/XorvRefundKeeper.sol";
+import {CleanverseGate} from "../src/CleanverseGate.sol";
 
 /**
  * Deploy XorvRegistry, XorvEscrow, XorvLog and XorvRefundKeeper to the chain behind --rpc-url,
@@ -16,6 +17,11 @@ import {XorvRefundKeeper} from "../src/XorvRefundKeeper.sol";
  *   XORV_OPERATOR_KEY=0x… forge script script/Deploy.s.sol \
  *     --rpc-url monad_testnet --broadcast --verify --verifier sourcify \
  *     --verifier-url https://sourcify-api-monad.blockvision.org
+ *
+ * XORV_CLEANVERSE=1 also deploys a CleanverseGate over Cleanverse's A-Pass and sets it as the
+ * escrow's identity gate, so only CVI-verified buyers and providers can move money through it.
+ * Monad testnet's A-Pass and validator are built in; XORV_CLEANVERSE_APASS / _VALIDATOR override
+ * them, and XORV_CLEANVERSE_POOL adds the validator's complianceVerify once a pool is registered.
  *
  * The operator key is owner, attester and registry operator at first; in production the
  * attester moves to a separate hot key and ownership to a multisig.
@@ -52,6 +58,15 @@ contract Deploy is Script {
         return fallback_;
     }
 
+    function _cleanverse(uint256 chainId) internal view returns (address apass, address validator, address pool) {
+        apass = vm.envOr("XORV_CLEANVERSE_APASS", chainId == 10143 ? 0xbA82D189540CaC9DC6FF46B6837CaC1BFdEC58B9 : address(0));
+        validator = vm.envOr(
+            "XORV_CLEANVERSE_VALIDATOR", chainId == 10143 ? 0xaC7e5179C2C7f03f209136886c172eb34F161792 : address(0)
+        );
+        pool = vm.envOr("XORV_CLEANVERSE_POOL", address(0));
+        require(apass != address(0), "Deploy: XORV_CLEANVERSE=1 needs XORV_CLEANVERSE_APASS on this chain");
+    }
+
     function run()
         external
         returns (XorvRegistry registry, XorvEscrow escrow, XorvLog log, XorvRefundKeeper keeper)
@@ -66,6 +81,12 @@ contract Deploy is Script {
         registry.setEscrow(address(escrow));
         registry.setOperator(operator);
         keeper = new XorvRefundKeeper(address(escrow), _forwarder(block.chainid, operator), operator);
+        CleanverseGate gate;
+        if (vm.envOr("XORV_CLEANVERSE", false)) {
+            (address apass, address validator, address pool) = _cleanverse(block.chainid);
+            gate = new CleanverseGate(apass, validator, pool);
+            escrow.setIdentityGate(address(gate));
+        }
         vm.stopBroadcast();
 
         console2.log("chain id        ", block.chainid);
@@ -74,6 +95,7 @@ contract Deploy is Script {
         console2.log("XorvLog         ", address(log));
         console2.log("XorvRefundKeeper", address(keeper));
         console2.log("CRE forwarder   ", keeper.forwarder());
+        if (address(gate) != address(0)) console2.log("CleanverseGate  ", address(gate));
         console2.log("owner/attester  ", operator);
     }
 }

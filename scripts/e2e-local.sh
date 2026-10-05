@@ -16,6 +16,11 @@
 #               contract (its EIP-3009, its "Agora Dollar" domain), funded
 #               from Agora's own testnet faucet.
 #
+# CLEANVERSE=1 (with MODE=fork) puts a CleanverseGate over Cleanverse's real
+# A-Pass on the escrow. Credentials are issued by impersonating Cleanverse's own
+# compliance validator on the local fork only; an unverified buyer is refused,
+# then a verified one pays.
+#
 # SIGNER=privy-mock runs the broker's operator through PRIVY MOCK MODE: every
 # operator transaction is checked against the Privy policy before it is signed.
 #
@@ -32,6 +37,10 @@ for v in $(env | sed -n 's/^\(XORV_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 MODE=${MODE:-anvil}
 SIGNER=${SIGNER:-key}
+CLEANVERSE=${CLEANVERSE:-0}
+if [ "$CLEANVERSE" = 1 ] && [ "$MODE" != fork ]; then echo "CLEANVERSE=1 needs MODE=fork: the A-Pass is Cleanverse's real contract" >&2; exit 2; fi
+APASS=0xbA82D189540CaC9DC6FF46B6837CaC1BFdEC58B9
+CV_VALIDATOR=0xaC7e5179C2C7f03f209136886c172eb34F161792
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/xorv-e2e.XXXXXX")
 BROKER_PORT=${BROKER_PORT:-8499}
 BROKER="http://127.0.0.1:$BROKER_PORT"
@@ -91,12 +100,30 @@ fi
 PAYER_START=$(cast call "$TOKEN" 'balanceOf(address)(uint256)' "$PAYER" --rpc-url "$RPC" | awk '{print $1}')
 
 say "deploying XorvRegistry + XorvEscrow + XorvLog"
-OUT=$(XORV_OPERATOR_KEY=$OP_KEY forge script script/Deploy.s.sol --rpc-url "$RPC" --broadcast 2>&1)
+OUT=$(XORV_OPERATOR_KEY=$OP_KEY XORV_CLEANVERSE=$([ "$CLEANVERSE" = 1 ] && echo true || echo false) \
+  forge script script/Deploy.s.sol --rpc-url "$RPC" --broadcast 2>&1)
 REGISTRY=$(echo "$OUT" | grep -E '^\s*XorvRegistry ' | awk '{print $2}')
 ESCROW=$(echo "$OUT" | grep -E '^\s*XorvEscrow ' | awk '{print $2}')
 LOG=$(echo "$OUT" | grep -E '^\s*XorvLog ' | awk '{print $2}')
 [ -n "$ESCROW" ] || { echo "$OUT" >&2; exit 1; }
 echo "   registry $REGISTRY   escrow $ESCROW   log $LOG"
+GATE=$(echo "$OUT" | grep -E '^\s*CleanverseGate ' | awk '{print $2}' || true)  # only with XORV_CLEANVERSE
+
+# Issue an A-Pass as Cleanverse's validator does (it holds the A-Pass ISSUER_ROLE).
+# Local fork only: the validator is impersonated on this anvil, nothing reaches Monad.
+apass_issue() {
+  cast rpc --rpc-url "$RPC" anvil_impersonateAccount "$CV_VALIDATOR" >/dev/null
+  cast rpc --rpc-url "$RPC" anvil_setBalance "$CV_VALIDATOR" 0xde0b6b3a7640000 >/dev/null
+  local exp=$(( $(cast block --rpc-url "$RPC" -f timestamp) + 31536000 ))
+  cast send -q --rpc-url "$RPC" --unlocked --from "$CV_VALIDATOR" "$APASS" \
+    "0xb8dd3664$(cast abi-encode 'f(address,uint8,uint8,bytes2,bytes2,uint64,uint256,uint256)' "$1" 2 50 0x0000 0x4344 "$exp" "$(cast keccak "xorv-e2e-kyc-$1")" 1 | cut -c3-)"
+}
+if [ "$CLEANVERSE" = 1 ]; then
+  [ -n "$GATE" ] || { echo "$OUT" >&2; exit 1; }
+  echo "   CleanverseGate $GATE over A-Pass $APASS"
+  apass_issue "$PROV"
+  echo "   provider $PROV holds an A-Pass; the buyer doesn't yet"
+fi
 FROM_BLOCK=$(cast block-number --rpc-url "$RPC")
 
 # ---------------------------------------------------------------------------
@@ -112,7 +139,8 @@ env XORV_NETWORK=$NETWORK XORV_RPC_URL=$RPC XORV_OPERATOR_KEY=$OP_KEY XORV_OPERA
 PIDS+=($!)
 for _ in $(seq 1 60); do curl -sf "$BROKER/health" >/dev/null && break; sleep 0.5; done
 curl -sf "$BROKER/health" >/dev/null || { cat "$WORK/broker.log"; exit 1; }
-grep -E "escrow|reputation|wiring|signer|⚠" "$WORK/broker.log" | sed 's/^/   /'
+sleep 0.5 # the banner prints just after /health starts answering
+grep -E "escrow|reputation|wiring|signer|⚠" "$WORK/broker.log" | sed 's/^/   /' || true
 
 say "starting a provider node (echo adapter)"
 mkdir -p "$WORK/node"
@@ -141,6 +169,21 @@ done
 # ---------------------------------------------------------------------------
 # the buyer
 # ---------------------------------------------------------------------------
+if [ "$CLEANVERSE" = 1 ]; then
+  say "Cleanverse: a buyer without an A-Pass is refused before anything moves"
+  REFUSED=$(XORV_HOME="$WORK/buyer0" XORV_PAYER_KEY=$PAYER_KEY XORV_RPC_URL=$RPC \
+    node packages/cli/dist/index.js run "Say hello to Monad" --broker "$BROKER" --adapter echo --max 0.01 --yes --json 2>&1 || true)
+  if echo "$REFUSED" | grep -q "holds no active Cleanverse A-Pass" \
+     && [ "$(cast call "$TOKEN" 'balanceOf(address)(uint256)' "$PAYER" --rpc-url "$RPC" | awk '{print $1}')" = "$PAYER_START" ]; then
+    echo "✓ $(echo "$REFUSED" | grep -o 'refused: [^"]*' | head -1)"
+    echo "✓ the buyer's AUSD did not move"
+  else
+    echo "✗ an unverified buyer was not refused as expected:"; echo "$REFUSED" | tail -20; exit 1
+  fi
+  apass_issue "$PAYER"
+  echo "   the buyer now holds an A-Pass"
+fi
+
 say "xorv run — paying from an address with no MON"
 echo "   payer MON before: $(cast balance "$PAYER" --rpc-url "$RPC")"
 RESULT=$(XORV_HOME="$WORK/buyer" XORV_PAYER_KEY=$PAYER_KEY XORV_RPC_URL=$RPC \
@@ -155,7 +198,7 @@ sleep 3
 # verify on chain
 # ---------------------------------------------------------------------------
 say "verifying on chain"
-PAYER_START=$PAYER_START RPC=$RPC TOKEN=$TOKEN ESCROW=$ESCROW REGISTRY=$REGISTRY PAYER=$PAYER PROV=$PROV BROKER=$BROKER MODE=$MODE \
+GATE=$GATE APASS=$APASS PAYER_START=$PAYER_START RPC=$RPC TOKEN=$TOKEN ESCROW=$ESCROW REGISTRY=$REGISTRY PAYER=$PAYER PROV=$PROV BROKER=$BROKER MODE=$MODE \
   node --input-type=module -e '
 import { readFileSync } from "node:fs";
 const run = JSON.parse(readFileSync(process.argv[1], "utf8"));
@@ -186,6 +229,14 @@ if (process.env.REGISTRY) {
   check("registry: earned = price", words[5] === price);
   const providers = (await (await fetch(`${process.env.BROKER}/api/providers`)).json()).providers;
   check("broker sees the on-chain record", providers[0]?.onchain?.completed === 1, JSON.stringify(providers[0]?.onchain ?? null));
+}
+if (process.env.GATE) {
+  const gate = (await (await fetch(`${process.env.BROKER}/api/network`)).json()).escrow?.identityGate;
+  check("broker reports the Cleanverse gate", gate?.address?.toLowerCase() === process.env.GATE.toLowerCase() && gate?.apass?.toLowerCase() === process.env.APASS.toLowerCase());
+  const providers = (await (await fetch(`${process.env.BROKER}/api/providers`)).json()).providers;
+  check("provider shown as CVI-verified", providers[0]?.identity?.verified === true);
+  // identityGate() on the escrow, read straight from the chain.
+  check("escrow enforces the gate on chain", (await call(process.env.ESCROW, "0xebea399b")).toLowerCase().endsWith(process.env.GATE.slice(2).toLowerCase()));
 }
 console.log(`\nmode=${process.env.MODE}  job=${run.jobId}  fund=${run.settlementTransaction}  release=${run.escrow?.releaseTx}`);
 process.exit(fails ? 1 : 0);

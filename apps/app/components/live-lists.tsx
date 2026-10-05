@@ -136,6 +136,14 @@ export function ProviderList({ compact = false }: { compact?: boolean } = {}) {
                 {Number.isFinite(cheapest) ? formatUsd(cheapest) : "—"}
               </p>
               <p className="tnum mt-0.5 text-[11.5px] text-fg-4">{p.stats.jobsCompleted} done</p>
+              {p.identity ? (
+                <p
+                  className={`mt-0.5 text-[11px] ${p.identity.verified ? "text-live" : "text-fail"}`}
+                  title="Cleanverse CVI: the escrow pays only providers holding an active A-Pass"
+                >
+                  {p.identity.verified ? "A-Pass verified" : "no active A-Pass · not matched"}
+                </p>
+              ) : null}
               {p.onchain && p.onchain.completed + p.onchain.failed > 0 ? (
                 <p
                   className="tnum mt-0.5 text-[11px] text-fg-4"

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, formatUsd, type NetworkInfo } from "@/lib/api";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
-import { XORV_CHAIN, explorerToken, stablecoinSymbol } from "@/lib/chains";
+import { XORV_CHAIN, explorerAddress, explorerToken, stablecoinSymbol } from "@/lib/chains";
 import { IndexedHistoryPanel } from "@/components/indexed-history";
 
 interface Receipt {
@@ -133,6 +133,8 @@ export function NetworkView() {
         </Panel>
       ) : null}
 
+      {info ? <TrustPanel info={info} /> : null}
+
       <IndexedHistoryPanel />
 
       <Panel className="p-5">
@@ -208,5 +210,82 @@ export function NetworkView() {
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Who may move money, and what the broker's own key may sign.
+ *
+ * Both are enforced outside this broker: the identity gate in the escrow
+ * contract (Cleanverse A-Pass), the operator's limits in Privy's policy
+ * engine. This panel only reports them.
+ */
+function TrustPanel({ info }: { info: NetworkInfo }) {
+  const gate = info.escrow?.identityGate ?? null;
+  const signer = info.operator.signer;
+  if (!info.escrow && !signer) return null;
+  return (
+    <Panel className="p-5">
+      <h2 className="text-[13px] font-medium text-fg">Identity and signing</h2>
+      <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
+        Who can pay and be paid through the escrow, and what the broker&rsquo;s operator wallet is
+        allowed to sign. Neither depends on trusting this broker: the escrow contract checks
+        identity, and Privy&rsquo;s policy engine checks every transaction before it is signed.
+      </p>
+      <div className="mt-4 border-t border-[var(--line)] pt-1">
+        {info.escrow ? (
+          <Row label="identity gate">
+            {gate ? (
+              <span>
+                Cleanverse CVI · buyer and provider need an active A-Pass{" "}
+                <Ext href={explorerAddress(gate.address)}>gate ↗</Ext>
+                {gate.apass ? (
+                  <>
+                    {" · "}
+                    <Ext href={explorerAddress(gate.apass)}>A-Pass ↗</Ext>
+                  </>
+                ) : null}
+                <span className="block text-[11.5px] text-fg-4">
+                  {gate.pool
+                    ? `plus the compliance validator's rules for pool ${gate.pool.slice(0, 10)}…`
+                    : "A-Pass validity only; no compliance-validator pool registered yet"}
+                </span>
+              </span>
+            ) : (
+              <span className="text-fg-3">off — anyone can fund and be paid</span>
+            )}
+          </Row>
+        ) : null}
+        {signer ? (
+          <>
+            <Row label="operator signer">
+              <span>
+                {signer.mode === "privy-mock" ? (
+                  <span className="mr-1.5 rounded border border-warn/40 px-1 py-px text-[10.5px] font-medium text-warn">MOCK</span>
+                ) : null}
+                {signer.description}
+              </span>
+            </Row>
+            {signer.policy ? (
+              <Row label="policy allows">
+                <span className="text-[12px] text-fg-2">
+                  {signer.policy.allows.map((rule) => rule.replace(/ on \d+$/, "")).join(" · ")}
+                  <span className="block text-[11.5px] text-fg-4">
+                    on this chain only, zero value; everything else is denied before signing
+                  </span>
+                </span>
+              </Row>
+            ) : null}
+            {signer.refusals.length ? (
+              <Row label="refused">
+                <span className="text-[12px] text-fail">
+                  {signer.refusals.length} transaction{signer.refusals.length === 1 ? "" : "s"} · last: {signer.refusals.at(-1)!.reason}
+                </span>
+              </Row>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </Panel>
   );
 }

@@ -9,6 +9,7 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC3009} from "./interfaces/IERC3009.sol";
 import {IXorvRegistry} from "./interfaces/IXorvRegistry.sol";
+import {IIdentityGate} from "./interfaces/IIdentityGate.sol";
 
 /**
  * @title XorvEscrow
@@ -149,6 +150,9 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     /// Provider registry. Zero disables outcome reporting.
     IXorvRegistry public registry;
 
+    /// Identity gate (Cleanverse CVI). Zero lets anyone transact.
+    IIdentityGate public identityGate;
+
     /// Protocol fee applied to jobs funded from now on, and who receives it.
     uint16 public feeBps;
     address public feeRecipient;
@@ -183,6 +187,7 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
 
     event AttesterUpdated(address indexed previous, address indexed attester);
     event RegistryUpdated(address indexed previous, address indexed registry);
+    event IdentityGateUpdated(address indexed previous, address indexed gate);
     event TokenAllowed(address indexed token, bool allowed);
     event FeeUpdated(uint16 feeBps, address indexed recipient);
     event Swept(address indexed token, address indexed to, uint256 amount);
@@ -207,6 +212,7 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     error NothingToSweep(address token);
     error RenounceDisabled();
     error InsufficientGasForRegistry();
+    error IdentityNotVerified(address account);
 
     // ---------------------------------------------------------------------
     // Construction and admin
@@ -239,6 +245,17 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
     function setRegistry(address newRegistry) external onlyOwner {
         emit RegistryUpdated(address(registry), newRegistry);
         registry = IXorvRegistry(newRegistry);
+    }
+
+    /**
+     * Require a verified identity of everyone value moves toward: both parties
+     * at funding, the payee at release and reassignment. Zero turns it off.
+     * @dev Refunds stay ungated on purpose. A buyer whose credential lapses
+     *      mid-job still gets their money back; gating the way out would trap it.
+     */
+    function setIdentityGate(address gate) external onlyOwner {
+        emit IdentityGateUpdated(address(identityGate), gate);
+        identityGate = IIdentityGate(gate);
     }
 
     /// Disallowing a token stops new jobs in it. Jobs already funded settle normally.
@@ -316,6 +333,8 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
             f.deadline < block.timestamp + MIN_JOB_DURATION
                 || f.deadline > block.timestamp + MAX_JOB_DURATION
         ) revert InvalidDeadline(f.deadline);
+        _requireVerified(f.buyer);
+        _requireVerified(f.provider);
 
         // Effects before the external call. If the pull fails the whole
         // transaction reverts, so there is no half-funded state to unwind.
@@ -362,6 +381,8 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         }
 
         address provider = job.provider;
+        // A provider frozen or revoked since funding can't be paid; the attester refunds instead.
+        _requireVerified(provider);
         address token = job.token;
         uint256 amount = job.amount;
         uint256 fee = (amount * job.feeBps) / BPS;
@@ -443,6 +464,7 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         if (newProvider == address(0) || newProvider == job.buyer || newProvider == previous) {
             revert InvalidParties(job.buyer, newProvider);
         }
+        _requireVerified(newProvider);
         job.provider = newProvider;
         emit JobReassigned(jobId, previous, newProvider);
         _reportOutcome(jobId, previous, false, 0);
@@ -498,6 +520,11 @@ contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
         catch (bytes memory reason) {
             emit RegistryCallFailed(jobId, provider, reason);
         }
+    }
+
+    function _requireVerified(address account) private view {
+        IIdentityGate gate = identityGate;
+        if (address(gate) != address(0) && !gate.isVerified(account)) revert IdentityNotVerified(account);
     }
 
     function _setAttester(address newAttester) private {

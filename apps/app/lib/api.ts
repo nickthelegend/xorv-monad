@@ -46,6 +46,8 @@ export interface Provider {
     avgDurationMs: number;
   };
   /** The provider's record in XorvRegistry, written by the escrow as jobs settle. */
+  /** Cleanverse CVI standing, when the escrow has an identity gate; null when off or not read yet. */
+  identity?: { verified: boolean; checkedAt: number } | null;
   onchain?: {
     registered: boolean;
     active: boolean;
@@ -124,12 +126,28 @@ export interface Job {
 export interface NetworkInfo {
   network: string;
   facilitator: { mode: string; description: string; feePayer: string };
-  operator: { address: string; url: string };
+  operator: {
+    address: string;
+    url: string;
+    /** Who signs the operator's transactions: a local key, a Privy server wallet, or its labelled mock. */
+    signer?: {
+      mode: "key" | "privy" | "privy-mock";
+      description: string;
+      policy: { name: string; allows: string[] } | null;
+      refusals: Array<{ at: string; to: string | null; reason: string }>;
+    };
+  };
   /** Stablecoins the broker accepts, default (AUSD) first. */
   stablecoins?: Array<{ symbol: string; address: string; decimals: number; url: string }>;
   explorerName?: string;
   /** XorvEscrow, when jobs are paid into escrow rather than straight to the provider. */
-  escrow?: { address: string; url: string; deadlineSeconds: number } | null;
+  escrow?: {
+    address: string;
+    url: string;
+    deadlineSeconds: number;
+    /** Cleanverse CVI: when set, only A-Pass holders can fund the escrow or be paid by it. */
+    identityGate?: { address: string; kind: "cleanverse"; apass: string | null; validator: string | null; pool: string | null } | null;
+  } | null;
   /** XorvRegistry, the contract holding provider reputation. */
   registry?: { address: string; url: string } | null;
   log: { address: string; url: string } | null;

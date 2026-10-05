@@ -308,6 +308,19 @@ export const XORV_ESCROW_ABI = [
   },
   {
     "type": "function",
+    "name": "identityGate",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IIdentityGate"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "isRefundable",
     "inputs": [
       {
@@ -473,6 +486,19 @@ export const XORV_ESCROW_ABI = [
   },
   {
     "type": "function",
+    "name": "setIdentityGate",
+    "inputs": [
+      {
+        "name": "gate",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setRegistry",
     "inputs": [
       {
@@ -609,6 +635,25 @@ export const XORV_ESCROW_ABI = [
       },
       {
         "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "IdentityGateUpdated",
+    "inputs": [
+      {
+        "name": "previous",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "gate",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -976,6 +1021,17 @@ export const XORV_ESCROW_ABI = [
         "name": "feeBps",
         "type": "uint16",
         "internalType": "uint16"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "IdentityNotVerified",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
       }
     ]
   },
