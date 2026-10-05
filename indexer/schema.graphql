@@ -1,0 +1,120 @@
+# Xorv on Monad, as HyperIndex sees it.
+#
+# Raw events are folded into the entities the product actually shows: a job's
+# whole lifecycle in one row, each provider's on-chain track record, each
+# buyer's spend, and network- and day-level totals. Amounts are in the
+# stablecoin's smallest unit (6 decimals: 1_000_000 = $1).
+
+enum JobStatus {
+  Funded
+  Released
+  Refunded
+}
+
+# One escrowed job, from the buyer's signature to release or refund.
+type Job {
+  id: ID!                     # the escrow jobId (bytes32)
+  buyer: Buyer!
+  provider: Provider!         # the current payee (changes on reassignment)
+  token: String!
+  amount: BigInt!
+  deadline: BigInt!
+  status: JobStatus! @index
+  fundedAt: BigInt! @index
+  fundedBlock: BigInt!
+  fundTx: String!
+  reassignments: Int!
+  # Settled by release
+  providerAmount: BigInt
+  fee: BigInt
+  resultHash: String
+  releasedBy: String
+  # Settled by refund
+  providerAtFault: Boolean
+  settledAt: BigInt
+  settleTx: String
+  # Seconds from funding to settlement; the speed story, per job
+  secondsToSettle: BigInt
+  receipts: [Receipt!]! @derivedFrom(field: "job")
+}
+
+# A provider: a payout address, its registry record and what the escrow paid it.
+type Provider {
+  id: ID!                     # payout address
+  nodeId: String
+  registered: Boolean!
+  active: Boolean!
+  registeredAt: BigInt
+  lastHeartbeat: BigInt
+  heartbeats: Int!
+  # Written by the escrow, through the registry, in the settling transaction
+  completed: BigInt!
+  failed: BigInt!
+  scoreBps: Int!              # Laplace-smoothed success rate, as the registry computes it
+  earned: BigInt!             # what the escrow released to this provider
+  jobsAssigned: Int!
+  refundsAtFault: Int!
+  jobs: [Job!]! @derivedFrom(field: "provider")
+}
+
+# A buyer: an address that signed at least one funding authorization.
+type Buyer {
+  id: ID!                     # buyer address
+  jobs: Int!
+  spent: BigInt!              # paid to providers (released)
+  refunded: BigInt!           # returned by refund
+  firstJobAt: BigInt!
+  lastJobAt: BigInt!
+  fundedJobs: [Job!]! @derivedFrom(field: "buyer")
+}
+
+# A job.receipt entry in XorvLog: the broker's public receipt for a settled job.
+type Receipt {
+  id: ID!                     # chain-unique log id
+  job: Job                    # null when the receipt names a job paid outside escrow
+  seq: BigInt!
+  author: String!
+  providerAddress: String
+  amount: BigInt
+  resultHash: String
+  ok: Boolean
+  settlementState: String     # released | refunded
+  at: BigInt!
+  tx: String!
+}
+
+# Totals for one UTC day.
+type DailyStat {
+  id: ID!                     # yyyy-mm-dd
+  day: String! @index
+  jobsFunded: Int!
+  jobsReleased: Int!
+  jobsRefunded: Int!
+  volume: BigInt!             # funded amount
+  paidToProviders: BigInt!
+  activeProviders: Int!       # providers that heartbeated that day (approximate: first beat per day)
+}
+
+# The whole network, one row.
+type Network {
+  id: ID!                     # "monad-testnet"
+  jobsFunded: Int!
+  jobsReleased: Int!
+  jobsRefunded: Int!
+  refundsAtFault: Int!
+  volume: BigInt!
+  paidToProviders: BigInt!
+  fees: BigInt!
+  refunded: BigInt!
+  providers: Int!
+  buyers: Int!
+  receipts: Int!
+  registryCallFailures: Int!
+  meanSecondsToSettle: BigInt!  # running mean of funding → settlement
+  settledCount: Int!
+}
+
+# Marks that a provider was already counted active on a day.
+type ProviderDay {
+  id: ID!                     # provider-yyyy-mm-dd
+}
