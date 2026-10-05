@@ -44,17 +44,19 @@ echo "   operator $OP holds $(cast from-wei "$BAL") MON"
 
 FROM_BLOCK=$(cast block-number --rpc-url "$RPC")
 
-echo; echo "── XorvRegistry + XorvEscrow + XorvLog"
+echo; echo "── XorvRegistry + XorvEscrow + XorvLog + XorvRefundKeeper"
 cd "$ROOT/contracts"
 OUT=$(forge script script/Deploy.s.sol --rpc-url "$RPC" --broadcast --slow \
   --gas-estimate-multiplier 110 ${VERIFY[@]+"${VERIFY[@]}"} 2>&1) || true
 REGISTRY=$(echo "$OUT" | grep -E '^\s*XorvRegistry ' | awk '{print $2}') || true
 ESCROW=$(echo "$OUT" | grep -E '^\s*XorvEscrow ' | awk '{print $2}') || true
 LOG=$(echo "$OUT" | grep -E '^\s*XorvLog ' | awk '{print $2}') || true
+KEEPER=$(echo "$OUT" | grep -E '^\s*XorvRefundKeeper ' | awk '{print $2}') || true
 [ -n "$ESCROW" ] && [ -n "$REGISTRY" ] && [ -n "$LOG" ] || { echo "$OUT" >&2; exit 1; }
 echo "   registry $REGISTRY"
 echo "   escrow   $ESCROW"
 echo "   log      $LOG"
+echo "   keeper   $KEEPER (Chainlink CRE refund keeper)"
 echo "$OUT" | grep -iE "verif|success|fail" | sed 's/^/   /' | head -12 || true
 
 echo; echo "── wiring, as read back from the chain"
@@ -72,6 +74,7 @@ cat >"$ROOT/deployments/$TARGET.json" <<JSON
   "escrow": "$ESCROW",
   "registry": "$REGISTRY",
   "log": "$LOG",
+  "refundKeeper": "$KEEPER",
   "fromBlock": $FROM_BLOCK,
   "operator": "$OP",
   "deployedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

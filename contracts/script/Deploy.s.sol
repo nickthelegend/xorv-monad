@@ -5,9 +5,11 @@ import {Script, console2} from "forge-std/Script.sol";
 import {XorvEscrow} from "../src/XorvEscrow.sol";
 import {XorvLog} from "../src/XorvLog.sol";
 import {XorvRegistry} from "../src/XorvRegistry.sol";
+import {XorvRefundKeeper} from "../src/XorvRefundKeeper.sol";
 
 /**
- * Deploy XorvRegistry, XorvEscrow and XorvLog to the chain behind --rpc-url, and wire them:
+ * Deploy XorvRegistry, XorvEscrow, XorvLog and XorvRefundKeeper to the chain behind --rpc-url,
+ * and wire them:
  * the registry accepts outcomes only from the new escrow, and the operator may register and
  * heartbeat providers on their behalf.
  *
@@ -39,7 +41,21 @@ contract Deploy is Script {
         }
     }
 
-    function run() external returns (XorvRegistry registry, XorvEscrow escrow, XorvLog log) {
+    /// The Chainlink KeystoneForwarder the refund keeper trusts. Defaults to Monad testnet's
+    /// MockKeystoneForwarder, which `cre workflow simulate --broadcast` delivers through;
+    /// XORV_CRE_FORWARDER picks another (the production forwarder once the workflow is deployed).
+    function _forwarder(uint256 chainId, address fallback_) internal view returns (address) {
+        address configured = vm.envOr("XORV_CRE_FORWARDER", address(0));
+        if (configured != address(0)) return configured;
+        if (chainId == 10143) return 0xB9F79d863261869B234c481D1f9A7af84AeAd192;
+        if (chainId == 143) return 0x9eF6468C5f37b976E57d52054c693269479A784d;
+        return fallback_;
+    }
+
+    function run()
+        external
+        returns (XorvRegistry registry, XorvEscrow escrow, XorvLog log, XorvRefundKeeper keeper)
+    {
         uint256 key = vm.envUint("XORV_OPERATOR_KEY");
         address operator = vm.addr(key);
 
@@ -49,12 +65,15 @@ contract Deploy is Script {
         log = new XorvLog();
         registry.setEscrow(address(escrow));
         registry.setOperator(operator);
+        keeper = new XorvRefundKeeper(address(escrow), _forwarder(block.chainid, operator), operator);
         vm.stopBroadcast();
 
         console2.log("chain id        ", block.chainid);
         console2.log("XorvRegistry    ", address(registry));
         console2.log("XorvEscrow      ", address(escrow));
         console2.log("XorvLog         ", address(log));
+        console2.log("XorvRefundKeeper", address(keeper));
+        console2.log("CRE forwarder   ", keeper.forwarder());
         console2.log("owner/attester  ", operator);
     }
 }
