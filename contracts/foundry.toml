@@ -23,8 +23,7 @@ depth = 64
 fail_on_revert = false
 
 [rpc_endpoints]
-arbitrum_sepolia = "https://sepolia-rollup.arbitrum.io/rpc"
-robinhood_testnet = "https://rpc.testnet.chain.robinhood.com"
+monad_testnet = "https://testnet-rpc.monad.xyz"
 
 [fmt]
 line_length = 100

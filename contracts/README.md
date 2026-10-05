@@ -1,24 +1,24 @@
 # Xorv contracts
 
-Three contracts, two languages, one rule: **a buyer's money is never at the
+Three Solidity contracts on Monad, one rule: **a buyer's money is never at the
 mercy of the node they happened to draw, or of the broker in between.**
 
 | Contract | Language | What it does |
 |---|---|---|
 | [`XorvEscrow`](src/XorvEscrow.sol) | Solidity | Holds each job's payment from "buyer signed" to "work delivered". |
-| [`XorvRegistry`](stylus/registry) | Rust (Arbitrum Stylus) | Provider registry and on-chain reputation, written by the escrow. |
+| [`XorvRegistry`](src/XorvRegistry.sol) | Solidity (ported from Rust/Stylus) | Provider registry and on-chain reputation, written by the escrow. |
 | [`XorvLog`](src/XorvLog.sol) | Solidity | Append-only audit trail (registrations, heartbeats, receipts) as event logs. |
 
 ```
  buyer ──signs ReceiveWithAuthorization (no gas)──┐
                                                   ▼
- broker attester ── fund() ──► XorvEscrow ◄── USDG / USDC (EIP-3009)
+ broker attester ── fund() ──► XorvEscrow ◄── AUSD / USDC (EIP-3009)
                                    │
             release()  ────────────┼──► provider (minus fee, 0% today)
             refund()   ────────────┼──► buyer   (attester any time; anyone after deadline)
             reassign() ────────────┘    (payee changes, money stays)
                                    │
-                                   └── recordOutcome() ──► XorvRegistry (Stylus)
+                                   └── recordOutcome() ──► XorvRegistry
                                                            completed / failed / earned / score
 ```
 

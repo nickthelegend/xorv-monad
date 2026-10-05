@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /**
  * IXorvRegistry — the provider registry and reputation ledger.
  *
- * Implemented in Rust as an Arbitrum Stylus contract (`contracts/stylus/registry`).
+ * Implemented in Solidity (`contracts/src/XorvRegistry.sol`), ported from the Rust/Stylus original.
  * This interface is the whole contract between the two halves of the system:
  * `XorvEscrow` (Solidity) moves the money, and reports each job's outcome here,
  * so a provider's track record is written by the same transaction that paid or

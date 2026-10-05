@@ -4,18 +4,23 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {XorvEscrow} from "../src/XorvEscrow.sol";
+import {XorvRegistry} from "../src/XorvRegistry.sol";
+
+interface IAgoraFaucet {
+    function requestFunds(address to) external;
+}
 
 interface IDomain {
     function DOMAIN_SEPARATOR() external view returns (bytes32);
 }
 
 /**
- * The escrow against the *real* stablecoins, on forks of the live testnets.
+ * The escrow and registry against the *real* stablecoins, on a fork of Monad testnet.
  *
- * The mock proves the logic; this proves the integration. Paxos' USDG keeps
- * EIP-3009 in a facet behind its proxy and exposes no `version()`, so the one
- * way to be sure a buyer's signature lands is to sign exactly as a wallet
- * would, against the token's own DOMAIN_SEPARATOR, and let the token decide.
+ * The mock proves the logic; this proves the integration. Agora's AUSD signs EIP-3009
+ * under the domain "Agora Dollar" v1 (not its `name()`, "AUSD"), and Circle's test USDC
+ * under "USDC" v2, so the one way to be sure a buyer's signature lands is to sign exactly
+ * as a wallet would, against the token's own DOMAIN_SEPARATOR, and let the token decide.
  *
  * Skipped unless FORK_TESTS=1, so `forge test` stays offline by default:
  *   FORK_TESTS=1 forge test --match-contract Fork
@@ -27,6 +32,8 @@ contract XorvEscrowForkTest is Test {
 
     uint256 internal constant BUYER_KEY = 0xB0B;
     uint256 internal constant PRICE = 250_000;
+    address internal constant AUSD = 0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC;
+    address internal constant AGORA_FAUCET = 0xd236c18D274E54FAccC3dd9DDA4b27965a73ee6C;
 
     struct Case {
         string rpc;
@@ -35,11 +42,10 @@ contract XorvEscrowForkTest is Test {
         string version;
     }
 
-    function _cases() internal pure returns (Case[3] memory) {
+    function _cases() internal pure returns (Case[2] memory) {
         return [
-            Case("arbitrum_sepolia", 0xFFC95faa3d63Cde504a05B567C600B78C0b41892, "Global Dollar", "1"),
-            Case("arbitrum_sepolia", 0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d, "USD Coin", "2"),
-            Case("robinhood_testnet", 0x7E955252E15c84f5768B83c41a71F9eba181802F, "Global Dollar", "1")
+            Case("monad_testnet", 0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC, "Agora Dollar", "1"),
+            Case("monad_testnet", 0x534b2f3A21130d7a60830c2Df862319e593943A3, "USDC", "2")
         ];
     }
 
@@ -49,7 +55,7 @@ contract XorvEscrowForkTest is Test {
 
     function test_fork_domainsMatchConfiguredValues() public {
         if (!_enabled()) return;
-        Case[3] memory cases = _cases();
+        Case[2] memory cases = _cases();
         for (uint256 i = 0; i < cases.length; ++i) {
             vm.createSelectFork(cases[i].rpc);
             bytes32 expected = keccak256(
@@ -69,7 +75,7 @@ contract XorvEscrowForkTest is Test {
 
     function test_fork_fullLifecycleAgainstRealTokens() public {
         if (!_enabled()) return;
-        Case[3] memory cases = _cases();
+        Case[2] memory cases = _cases();
         for (uint256 i = 0; i < cases.length; ++i) {
             _lifecycle(cases[i]);
         }
@@ -115,11 +121,22 @@ contract XorvEscrowForkTest is Test {
 
         address[] memory tokens = new address[](1);
         tokens[0] = c.token;
-        XorvEscrow escrow = new XorvEscrow(address(this), attester, address(0), tokens);
+        XorvRegistry registry = new XorvRegistry(address(this));
+        XorvEscrow escrow = new XorvEscrow(address(this), attester, address(registry), tokens);
+        registry.setEscrow(address(escrow));
 
-        // Give the buyer a balance by writing the token's storage directly.
-        deal(c.token, buyer, 10e6);
-        assertEq(IERC20(c.token).balanceOf(buyer), 10e6, "deal");
+        // Give the buyer a balance. AUSD packs balances in a way `deal` can't write, so take it
+        // from Agora's own testnet faucet (10,000 AUSD) and keep 10.
+        if (c.token == AUSD) {
+            vm.warp(block.timestamp + 61); // the faucet has a 60 s global cooldown
+            IAgoraFaucet(AGORA_FAUCET).requestFunds(buyer);
+            uint256 extra = IERC20(c.token).balanceOf(buyer) - 10e6; // read before the prank
+            vm.prank(buyer);
+            IERC20(c.token).transfer(address(0xdead), extra);
+        } else {
+            deal(c.token, buyer, 10e6);
+        }
+        assertEq(IERC20(c.token).balanceOf(buyer), 10e6, "funded buyer");
 
         bytes32 jobId = keccak256(abi.encode("fork-job", c.token));
         XorvEscrow.Funding memory f = _signedFunding(escrow, c.token, buyer, provider, jobId);
@@ -131,5 +148,6 @@ contract XorvEscrowForkTest is Test {
         escrow.release(jobId, keccak256("result"));
         assertEq(IERC20(c.token).balanceOf(provider), PRICE, "released");
         assertEq(IERC20(c.token).balanceOf(buyer), 10e6 - PRICE, "buyer debited");
+        assertEq(registry.getProvider(provider).completed, 1, "reputation written");
     }
 }
