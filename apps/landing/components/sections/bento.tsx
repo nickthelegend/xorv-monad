@@ -166,7 +166,7 @@ export function Bento() {
             className="h-full"
             visual={<SettleVisual />}
             title="Escrowed, released, receipted"
-            body="The buyer signs once and never spends ETH. The payment waits in XorvEscrow, is released with the result's hash when the job delivers, and the outcome is written on chain."
+            body="The buyer signs once and never spends MON. The payment waits in XorvEscrow, is released with the result's hash when the job delivers, and the outcome is written on chain."
           />
         </Reveal>
       </div>

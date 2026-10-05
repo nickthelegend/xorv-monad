@@ -10,7 +10,7 @@
  * Two sources feed the same shape:
  *
  *  - **Privy**, when `NEXT_PUBLIC_PRIVY_APP_ID` is set. A visitor signs in with
- *    an email and gets an embedded wallet on Arbitrum without installing anything —
+ *    an email and gets an embedded wallet on Monad without installing anything —
  *    or connects MetaMask/Rabby through the same modal. Either way the wallet
  *    hands back an EIP-1193 provider, and the payment code below it is the
  *    unchanged EIP-712 path.
@@ -19,7 +19,7 @@
  *
  * Privy was removed from the Hedera version of this app because Hedera's x402
  * scheme settles a native protobuf transfer an EVM wallet cannot sign. On
- * Arbitrum the payment is an EIP-3009 authorization — typed data — so Privy's embedded
+ * Monad the payment is an EIP-3009 authorization — typed data — so Privy's embedded
  * wallet can pay directly, and it came back.
  */
 
@@ -71,8 +71,8 @@ export interface WalletState {
   switchChain: () => Promise<void>;
   disconnect: () => Promise<void>;
   /**
-   * Send a stablecoin (the default one — USDG — unless `token` is given) from
-   * the connected wallet. A real transfer: the sender pays ETH gas. Resolves
+   * Send a stablecoin (the default one — AUSD — unless `token` is given) from
+   * the connected wallet. A real transfer: the sender pays MON gas. Resolves
    * to the tx hash.
    */
   sendStablecoin: (to: string, amount: string, token?: `0x${string}`) => Promise<`0x${string}`>;

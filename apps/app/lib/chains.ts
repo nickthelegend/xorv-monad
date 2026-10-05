@@ -1,11 +1,11 @@
 import { defineChain, type Chain } from "viem";
 
 /**
- * The Arbitrum chains Xorv settles on, as viem, Privy and the wallet see them.
+ * The Monad chains Xorv settles on, as viem, Privy and the wallet see them.
  *
- * Gas is ETH on every one of them, and a buyer never spends any: paying for a
- * job is an EIP-712 signature that the broker's facilitator relays. Money is a
- * 6-decimal stablecoin — Paxos USDG by default, Circle USDC where deployed.
+ * Gas is MON, and a buyer never spends any: paying for a job is an EIP-712
+ * signature that the broker's facilitator relays. Money is a 6-decimal
+ * stablecoin — Agora AUSD by default, Circle USDC as the alternative.
  *
  * The network and token table is duplicated from `@xorv/protocol` rather than
  * imported, because that package's entry point pulls in Node-only modules that
@@ -20,77 +20,53 @@ export interface Stablecoin {
   eip712: { name: string; version: string };
 }
 
-export const arbitrumSepolia = defineChain({
-  id: 421614,
-  name: "Arbitrum Sepolia",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://sepolia-rollup.arbitrum.io/rpc"] } },
-  blockExplorers: { default: { name: "Arbiscan", url: "https://sepolia.arbiscan.io" } },
+const MON = { name: "Monad", symbol: "MON", decimals: 18 } as const;
+
+export const monadTestnet = defineChain({
+  id: 10143,
+  name: "Monad Testnet",
+  nativeCurrency: MON,
+  rpcUrls: { default: { http: [process.env.NEXT_PUBLIC_XORV_RPC_URL?.trim() || "https://testnet-rpc.monad.xyz"] } },
+  blockExplorers: { default: { name: "Monadscan", url: "https://testnet.monadscan.com" } },
   testnet: true,
 });
 
-export const robinhoodTestnet = defineChain({
-  id: 46630,
-  name: "Robinhood Chain Testnet",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.testnet.chain.robinhood.com"] } },
-  blockExplorers: {
-    default: { name: "Robinhood Explorer", url: "https://explorer.testnet.chain.robinhood.com" },
-  },
-  testnet: true,
-});
-
-export const arbitrumOne = defineChain({
-  id: 42161,
-  name: "Arbitrum One",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://arb1.arbitrum.io/rpc"] } },
-  blockExplorers: { default: { name: "Arbiscan", url: "https://arbiscan.io" } },
-});
-
-export const robinhoodMainnet = defineChain({
-  id: 4663,
-  name: "Robinhood Chain",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.mainnet.chain.robinhood.com"] } },
-  blockExplorers: { default: { name: "Blockscout", url: "https://robinhoodchain.blockscout.com" } },
+export const monadMainnet = defineChain({
+  id: 143,
+  name: "Monad",
+  nativeCurrency: MON,
+  rpcUrls: { default: { http: ["https://rpc.monad.xyz"] } },
+  blockExplorers: { default: { name: "Monadscan", url: "https://monadscan.com" } },
 });
 
 /**
- * A local Nitro dev node (chain 412346): Arbitrum's own node software, used to
- * run the whole product with real contracts when there are no testnet funds
- * (see scripts/local-stack.sh). It has no public explorer, so links go to the
- * app's own on-chain viewer (`/chain/...`), which reads the node directly.
+ * A local Anvil node (chain 31337), used to run the whole product with real
+ * contracts offline (see scripts/local-stack.sh). It has no public explorer, so
+ * links go to the app's own on-chain viewer (`/chain/...`), which reads the node
+ * directly.
  */
-export const nitroDevnode = defineChain({
-  id: 412346,
-  name: "Nitro dev node",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: [process.env.NEXT_PUBLIC_XORV_RPC_URL?.trim() || "http://127.0.0.1:8547"] } },
+export const anvilDevnode = defineChain({
+  id: 31337,
+  name: "Anvil",
+  nativeCurrency: MON,
+  rpcUrls: { default: { http: [process.env.NEXT_PUBLIC_XORV_RPC_URL?.trim() || "http://127.0.0.1:8648"] } },
   testnet: true,
 });
 
-const USDG_DOMAIN = { name: "Global Dollar", version: "1" };
-const USDC_DOMAIN = { name: "USD Coin", version: "2" };
+const AUSD_DOMAIN = { name: "Agora Dollar", version: "1" };
 
-/** Stablecoins per chain id, default (USDG) first — mirrors the protocol table. */
+/** Stablecoins per chain id, default (AUSD) first — mirrors the protocol table. */
 export const STABLECOINS_BY_CHAIN: Record<number, Stablecoin[]> = {
-  [arbitrumSepolia.id]: [
-    { symbol: "USDG", address: "0xFFC95faa3d63Cde504a05B567C600B78C0b41892", decimals: 6, eip712: USDG_DOMAIN },
-    { symbol: "USDC", address: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", decimals: 6, eip712: USDC_DOMAIN },
+  [monadTestnet.id]: [
+    { symbol: "AUSD", address: "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC", decimals: 6, eip712: AUSD_DOMAIN },
+    { symbol: "USDC", address: "0x534b2f3A21130d7a60830c2Df862319e593943A3", decimals: 6, eip712: { name: "USDC", version: "2" } },
   ],
-  [robinhoodTestnet.id]: [
-    { symbol: "USDG", address: "0x7E955252E15c84f5768B83c41a71F9eba181802F", decimals: 6, eip712: USDG_DOMAIN },
-  ],
-  [arbitrumOne.id]: [
-    { symbol: "USDG", address: "0x004B506865409877C9fA29bfb1ebA929984B9bbC", decimals: 6, eip712: USDG_DOMAIN },
-    { symbol: "USDC", address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6, eip712: USDC_DOMAIN },
-  ],
-  [robinhoodMainnet.id]: [
-    { symbol: "USDG", address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168", decimals: 6, eip712: USDG_DOMAIN },
+  [monadMainnet.id]: [
+    { symbol: "AUSD", address: "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a", decimals: 6, eip712: AUSD_DOMAIN },
+    { symbol: "USDC", address: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603", decimals: 6, eip712: { name: "USD Coin", version: "2" } },
   ],
   // None of its own, like the protocol table; see envStablecoin below.
-  [nitroDevnode.id]: [],
+  [anvilDevnode.id]: [],
 };
 
 /**
@@ -113,27 +89,24 @@ function envStablecoin(): Stablecoin | null {
 }
 
 const CHAINS_BY_CAIP2: Record<string, Chain> = {
-  "eip155:421614": arbitrumSepolia,
-  "eip155:46630": robinhoodTestnet,
-  "eip155:42161": arbitrumOne,
-  "eip155:4663": robinhoodMainnet,
-  "eip155:412346": nitroDevnode,
+  "eip155:10143": monadTestnet,
+  "eip155:143": monadMainnet,
+  "eip155:31337": anvilDevnode,
 };
 
-/** The chain this deployment settles on: `NEXT_PUBLIC_XORV_NETWORK`, default Arbitrum Sepolia. */
+/** The chain this deployment settles on: `NEXT_PUBLIC_XORV_NETWORK`, default Monad testnet. */
 export const XORV_CHAIN: Chain =
-  CHAINS_BY_CAIP2[process.env.NEXT_PUBLIC_XORV_NETWORK?.trim() ?? ""] ?? arbitrumSepolia;
+  CHAINS_BY_CAIP2[process.env.NEXT_PUBLIC_XORV_NETWORK?.trim() ?? ""] ?? monadTestnet;
 
 /** CAIP-2 for the chain above, which is how x402 names networks. */
 export const XORV_NETWORK = `eip155:${XORV_CHAIN.id}`;
 
 /**
- * Chains a wallet is offered: both testnets, plus mainnet when this deployment
- * is on it. The configured chain is always first.
+ * Chains a wallet is offered: the configured chain first, then Monad testnet.
  */
 export const SUPPORTED_CHAINS: [Chain, ...Chain[]] = [
   XORV_CHAIN,
-  ...[arbitrumSepolia, robinhoodTestnet].filter((c) => c.id !== XORV_CHAIN.id),
+  ...[monadTestnet].filter((c) => c.id !== XORV_CHAIN.id),
 ];
 
 /** The stablecoins this deployment accepts, default first (an env-configured token leads). */
@@ -144,7 +117,7 @@ export const STABLECOINS: Stablecoin[] = (() => {
   return [extra, ...table.filter((t) => t.address.toLowerCase() !== extra.address.toLowerCase())];
 })();
 
-/** The default stablecoin — USDG wherever it exists. */
+/** The default stablecoin — AUSD. */
 export const DEFAULT_STABLECOIN: Stablecoin = STABLECOINS[0]!;
 
 /** Symbol for a token address on this chain, or "stablecoin" for one we don't know. */
@@ -161,7 +134,7 @@ export function stablecoinSymbol(address: string | null | undefined): string {
  */
 const OWN_VIEWER = !XORV_CHAIN.blockExplorers?.default.url;
 
-/** What to call the explorer in copy: "Arbiscan", "Robinhood Explorer", or "the chain viewer". */
+/** What to call the explorer in copy: "Monadscan", or "the chain viewer". */
 export const EXPLORER_NAME = OWN_VIEWER ? "the chain viewer" : XORV_CHAIN.blockExplorers!.default.name;
 
 function explorerBase(): string {

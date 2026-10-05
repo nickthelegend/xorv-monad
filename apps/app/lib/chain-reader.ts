@@ -2,9 +2,8 @@
  * Server-side reads for the /chain viewer: a transaction, its decoded events,
  * and what an address holds — straight from the configured RPC.
  *
- * Exists for chains with no public explorer (a local Nitro node running the
- * whole stack). On Arbitrum Sepolia and Robinhood Chain links go to Arbiscan
- * or the Robinhood explorer instead, and nothing here runs.
+ * Exists for chains with no public explorer (a local Anvil node running the
+ * whole stack). On Monad links go to Monadscan instead, and nothing here runs.
  */
 
 import {

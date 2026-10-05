@@ -11,7 +11,7 @@
  *
  * Everything else about the flow is the genuine article: the same `@x402/*`
  * client any third party would use, against the broker's public HTTP surface,
- * settling a real stablecoin transfer on Arbitrum.
+ * settling a real stablecoin transfer on Monad.
  *
  * The usual deployment sets no key here at all: the request is forwarded to
  * the broker's `/api/demo/pay`, which holds the demo account on its own
@@ -31,7 +31,7 @@ import { XORV_CHAIN } from "@/lib/chains";
 export const runtime = "nodejs";
 /** Never prerender or cache: this route moves funds. */
 export const dynamic = "force-dynamic";
-/** A settlement on Arbitrum plus the broker round trip; well under this, but never cut off mid-payment. */
+/** A settlement on Monad plus the broker round trip; well under this, but never cut off mid-payment. */
 export const maxDuration = 60;
 
 const BROKER_URL = (process.env.XORV_BROKER_URL ?? "http://localhost:8402").replace(/\/+$/, "");
@@ -133,7 +133,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     // Escrow first when the broker offers it; see lib/pay-with-wallet.ts.
     client.register("eip155:*", new EscrowClientScheme(signer));
 
-    // The 402 offers every stablecoin the broker accepts (USDG first). Pay in
+    // The 402 offers every stablecoin the broker accepts (AUSD first). Pay in
     // the one asked for, else the first the demo account can afford — never
     // emptying the list, which would fail a request the broker would serve.
     const preferred = body.token?.trim().toLowerCase() || null;
@@ -184,7 +184,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    // Surfaced verbatim: the useful failure here ("payer holds no USDG") is
+    // Surfaced verbatim: the useful failure here ("payer holds no AUSD") is
     // exactly the one worth reading.
     return NextResponse.json({ error: message }, { status: 500 });
   }

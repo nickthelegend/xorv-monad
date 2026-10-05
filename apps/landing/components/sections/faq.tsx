@@ -23,16 +23,16 @@ const FAQ = [
     a: "Every job runs inside an OS-level sandbox — seatbelt on macOS, bubblewrap on Linux, or a container anywhere — in a fresh directory that is deleted when the job ends. Your credentials, including the payout key, are unreadable, and writes are confined to the job directory (see Security above). It is still code from a stranger: run the node in a container or a VM for the strongest boundary, or set XORV_SAFE_MODE=1 to disable tools entirely and sell text generation only.",
   },
   {
-    q: "Do I need ETH to pay for a job?",
-    a: "No. Gas on Arbitrum is ETH, but a buyer never spends any: you sign an EIP-3009 authorization, which is typed data rather than a transaction, and Xorv's own facilitator relays it and pays the gas. All you hold is the stablecoin you pay with — USDG by default, or USDC. Providers need nothing either: any address can receive USDG immediately, with no setup at all.",
+    q: "Do I need MON to pay for a job?",
+    a: "No. Gas on Monad is MON, but a buyer never spends any: you sign an EIP-3009 authorization, which is typed data rather than a transaction, and Xorv's own facilitator relays it and pays the gas. All you hold is the stablecoin you pay with — AUSD by default, or USDC. Providers need nothing either: any address can receive AUSD immediately, with no setup at all.",
   },
   {
     q: "What stops a provider taking the money and not doing the work?",
     a: "The provider never has it until the work is delivered. The payment sits in XorvEscrow; the broker releases it when the result arrives, with the result's hash on chain. A provider that fails is replaced (the escrow's payee changes, the money doesn't move) or the buyer is refunded — and either way the failure is written into the provider's on-chain reputation, which is what the matcher ranks on.",
   },
   {
-    q: "Why Arbitrum, and why USDG?",
-    a: "Because per-job payments only work where fees are a rounding error and blocks are fast: on Arbitrum a settlement costs a fraction of a cent and lands in well under a second, so a $0.001 job is viable and a buyer isn't waiting on confirmations. It runs on Arbitrum Sepolia and on Robinhood Chain Testnet, an Arbitrum chain, from the same code. Jobs are priced in Paxos USDG, a regulated dollar stablecoin that supports EIP-3009 — so the buyer's side is an EIP-712 signature every wallet already produces, and no gas token is ever needed. USDC is accepted too.",
+    q: "Why Monad, and why AUSD?",
+    a: "Because per-job payments only work where fees are a rounding error and blocks are fast: on Monad a settlement costs a fraction of a cent and lands in well under a second, so a $0.001 job is viable and a buyer isn't waiting on confirmations. Monad's 0.4-second blocks also mean a job's escrow is funded before the provider has finished reading the prompt. Jobs are priced in Agora AUSD, a dollar stablecoin native to Monad that supports EIP-3009 — so the buyer's side is an EIP-712 signature every wallet already produces, and no gas token is ever needed. USDC is accepted too.",
   },
   {
     q: "What if the broker disappears with my job?",
@@ -43,12 +43,12 @@ const FAQ = [
     a: "It isn't the payee: the escrow is, and it pays the provider. The fee is set in the contract, snapshotted per job so it can't be raised on work already paid for, capped at 5% in code, and currently zero.",
   },
   {
-    q: "Why is the registry written in Rust?",
-    a: "Because it's the contract written on every settled job, so its per-call cost matters most — and Arbitrum Stylus runs Rust as WASM with cheaper compute and storage than the EVM. The Solidity escrow calls it inside each release, refund and reassignment with a fixed gas budget and a try/catch, so a registry problem can never hold a payment hostage.",
+    q: "Can the reputation registry hold up a payment?",
+    a: "No. It's the contract written on every settled job, so the escrow calls it inside each release, refund and reassignment with a fixed gas budget and a try/catch: a registry problem is logged, never allowed to hold a payment hostage. And the escrow is the only address that can write an outcome, so a provider's record can't be padded by anyone else.",
   },
   {
     q: "Can an agent use this without a human?",
-    a: "That's the point. Xorv ships an MCP server: an agent discovers capacity, prices a job, pays for it on-chain and gets the result back with an Arbiscan link — no account, no card, no human in the loop. It carries a hard per-call spending ceiling, because a model that can spend without a bound is a model that can empty an account through a loop it didn't mean to write.",
+    a: "That's the point. Xorv ships an MCP server: an agent discovers capacity, prices a job, pays for it on-chain and gets the result back with an Monadscan link — no account, no card, no human in the loop. It carries a hard per-call spending ceiling, because a model that can spend without a bound is a model that can empty an account through a loop it didn't mean to write.",
   },
 ];
 

@@ -46,7 +46,7 @@ export default async function TxPage({ params }: { params: Promise<{ hash: strin
               {tx.to ? <AddressLink address={tx.to} /> : "—"}
             </Row>
             <Row label="value">
-              <span className="tnum">{tx.value} ETH</span>
+              <span className="tnum">{tx.value} MON</span>
             </Row>
             <Row label="gas used">
               <span className="tnum">{tx.gasUsed}</span>

@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
  * Sign in, and the wallet that comes with it.
  *
  * With Privy configured this is an email box away from a working wallet: Privy
- * creates an embedded wallet on Arbitrum, and that wallet can pay for a job straight
+ * creates an embedded wallet on Monad, and that wallet can pay for a job straight
  * away, because a job payment is an EIP-712 signature rather than a
  * transaction. External wallets still connect through the same modal.
  *
@@ -33,9 +33,9 @@ import { cn } from "@/lib/utils";
  */
 
 interface Balances {
-  /** One row per stablecoin this deployment accepts, default (USDG) first. */
+  /** One row per stablecoin this deployment accepts, default (AUSD) first. */
   tokens: Array<{ symbol: string; address: `0x${string}`; amount: number }>;
-  /** ETH, for gas. Paying for jobs never needs it; sending a transfer does. */
+  /** MON, for gas. Paying for jobs never needs it; sending a transfer does. */
   eth: number;
 }
 
@@ -127,7 +127,7 @@ export function Connect() {
     if ((amountText.split(".")[1]?.length ?? 0) > 6) return "Stablecoins have 6 decimal places — use at most 6 after the point.";
     const held = balances?.tokens.find((t) => t.address === sendToken);
     if (held && amount > held.amount) return `This wallet holds ${held.amount} ${held.symbol} — not enough to send ${amount}.`;
-    if (balances && balances.eth === 0) return "Sending is an on-chain transfer, so it needs a little ETH for gas — this wallet has none. (Paying for jobs never does.)";
+    if (balances && balances.eth === 0) return "Sending is an on-chain transfer, so it needs a little MON for gas — this wallet has none. (Paying for jobs never does.)";
     return null;
   }
 
@@ -144,7 +144,7 @@ export function Connect() {
       const hash = await sendStablecoin(getAddress(sendTo.trim().toLowerCase()), sendAmount.trim(), sendToken);
       setSent(hash);
       setSendAmount("");
-      // Arbitrum blocks are ~0.25s; one short wait is enough for the balance.
+      // Monad blocks are ~0.4s; one short wait is enough for the balance.
       setTimeout(() => void refreshBalances(), 2_500);
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
@@ -262,7 +262,7 @@ export function Connect() {
                     className="text-fg-3"
                     title="Gas. Paying for a job needs none — only sending a transfer does."
                   >
-                    ETH
+                    MON
                   </dt>
                   <dd className="mono text-fg-3">{balances.eth.toFixed(6)}</dd>
                 </div>
@@ -292,8 +292,8 @@ export function Connect() {
             ) : null}
 
             <p className="mt-3 text-[12px] leading-relaxed text-fg-3">
-              Paying for a job is a signature, not a transaction — you need no ETH and Xorv never
-              holds your key. Sending below is a real transfer, so it needs a little ETH for gas.
+              Paying for a job is a signature, not a transaction — you need no MON and Xorv never
+              holds your key. Sending below is a real transfer, so it needs a little MON for gas.
             </p>
 
             <form

@@ -108,7 +108,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </span>
           <div className="ml-auto flex items-center gap-3">
             <Link
-              href="https://github.com/nickthelegend/xorv-arbitrum"
+              href="https://github.com/nickthelegend/xorv-monad"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden text-[13px] text-fg-3 transition-colors hover:text-fg sm:block"

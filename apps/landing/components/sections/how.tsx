@@ -39,7 +39,7 @@ const STEPS = [
   {
     n: "06",
     title: "Reputation is written by the payment",
-    body: "The same transaction that pays or refunds records the outcome in XorvRegistry, a Rust contract on Arbitrum Stylus. A provider's track record can't be claimed, only earned — and the matcher ranks on it.",
+    body: "The same transaction that pays or refunds records the outcome in XorvRegistry, on Monad. A provider's track record can't be claimed, only earned — and the matcher ranks on it.",
   },
 ];
 
@@ -49,7 +49,7 @@ export function How() {
       <Reveal>
         <SectionHeading
           title="A job, a payment and a receipt — in one request"
-          sub={`x402 turns HTTP 402 from a status code nobody used into a working payment rail. Xorv runs the whole loop on Arbitrum, in ${PRIMARY_TOKEN.symbol}, and the buyer never touches ETH.`}
+          sub={`x402 turns HTTP 402 from a status code nobody used into a working payment rail. Xorv runs the whole loop on Monad, in ${PRIMARY_TOKEN.symbol}, and the buyer never touches MON.`}
         />
       </Reveal>
 

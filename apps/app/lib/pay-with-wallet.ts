@@ -17,7 +17,7 @@
  *
  * What the wallet signs is **typed data, not a transaction**. It is never
  * broadcast, it never enters a mempool, and the signer needs no balance beyond
- * the stablecoin being spent — no ETH at all. The facilitator takes that signature to
+ * the stablecoin being spent — no MON at all. The facilitator takes that signature to
  * `transferWithAuthorization` and pays the fee itself. A visitor can arrive
  * holding nothing but a stablecoin and complete a purchase, which on most
  * chains is precisely where a normal person's crypto payment dies.
@@ -34,11 +34,11 @@ export interface WalletPaymentResult {
   jobId: string;
   /** Present when the facilitator reported one on the response header. */
   transaction: string | null;
-  /** The stablecoin that was paid with, e.g. "USDG". */
+  /** The stablecoin that was paid with, e.g. "AUSD". */
   asset: string | null;
 }
 
-/** One option from the quote's `accepts`, in the broker's order (USDG first). */
+/** One option from the quote's `accepts`, in the broker's order (AUSD first). */
 export interface AcceptOption {
   asset: string;
   amount: string;
@@ -137,7 +137,7 @@ export async function payQuoteWithWallet(
     new EscrowClientScheme({ address: session.address, signTypedData: session.signTypedData }),
   );
 
-  // The 402 offers every stablecoin the broker accepts (USDG first). Pay in
+  // The 402 offers every stablecoin the broker accepts (AUSD first). Pay in
   // the one this wallet can afford — or the one the user picked — rather than
   // blindly signing for the first. The policy narrows the list but never
   // empties it, which would fail a request the server was willing to serve.

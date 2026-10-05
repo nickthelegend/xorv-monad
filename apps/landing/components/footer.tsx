@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { Mark } from "@/components/ui/logo";
 import {
-  ARBITRUM_URL,
+  MONAD_URL,
   CHAIN,
   INSTALL_URL,
   LOOM_URL,
   PRIMARY_TOKEN,
   PRIVY_URL,
   REPO_URL,
-  ROBINHOOD_CHAIN_URL,
-  USDG_URL,
+  AUSD_URL,
   X402_URL,
 } from "@/lib/links";
 
@@ -29,9 +28,8 @@ const COLUMNS = [
       { label: "GitHub", href: REPO_URL, external: true },
       { label: "Install the CLI", href: INSTALL_URL, external: true },
       { label: "x402", href: X402_URL, external: true },
-      { label: "Arbitrum", href: ARBITRUM_URL, external: true },
-      { label: "Robinhood Chain", href: ROBINHOOD_CHAIN_URL, external: true },
-      { label: "Paxos USDG", href: USDG_URL, external: true },
+      { label: "Monad", href: MONAD_URL, external: true },
+      { label: "Agora AUSD", href: AUSD_URL, external: true },
       { label: "Privy", href: PRIVY_URL, external: true },
     ],
   },
@@ -44,7 +42,7 @@ const COLUMNS = [
         external: true,
       })),
       ...(CHAIN.escrowUrl ? [{ label: "XorvEscrow", href: CHAIN.escrowUrl, external: true }] : []),
-      ...(CHAIN.registryUrl ? [{ label: "XorvRegistry (Stylus)", href: CHAIN.registryUrl, external: true }] : []),
+      ...(CHAIN.registryUrl ? [{ label: "XorvRegistry", href: CHAIN.registryUrl, external: true }] : []),
       { label: "Audit log contract", href: CHAIN.logUrl, external: true },
       { label: CHAIN.explorerName, href: CHAIN.explorerUrl, external: true },
     ],
@@ -63,7 +61,7 @@ export function Footer() {
             </div>
             <p className="mt-4 max-w-[26ch] text-[13.5px] leading-relaxed text-fg-3">
               A decentralized AI capacity network. Idle subscriptions in, paid jobs out — settled
-              per request in {PRIMARY_TOKEN.symbol} on Arbitrum through an on-chain escrow, with no
+              per request in {PRIMARY_TOKEN.symbol} on Monad through an on-chain escrow, with no
               gas for buyers or providers.
             </p>
           </div>

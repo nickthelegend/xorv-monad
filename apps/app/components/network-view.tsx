@@ -80,7 +80,7 @@ export function NetworkView() {
         <h2 className="text-[13px] font-medium text-fg">Settlement</h2>
         <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
           The facilitator relays the buyer&rsquo;s signed authorization and pays the network fee
-          in ETH, which is why a buyer needs no ETH at all — only the stablecoin they pay with.
+          in MON, which is why a buyer needs no MON at all — only the stablecoin they pay with.
         </p>
         <div className="mt-4 border-t border-[var(--line)] pt-1">
           <Row label="network">{info?.network ?? "—"}</Row>
@@ -109,7 +109,7 @@ export function NetworkView() {
           <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
             A buyer&rsquo;s money waits in the escrow until the job delivers, and anyone can refund it
             once the deadline passes. Every settlement writes the provider&rsquo;s track record into
-            the registry — a Rust contract on Arbitrum Stylus — so reputation is earned on chain,
+            the registry contract on Monad — so reputation is earned on chain,
             not claimed.
           </p>
           <div className="mt-4 border-t border-[var(--line)] pt-1">
@@ -124,7 +124,7 @@ export function NetworkView() {
               </>
             ) : null}
             {info.registry ? (
-              <Row label="XorvRegistry (Stylus)">
+              <Row label="XorvRegistry">
                 <Ext href={info.registry.url}>{info.registry.address} ↗</Ext>
               </Row>
             ) : null}

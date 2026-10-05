@@ -11,10 +11,10 @@ const inter = Inter({
 
 // The canonical, Open Graph and JSON-LD URLs all derive from this, so it must be
 // a domain that resolves: it was `xorv.network`, which does not exist.
-const SITE = "https://xorv-arbitrum.vercel.app";
-const TITLE = `Xorv — rent out your idle AI subscription, get paid in ${PRIMARY_TOKEN.symbol} on Arbitrum`;
+const SITE = "https://xorv-monad.vercel.app";
+const TITLE = `Xorv — rent out your idle AI subscription, get paid in ${PRIMARY_TOKEN.symbol} on Monad`;
 const DESCRIPTION =
-  `Xorv is a decentralized AI capacity network. Share the Claude, Codex or Grok quota you already pay for, run jobs from anyone on the network, and get paid per job in ${PRIMARY_TOKEN.symbol} over x402 on Arbitrum.`;
+  `Xorv is a decentralized AI capacity network. Share the Claude, Codex or Grok quota you already pay for, run jobs from anyone on the network, and get paid per job in ${PRIMARY_TOKEN.symbol} over x402 on Monad.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -23,10 +23,10 @@ export const metadata: Metadata = {
   applicationName: "Xorv",
   keywords: [
     "x402",
-    "Arbitrum",
-    "Robinhood Chain",
-    "USDG",
-    "Paxos",
+    "Monad",
+    "Monad Testnet",
+    "AUSD",
+    "Agora",
     "AI capacity network",
     "agent payments",
     "micropayments",
@@ -84,7 +84,7 @@ const jsonLd = {
       operatingSystem: "macOS, Linux, Windows",
       url: SITE,
       description:
-        `Command-line provider node for the Xorv network. Share idle AI subscription capacity and get paid per job in ${PRIMARY_TOKEN.symbol} over x402 on Arbitrum.`,
+        `Command-line provider node for the Xorv network. Share idle AI subscription capacity and get paid per job in ${PRIMARY_TOKEN.symbol} over x402 on Monad.`,
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       publisher: { "@id": `${SITE}/#organization` },
     },

@@ -36,7 +36,7 @@ interface Quote {
     model: string | null;
     stats: { jobsCompleted: number; jobsFailed: number };
   };
-  /** One row per stablecoin the broker accepts, USDG first. */
+  /** One row per stablecoin the broker accepts, AUSD first. */
   accepts: Array<{ asset: string; amount: string; symbol?: string }>;
   /** Present when the broker settles through XorvEscrow: where the money waits, and until when. */
   escrow?: { address: string; jobId: string; deadline: number; addressUrl?: string } | null;
@@ -366,7 +366,7 @@ export function Composer() {
               {/*
                 Which stablecoin to pay with. Only shown when the broker offers
                 more than one, and only meaningful with a wallet: "auto" pays in
-                the first one the wallet holds enough of, USDG first.
+                the first one the wallet holds enough of, AUSD first.
               */}
               {session && quote.accepts.length > 1 ? (
                 <div className="mt-4 flex items-center gap-1.5 text-[12px]">
@@ -400,7 +400,7 @@ export function Composer() {
                 ) : (
                   <>, straight to the provider.</>
                 )}{" "}
-                You need <span className="text-fg-2">no ETH</span> — you sign an authorization and
+                You need <span className="text-fg-2">no MON</span> — you sign an authorization and
                 the facilitator pays the gas.
               </p>
 

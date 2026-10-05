@@ -17,8 +17,8 @@ const CLAIMS = [
     "The protocol fee is zero. The buyer's payment waits in the escrow contract while your node runs the job, and the contract pays the whole amount to your address the moment the result is delivered. Xorv's operator never holds the money — the contract can only pay you or refund the buyer.",
   ],
   [
-    "You never need ETH",
-    "Gas on Arbitrum is ETH, and you spend none of it: Xorv's facilitator pays the fee on every settlement. A brand-new address can receive the stablecoin immediately, having done nothing.",
+    "You never need MON",
+    "Gas on Monad is MON, and you spend none of it: Xorv's facilitator pays the fee on every settlement. A brand-new address can receive the stablecoin immediately, having done nothing.",
   ],
   [
     "You set the price",
@@ -58,7 +58,7 @@ export function Earn() {
 
         <Reveal delay={0.06}>
           <div className="space-y-2.5">
-            <Command>git clone https://github.com/nickthelegend/xorv-arbitrum && cd xorv-arbitrum</Command>
+            <Command>git clone https://github.com/nickthelegend/xorv-monad && cd xorv-monad</Command>
             <Command>pnpm install && pnpm build</Command>
             <Command>alias xorv="node $PWD/packages/cli/dist/index.js"</Command>
             <Command>xorv init</Command>

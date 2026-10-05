@@ -23,7 +23,7 @@
  *
  * ## What is here now
  *
- * Arbitrum is an EVM chain, and the payment is an **EIP-712 typed-data signature**
+ * Monad is an EVM chain, and the payment is an **EIP-712 typed-data signature**
  * over an EIP-3009 authorization. Every EVM wallet in existence can do that
  * over EIP-1193 with `eth_signTypedData_v4`. So:
  *
@@ -135,7 +135,7 @@ export function sessionForProvider(
 }
 
 /**
- * Put the wallet on the Xorv chain (Arbitrum Sepolia by default), adding the
+ * Put the wallet on the Xorv chain (Monad Testnet by default), adding the
  * network if it has never seen it.
  *
  * Worth doing before asking for a signature rather than after. An EIP-712
@@ -152,7 +152,7 @@ async function ensureChain(p: Eip1193Provider): Promise<number> {
     await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target }] });
   } catch (err) {
     // 4902 means "unrecognised chain" — the wallet has never heard of this
-    // network (Robinhood Chain Testnet, say), so offer to add it rather than
+    // network (Monad testnet, often), so offer to add it rather than
     // telling the user to configure an RPC by hand.
     const code = (err as { code?: number })?.code;
     if (code !== 4902) throw err;
@@ -220,7 +220,7 @@ export async function switchProviderToXorvChain(p: Eip1193Provider): Promise<num
  * Send a stablecoin — an ordinary ERC-20 transfer, broadcast by the wallet.
  *
  * Unlike a job payment this *is* a transaction, so the sender pays gas — in
- * ETH, on every Arbitrum chain. Paying for jobs never needs ETH; this does.
+ * MON, on Monad. Paying for jobs never needs MON; this does.
  */
 export async function sendStablecoin(
   p: Eip1193Provider,
@@ -250,7 +250,7 @@ export async function sendStablecoin(
  *
  * `XorvEscrow.refund` is permissionless once the job's deadline has passed,
  * and the money can only go to the buyer who paid — so any wallet can press
- * the button, and the one pressing it pays only the ETH gas. This is the
+ * the button, and the one pressing it pays only the MON gas. This is the
  * buyer's guarantee made clickable: a broker that stalls can't keep the money.
  */
 export async function refundEscrow(

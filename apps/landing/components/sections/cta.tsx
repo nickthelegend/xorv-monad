@@ -18,7 +18,7 @@ export function Cta() {
 
           {/* Not on npm yet, so the install is a clone — the same steps the README gives. */}
           <div className="mx-auto mt-9 max-w-md space-y-2.5 text-left">
-            <Command>git clone https://github.com/nickthelegend/xorv-arbitrum && cd xorv-arbitrum</Command>
+            <Command>git clone https://github.com/nickthelegend/xorv-monad && cd xorv-monad</Command>
             <Command>pnpm install && pnpm build && node packages/cli/dist/index.js init</Command>
           </div>
 

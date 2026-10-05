@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { EASE, useEntrance } from "@/lib/motion";
 import { Button, LiveDot, Pill } from "@/components/ui/kit";
 import { NodePanel } from "@/components/ui/node-panel";
-import { APP_URL, ARBITRUM_URL, CHAIN, PRIMARY_TOKEN, REPO_URL, STYLUS_URL } from "@/lib/links";
+import { APP_URL, CHAIN, MONAD_URL, PRIMARY_TOKEN, REPO_URL, X402_URL } from "@/lib/links";
 
 /**
  * The hero, and the page's one authored motion moment.
@@ -58,7 +58,7 @@ export function Hero() {
         >
           Xorv turns that idle quota into income. One command, and the Claude, Codex or Grok plan
           you already pay for starts taking jobs from the network — settling per job, in{" "}
-          {PRIMARY_TOKEN.name.split(" ").pop()} on Arbitrum, through an on-chain escrow that pays you when the work is delivered.
+          {PRIMARY_TOKEN.name.split(" ").pop()} on Monad, through an on-chain escrow that pays you when the work is delivered.
         </motion.p>
 
         <motion.div {...rise(0.24)} className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
@@ -72,8 +72,8 @@ export function Hero() {
             marks would say "we have partners" without saying what for. */}
         <motion.p {...rise(0.32)} className="mono mt-7 text-[12.5px] text-fg-4">
           settles on{" "}
-          <a href={ARBITRUM_URL} target="_blank" rel="noopener noreferrer" className="text-fg-3 hover:text-fg">
-            Arbitrum
+          <a href={MONAD_URL} target="_blank" rel="noopener noreferrer" className="text-fg-3 hover:text-fg">
+            Monad
           </a>{" "}
           · paid in{" "}
           <a
@@ -84,9 +84,9 @@ export function Hero() {
           >
             {PRIMARY_TOKEN.name}
           </a>{" "}
-          · reputation on{" "}
-          <a href={STYLUS_URL} target="_blank" rel="noopener noreferrer" className="text-fg-3 hover:text-fg">
-            Stylus
+          · payments over{" "}
+          <a href={X402_URL} target="_blank" rel="noopener noreferrer" className="text-fg-3 hover:text-fg">
+            x402
           </a>
         </motion.p>
       </div>

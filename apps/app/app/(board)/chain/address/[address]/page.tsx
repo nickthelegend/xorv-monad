@@ -4,7 +4,7 @@ import { XORV_CHAIN } from "@/lib/chains";
 
 export const dynamic = "force-dynamic";
 
-/** What an address is and holds, read from the node: contract or account, ETH, each stablecoin. */
+/** What an address is and holds, read from the node: contract or account, MON, each stablecoin. */
 export default async function AddressPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
@@ -26,7 +26,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         <p className="mono break-all text-[12px] text-fg-2">{info.address}</p>
         <div className="mt-3 border-t border-[var(--line)] pt-1">
           <Row label="kind">{info.isContract ? `contract · ${info.codeBytes} bytes` : "account"}</Row>
-          <Row label="ETH">
+          <Row label="MON">
             <span className="tnum">{info.eth}</span>
           </Row>
           {info.balances.map((b) => (

@@ -11,7 +11,7 @@ export const BROKER_URL = (
   process.env.NEXT_PUBLIC_XORV_BROKER_URL ?? "http://localhost:8402"
 ).replace(/\/+$/, "");
 
-export const NETWORK = process.env.NEXT_PUBLIC_XORV_NETWORK?.trim() || "eip155:421614";
+export const NETWORK = process.env.NEXT_PUBLIC_XORV_NETWORK?.trim() || "eip155:10143";
 
 export interface Capability {
   id: string;
@@ -45,7 +45,7 @@ export interface Provider {
     earnedUsdcMicros: number;
     avgDurationMs: number;
   };
-  /** The provider's record in XorvRegistry (Stylus), written by the escrow as jobs settle. */
+  /** The provider's record in XorvRegistry, written by the escrow as jobs settle. */
   onchain?: {
     registered: boolean;
     active: boolean;
@@ -76,7 +76,7 @@ export interface EscrowRecord {
 }
 
 export interface PaymentRecord {
-  /** Stablecoin symbol, e.g. "USDG" or "USDC" (older records say "usdc"). */
+  /** Stablecoin symbol, e.g. "AUSD" or "USDC" (older records say "usdc"). */
   asset: string;
   assetId: string;
   amount: string;
@@ -125,12 +125,12 @@ export interface NetworkInfo {
   network: string;
   facilitator: { mode: string; description: string; feePayer: string };
   operator: { address: string; url: string };
-  /** Stablecoins the broker accepts, default (USDG) first. */
+  /** Stablecoins the broker accepts, default (AUSD) first. */
   stablecoins?: Array<{ symbol: string; address: string; decimals: number; url: string }>;
   explorerName?: string;
   /** XorvEscrow, when jobs are paid into escrow rather than straight to the provider. */
   escrow?: { address: string; url: string; deadlineSeconds: number } | null;
-  /** XorvRegistry, the Stylus contract holding provider reputation. */
+  /** XorvRegistry, the contract holding provider reputation. */
   registry?: { address: string; url: string } | null;
   log: { address: string; url: string } | null;
   logPublished: { registry: number; heartbeat: number; receipts: number };
@@ -217,7 +217,7 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Explorer links for the configured network — Arbiscan, or Robinhood Chain's
- * explorer. Re-exported from lib/chains so every surface shows the same one.
+ * Explorer links for the configured network — Monadscan, or the app's own
+ * chain viewer on the local stack. Re-exported from lib/chains so every surface shows the same one.
  */
 export { explorerAddress, explorerTx } from "./chains";

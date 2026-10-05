@@ -9,8 +9,8 @@
  * The chain handling is what earns the most attention. An EIP-712 domain
  * includes `chainId`, so a wallet sitting on the wrong network produces a
  * structurally valid authorization that verifies against nothing — the payment
- * is refused with no field to point at. Getting onto the Xorv chain (Arbitrum
- * Sepolia) *before* asking for a signature is therefore load-bearing, and so is
+ * is refused with no field to point at. Getting onto the Xorv chain (Monad
+ * testnet) *before* asking for a signature is therefore load-bearing, and so is
  * handling the case where the wallet has never heard of the chain at all.
  */
 
@@ -120,7 +120,7 @@ describe("connectWallet", () => {
     expect(methods(p)).toContain("eth_requestAccounts");
   });
 
-  it("switches the wallet to Arbitrum Sepolia when it is on another network", async () => {
+  it("switches the wallet to Monad Testnet when it is on another network", async () => {
     const p = fakeProvider({ chainId: "0x1" });
     const session = await connectWallet();
     expect(methods(p)).toContain("wallet_switchEthereumChain");
@@ -142,7 +142,7 @@ describe("connectWallet", () => {
     const added = p.calls.find((c) => c.method === "wallet_addEthereumChain");
     const [params] = added!.params as Array<{ chainId: string; rpcUrls: string[] }>;
     expect(params.chainId).toBe(CHAIN_HEX);
-    expect(params.rpcUrls[0]).toContain("arbitrum");
+    expect(params.rpcUrls[0]).toContain("monad");
   });
 
   it("propagates any other switch failure instead of silently adding a chain", async () => {
@@ -199,7 +199,7 @@ describe("signTypedData", () => {
     const p = fakeProvider();
     const session = await connectWallet();
     await session.signTypedData({
-      domain: { name: "Global Dollar", version: "1" },
+      domain: { name: "Agora Dollar", version: "1" },
       types: {},
       primaryType: "TransferWithAuthorization",
       message: {},
@@ -211,7 +211,7 @@ describe("signTypedData", () => {
     const p = fakeProvider();
     const session = await connectWallet();
     await session.signTypedData({
-      domain: { name: "Global Dollar", version: "1" },
+      domain: { name: "Agora Dollar", version: "1" },
       types: {},
       primaryType: "TransferWithAuthorization",
       message: { value: "1000" },
@@ -228,7 +228,7 @@ describe("signTypedData", () => {
     const p = fakeProvider();
     const session = await connectWallet();
     await session.signTypedData({
-      domain: { name: "Global Dollar", version: "1" },
+      domain: { name: "Agora Dollar", version: "1" },
       types: {},
       primaryType: "TransferWithAuthorization",
       message: { value: 230000n, validAfter: 0n, validBefore: 1789309000n, nonce: "0x01" },
@@ -246,7 +246,7 @@ describe("signTypedData", () => {
     p.moveTo("0x1");
     p.calls.length = 0;
     await session.signTypedData({
-      domain: { name: "Global Dollar", version: "1", chainId: XORV_CHAIN.id },
+      domain: { name: "Agora Dollar", version: "1", chainId: XORV_CHAIN.id },
       types: {},
       primaryType: "ReceiveWithAuthorization",
       message: {},
@@ -261,7 +261,7 @@ describe("signTypedData", () => {
     const session = await connectWallet();
     p.calls.length = 0;
     await session.signTypedData({
-      domain: { name: "Global Dollar", version: "1", chainId: XORV_CHAIN.id },
+      domain: { name: "Agora Dollar", version: "1", chainId: XORV_CHAIN.id },
       types: {},
       primaryType: "ReceiveWithAuthorization",
       message: {},
@@ -275,7 +275,7 @@ describe("signTypedData", () => {
     p.calls.length = 0;
     await expect(
       session.signTypedData({
-        domain: { name: "Global Dollar", version: "1", chainId: 1 },
+        domain: { name: "Agora Dollar", version: "1", chainId: 1 },
         types: {},
         primaryType: "ReceiveWithAuthorization",
         message: {},
@@ -349,7 +349,7 @@ describe("provider-agnostic sessions (Privy embedded wallets)", () => {
     expect((call?.params as unknown[])[0]).toBe(CHECKSUMMED);
   });
 
-  it("sends the default stablecoin (USDG) as an ERC-20 transfer to its contract", async () => {
+  it("sends the default stablecoin (AUSD) as an ERC-20 transfer to its contract", async () => {
     const p = fakeProvider();
     const hash = await sendStablecoin(p, ADDRESS, "0xff212ecb82E3b06c0a2A7a9Ce343e0a1868c489B", "0.25");
     expect(hash).toBe("0xtxhash");
@@ -383,11 +383,11 @@ describe("provider-agnostic sessions (Privy embedded wallets)", () => {
 });
 
 describe("the chain table", () => {
-  it("defaults to Arbitrum Sepolia with USDG first", () => {
-    expect(XORV_CHAIN.id).toBe(421614);
-    expect(XORV_CHAIN.nativeCurrency.symbol).toBe("ETH");
-    expect(DEFAULT_STABLECOIN.symbol).toBe("USDG");
-    expect(STABLECOINS.map((t) => t.symbol)).toEqual(["USDG", "USDC"]);
+  it("defaults to Monad Testnet with AUSD first", () => {
+    expect(XORV_CHAIN.id).toBe(10143);
+    expect(XORV_CHAIN.nativeCurrency.symbol).toBe("MON");
+    expect(DEFAULT_STABLECOIN.symbol).toBe("AUSD");
+    expect(STABLECOINS.map((t) => t.symbol)).toEqual(["AUSD", "USDC"]);
   });
 
   it("agrees with @xorv/protocol, so the browser and the broker offer the same tokens", () => {
@@ -410,8 +410,8 @@ describe("the chain table", () => {
 
 describe("chooseAccept", () => {
   const accepts = [
-    { asset: "0xFFC95faa3d63Cde504a05B567C600B78C0b41892", amount: "1000", symbol: "USDG" },
-    { asset: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d", amount: "1000", symbol: "USDC" },
+    { asset: "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC", amount: "1000", symbol: "AUSD" },
+    { asset: "0x534b2f3A21130d7a60830c2Df862319e593943A3", amount: "1000", symbol: "USDC" },
   ];
 
   it("pays with the first stablecoin the wallet can afford", () => {
@@ -419,8 +419,8 @@ describe("chooseAccept", () => {
     expect(chooseAccept(accepts, balances)!.symbol).toBe("USDC");
   });
 
-  it("prefers USDG when balances are unknown", () => {
-    expect(chooseAccept(accepts, {})!.symbol).toBe("USDG");
+  it("prefers AUSD when balances are unknown", () => {
+    expect(chooseAccept(accepts, {})!.symbol).toBe("AUSD");
   });
 
   it("honours an explicit choice and refuses one not offered", () => {

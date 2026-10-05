@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * A wallet for driving the app's wallet flows in a browser that has no wallet
- * extension — the local Nitro stack only.
+ * extension — the local Anvil stack only.
  *
  * It is the signing half of an EIP-1193 wallet, over HTTP on 127.0.0.1: a
  * page-side `window.ethereum` (printed by `--snippet`) forwards every request
@@ -35,8 +35,8 @@ import { createWalletClient, defineChain, http } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 const PORT = Number(process.env.XORV_TEST_WALLET_PORT ?? 8420);
-const RPC = process.env.XORV_RPC_URL ?? "http://127.0.0.1:8647";
-const CHAIN_ID = 412346;
+const RPC = process.env.XORV_RPC_URL ?? "http://127.0.0.1:8648";
+const CHAIN_ID = 31337;
 const ORIGIN = process.env.XORV_TEST_WALLET_ORIGIN ?? "http://localhost:3302";
 
 const SNIPPET = `(() => {
@@ -89,8 +89,8 @@ if (!existsSync(keyFile)) {
 const account = privateKeyToAccount(readFileSync(keyFile, "utf8").trim());
 const chain = defineChain({
   id: CHAIN_ID,
-  name: "Nitro dev node",
-  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  name: "Anvil",
+  nativeCurrency: { name: "Ether", symbol: "MON", decimals: 18 },
   rpcUrls: { default: { http: [RPC] } },
 });
 const wallet = createWalletClient({ account, chain, transport: http(RPC) });
@@ -111,7 +111,7 @@ const hex = (n) => (n === undefined || n === null ? undefined : BigInt(n));
 
 // The network the wallet is on, and the ones it knows — as in a real wallet.
 let current = Number(process.env.XORV_TEST_WALLET_START_CHAIN ?? CHAIN_ID);
-const known = new Set([current, 1, 421614]);
+const known = new Set([current, 1, 10143]);
 if (process.env.XORV_TEST_WALLET_KNOWS_DEV !== "0") known.add(CHAIN_ID);
 let rejectNext = false;
 const userRejects = () => {

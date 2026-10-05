@@ -13,8 +13,7 @@ const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID?.trim();
  * With a Privy app id, sign-in is Privy: email creates an embedded wallet for
  * anyone without one, and existing wallets (MetaMask, Rabby, …) still connect
  * through the same modal. Privy takes arbitrary viem chains, so it is given the
- * Arbitrum chains Xorv settles on — Arbitrum Sepolia and Robinhood Chain
- * Testnet — with the deployment's own chain as the default.
+ * Monad chains Xorv settles on, with the deployment's own chain as the default.
  *
  * Without `NEXT_PUBLIC_PRIVY_APP_ID` the app falls back to the injected wallet
  * — nothing about paying changes, only how the wallet is obtained — and a
@@ -33,7 +32,7 @@ export function Providers({ children }: { children: ReactNode }) {
           accentColor: "#ffffff",
           walletChainType: "ethereum-only",
           landingHeader: "Sign in to Xorv",
-          loginMessage: `Pay per AI job in ${DEFAULT_STABLECOIN.symbol} on ${XORV_CHAIN.name}. No ETH, no extension needed.`,
+          loginMessage: `Pay per AI job in ${DEFAULT_STABLECOIN.symbol} on ${XORV_CHAIN.name}. No MON, no extension needed.`,
         },
         embeddedWallets: {
           ethereum: { createOnLogin: "users-without-wallets" },

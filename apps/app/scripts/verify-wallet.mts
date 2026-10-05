@@ -4,7 +4,7 @@
  * A browser extension cannot be driven from a script, so the wallet click is
  * the one link that can only be verified by hand. This runs **everything
  * else** — the real `@x402/*` client, the real EVM exact scheme, the real
- * broker, the real facilitator, a real settlement on Arbitrum — and swaps in a local
+ * broker, the real facilitator, a real settlement on Monad — and swaps in a local
  * key for the one function the extension provides.
  *
  * That substitution is exact rather than approximate, and it is worth being

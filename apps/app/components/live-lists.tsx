@@ -93,7 +93,7 @@ export function ProviderList({ compact = false }: { compact?: boolean } = {}) {
         title="No providers online"
         hint={
           <>
-            Clone <span className="mono text-fg-3">github.com/nickthelegend/xorv-arbitrum</span>, run{" "}
+            Clone <span className="mono text-fg-3">github.com/nickthelegend/xorv-monad</span>, run{" "}
             <span className="mono text-fg-3">pnpm install &amp;&amp; pnpm build</span>, then{" "}
             <span className="mono text-fg-3">node packages/cli/dist/index.js init</span> on any machine with
             Claude Code, Codex or Grok installed.
@@ -139,12 +139,12 @@ export function ProviderList({ compact = false }: { compact?: boolean } = {}) {
               {p.onchain && p.onchain.completed + p.onchain.failed > 0 ? (
                 <p
                   className="tnum mt-0.5 text-[11px] text-fg-4"
-                  title="Success rate recorded on chain by the escrow (XorvRegistry, Stylus): (completed+1)/(completed+failed+2)"
+                  title="Success rate recorded on chain by the escrow (XorvRegistry): (completed+1)/(completed+failed+2)"
                 >
                   on-chain {(p.onchain.score / 100).toFixed(0)}% · {p.onchain.completed}✓ {p.onchain.failed}✕
                 </p>
               ) : p.onchain?.registered ? (
-                <p className="mt-0.5 text-[11px] text-fg-4" title="Registered in XorvRegistry (Stylus)">
+                <p className="mt-0.5 text-[11px] text-fg-4" title="Registered in XorvRegistry">
                   on-chain · new
                 </p>
               ) : null}

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Reveal } from "@/components/ui/reveal";
 import { LiveDot, Section, SectionHeading } from "@/components/ui/kit";
-import { ARBITRUM_URL, BROKER_URL, CHAIN } from "@/lib/links";
+import { BROKER_URL, CHAIN, MONAD_URL } from "@/lib/links";
 
 /**
  * The public ledger.
@@ -93,7 +93,7 @@ export function Ledger() {
       <Reveal>
         <SectionHeading
           title="Every job leaves a receipt"
-          sub="Registrations, liveness and settlements are appended to a contract on Arbitrum — public, ordered and append-only. You don't have to trust the broker's database; read the events yourself from any RPC."
+          sub="Registrations, liveness and settlements are appended to a contract on Monad — public, ordered and append-only. You don't have to trust the broker's database; read the events yourself from any RPC."
         />
       </Reveal>
 
@@ -104,11 +104,11 @@ export function Ledger() {
             [
               ...(CHAIN.escrow && CHAIN.escrowUrl ? [["XorvEscrow", CHAIN.escrow, CHAIN.escrowUrl]] : []),
               ...(CHAIN.registry && CHAIN.registryUrl
-                ? [["XorvRegistry (Stylus)", CHAIN.registry, CHAIN.registryUrl]]
+                ? [["XorvRegistry", CHAIN.registry, CHAIN.registryUrl]]
                 : []),
               ["Audit log", CHAIN.log ?? `deploying — see ${CHAIN.explorerName}`, CHAIN.logUrl],
               ...CHAIN.tokens.map((t) => [t.label, t.address, t.url]),
-              ["Network", `${CHAIN.name} · chain ${CHAIN.chainId}`, ARBITRUM_URL],
+              ["Network", `${CHAIN.name} · chain ${CHAIN.chainId}`, MONAD_URL],
             ] as Array<[string, string, string]>
           ).map(([label, value, href]) => (
             <div key={label} className="flex items-center justify-between gap-4 py-3.5">
@@ -181,8 +181,8 @@ export function Ledger() {
                         {d.amount} units{" "}
                         {d.asset?.toLowerCase() === CHAIN.usdc.toLowerCase()
                           ? "USDC"
-                          : d.asset?.toLowerCase() === CHAIN.usdg.toLowerCase()
-                            ? "USDG"
+                          : d.asset?.toLowerCase() === CHAIN.ausd.toLowerCase()
+                            ? "AUSD"
                             : ""}{" "}
                         · {o.label}
                       </span>
