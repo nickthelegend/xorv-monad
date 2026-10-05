@@ -29,6 +29,7 @@ const GUARANTEES = [
   ["The owner can't touch escrowed money", "no withdrawal; sweep reaches only the excess"],
   ["A stalled broker can't keep it", "permissionless refund after the deadline, even while paused"],
   ["Reputation can't be skipped", "gas for the registry call is required up front (EIP-150)"],
+  ["Only verified identities move money", "with the Cleanverse gate on, funding and payouts need an active A-Pass; refunds never do"],
 ];
 
 /** Excerpted from contracts/src/XorvRegistry.sol. */
@@ -90,7 +91,7 @@ export function Contracts() {
               ))}
             </ul>
             <p className="mt-6 text-[12px] text-fg-4">
-              50 unit and fuzz tests, 4 invariants, fork tests against the real AUSD and USDC on Monad testnet.{" "}
+              125 Solidity tests (unit, fuzz, 4 invariants), and fork tests against the real AUSD, USDC and Cleanverse A-Pass on Monad testnet.{" "}
               {CHAIN.escrowUrl ? (
                 <Link href={CHAIN.escrowUrl} target="_blank" rel="noopener noreferrer" className="text-fg-3 underline decoration-[var(--line-2)] underline-offset-2 hover:text-fg">
                   Contract ↗

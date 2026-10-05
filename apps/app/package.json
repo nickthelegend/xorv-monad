@@ -12,12 +12,12 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@xorv/protocol": "workspace:*",
     "@lobehub/icons": "^5.15.0",
     "@privy-io/react-auth": "^3.42.0",
     "@x402/core": "~2.21.0",
     "@x402/evm": "~2.21.0",
     "@x402/fetch": "~2.21.0",
+    "@xorv/protocol": "workspace:*",
     "clsx": "^2.1.1",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.24.0",
@@ -32,6 +32,7 @@
     "viem": "^2.23.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

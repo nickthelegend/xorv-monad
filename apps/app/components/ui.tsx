@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { inAppChainPath } from "@/lib/chains";
 
 /* ---------------------------------------------------------------------------
    The app's component vocabulary.
@@ -39,11 +40,12 @@ export function Button({
 } & Omit<ComponentProps<"button">, "ref">) {
   const cls = cn(base, variants[variant], className);
   if (href) {
+    const inApp = inAppChainPath(href);
     return (
       <Link
-        href={href}
+        href={inApp ?? href}
         className={cls}
-        {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+        {...(external && !inApp ? { target: "_blank", rel: "noopener noreferrer" } : {})}
       >
         {children}
       </Link>
@@ -143,11 +145,11 @@ export function Skeleton({ rows = 3, className }: { rows?: number; className?: s
 }
 
 export function Ext({ href, children }: { href: string; children: ReactNode }) {
+  const inApp = inAppChainPath(href);
   return (
     <Link
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      href={inApp ?? href}
+      {...(inApp ? {} : { target: "_blank", rel: "noopener noreferrer" })}
       className="underline-offset-4 transition-colors hover:text-fg hover:underline"
     >
       {children}

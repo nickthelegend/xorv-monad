@@ -14,6 +14,21 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 - **The broker's own key can't go rogue.** Its operator wallet is a Privy server wallet whose policy allows exactly the eight calls the broker makes, on this chain, at zero value, with gas sponsored by Privy.
 - **Agents can spend without being able to overspend.** `xorv-agent` (Kimi or Qwen) hires other models within a budget its runtime enforces, not one it promises to respect.
 
+## Portal fields
+
+| Field | Value |
+|---|---|
+| Project name | Xorv |
+| Track (one per project) | 04 — Trust, Identity & AI Infrastructure |
+| One-liner | Sell idle AI capacity per job; humans and agents buy it in AUSD through an on-chain escrow on Monad, gated by Cleanverse identity, with reputation written by the settlement itself. |
+| Repo (OSI licence) | https://github.com/nickthelegend/xorv-monad (MIT) — _created at go, see docs/DEPLOY-LATER.md §4_ |
+| Live app | _after go: the Vercel URL_ |
+| Demo video (≤ 3 min) | _after go_ (script below) |
+| Pitch video (≤ 2 min) | _after go_ (script below) |
+| Judge logins | None needed: the app's demo account pays from a funded test wallet |
+| Pre-existing code and AI tools | README → "Pre-existing work, attribution and AI tools" |
+| Contracts | Below, after deploy |
+
 ## Deployed on Monad testnet (chain 10143)
 
 | Contract | Address |
@@ -28,7 +43,7 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 
 | Bounty | Requirement | How Xorv meets it |
 |---|---|---|
-| **Cleanverse CVI/CVA** (T4) | "Gate CVA asset movement behind on-chain CVI identity verification" | `CleanverseGate` + `XorvEscrow.setIdentityGate`: `fund` requires both parties' A-Pass; `release`/`reassign` require the payee's. It reads Cleanverse's own A-Pass validity (frozen, revoked or expired → no), plus the compliance validator once a pool is registered. Tested against the **real** A-Pass and validator on a Monad testnet fork. CVA (aUSDC) escrow needs Cleanverse to recognise the escrow; see [SPONSOR-GAP](docs/SPONSOR-GAP.md). |
+| **Cleanverse CVI/CVA** (T4) | "Gate CVA asset movement behind on-chain CVI identity verification" | `CleanverseGate` + `XorvEscrow.setIdentityGate`: `fund` requires both parties' A-Pass; `release`/`reassign` require the payee's. It reads Cleanverse's own A-Pass validity (frozen, revoked or expired → no), plus the compliance validator once a pool is registered. Tested against the **real** A-Pass and validator on a Monad testnet fork. **Blocked for CVA itself:** aUSDC transfers revert until Cleanverse onboards the app (pool registration, policy). See [SPONSOR-GAP](docs/SPONSOR-GAP.md). |
 | **Privy** (All) | "Beyond authentication"; multiple features | The broker's operator is a Privy **server wallet** under a **policy** that allows only its eight calls, with **native gas sponsorship** on Monad testnet. `privy:setup` creates both. |
 | **Alibaba Qwen** (T4) | "Push Qwen into genuinely agentic territory on Monad" | `xorv-agent --brain qwen`. Qwen 3.8 Max with thinking and tool calling is an autonomous buyer: it reads the live market, prices subtasks, picks which model to hire and whether a second opinion is worth paying for. It pays each job in AUSD on Monad via x402 into XorvEscrow, and stays inside a budget enforced in code. Providers can also **sell** Qwen capacity through the `qwen` adapter. |
 | **Kimi** (All) | "Genuinely powered by Kimi, not bolted on" | Kimi k2.6 is the agent's default brain: the same autonomous buyer as above, threading `reasoning_content` between turns. Providers can sell Kimi capacity through the `kimi` adapter. |
@@ -37,7 +52,18 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 
 **Not claimed:** Agora (T1/T2 only, needs Mera), Mera, Dynamic, Nansen, MetaMask, Kuru, Perpl, Aurora (not this product), Alchemy (overlaps Privy sponsorship).
 
-**Status:** every bounty above is built and tested **locally**. Nothing is deployed yet. [docs/SPONSOR-GAP.md](docs/SPONSOR-GAP.md) lists each one's evidence, its labelled mock or fixture mode, and the one key or account its live run needs.
+**Status:** every bounty above is built and tested **locally** with real contracts and real signed transactions. The running product contains no mocks: without a key, a feature says "not configured". Nothing is deployed yet. [docs/SPONSOR-GAP.md](docs/SPONSOR-GAP.md) lists each one's evidence and the one key or account its live run needs; [docs/TEST-PLAN-ZERO-MOCK.md](docs/TEST-PLAN-ZERO-MOCK.md) lists every flow checked in the browser.
+
+### Evidence, per bounty
+
+| Bounty | Code | Tests | End to end |
+|---|---|---|---|
+| Cleanverse | `contracts/src/CleanverseGate.sol`, `XorvEscrow.setIdentityGate`, `services/broker/src/identity.ts` | `forge test --match-contract CleanverseGate` (13); `FORK_TESTS=1 … CleanverseGateFork` (3, real A-Pass) | `MODE=fork CLEANVERSE=1 scripts/e2e-local.sh` (19/19) |
+| Privy | `packages/protocol/src/privy.ts`, `services/broker/src/scripts/privy-setup.ts` | `packages/protocol/test/privy*.test.ts` (14, including anvil) | live: after keys |
+| Qwen / Kimi | `packages/agent`, `packages/cli/src/adapters/openai-compatible.ts` | `packages/agent/test` (9) | `AGENT=1 scripts/e2e-local.sh` (6/6 each; live with keys) |
+| CRE | `cre/refund-keeper`, `contracts/src/XorvRefundKeeper.sol` | `bun test` (4), `forge test --match-contract RefundKeeper` (6) | `cre workflow simulate` after `cre login` |
+| Envio | `indexer/` | `indexer/test` (4) | `INDEXER=1 scripts/e2e-local.sh` (8/8); the app's History panel |
+| Tx hashes | — | — | _after go_ |
 
 ## Demo script (≤ 3 minutes)
 
@@ -54,6 +80,18 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 | 2:20 | Envio GraphQL / app history | "Monad's RPC gives 100 blocks per log query, so history comes from Envio HyperIndex: every job, every provider's score, daily totals." |
 | 2:35 | CRE simulate → refund tx | "And if the broker vanishes, a Chainlink CRE workflow finds expired jobs and refunds the buyers on chain." |
 | 2:50 | End card | "Xorv. Trustless AI capacity, on Monad." |
+
+## Pitch video (≤ 2 minutes)
+
+| Time | Say |
+|---|---|
+| 0:00 | "Paying a stranger's machine for AI work is a trust problem. Xorv removes the trust." |
+| 0:15 | "Money waits in an escrow on Monad. It's released only when the result is delivered, with the result's hash on chain, and refunded if not. A Chainlink CRE workflow makes sure the refund happens even if we disappear." |
+| 0:40 | "Identity is enforced where value moves: only Cleanverse A-Pass holders can fund or be paid, and a freeze stops a payout in the same block." |
+| 1:00 | "Reputation can't be claimed, only earned: the escrow writes it into the registry in the settling transaction." |
+| 1:15 | "Even our own key is fenced: the broker's wallet is a Privy server wallet that can make eight calls and nothing else." |
+| 1:30 | "And agents can buy too. Qwen or Kimi gets a goal and a budget it cannot exceed." |
+| 1:45 | "Xorv: trustless AI capacity, on Monad." |
 
 ## Judge logins
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Deploy XorvRegistry, XorvEscrow and XorvLog, wire them together, and verify
-# them on Sourcify.
+# Deploy XorvRegistry, XorvEscrow, XorvLog and XorvRefundKeeper, wire them
+# together, and verify them on Sourcify. XORV_CLEANVERSE=1 also deploys the
+# CleanverseGate and sets it on the escrow (see docs/DEPLOY-LATER.md first).
 #
 #   scripts/deploy-testnet.sh monad-testnet   # chain 10143, verified on Sourcify
 #   scripts/deploy-testnet.sh anvil           # local rehearsal (no verification)

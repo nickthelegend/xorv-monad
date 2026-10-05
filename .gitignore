@@ -85,3 +85,7 @@ deployments/hosting.env
 
 # Rewritten by every local-stack run
 deployments/anvil.json
+
+# Playwright output
+apps/app/test-results/
+apps/app/playwright-report/

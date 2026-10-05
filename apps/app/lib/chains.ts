@@ -155,3 +155,22 @@ export function explorerAddress(address: string): string {
 export function explorerToken(address: string): string {
   return `${explorerBase()}/token/${address}`;
 }
+
+/**
+ * A link to the app's own chain viewer, as a path, or null for a real explorer.
+ *
+ * On the local chain the broker's explorer links point at this app's `/chain`
+ * pages (XORV_EXPLORER_URL). Those are in-app pages, so they open in the same
+ * tab. Decided from the configured chain and the URL alone, so the server and
+ * the browser render the same link.
+ */
+export function inAppChainPath(href: string): string | null {
+  if (XORV_CHAIN.id !== 31337) return null;
+  if (href.startsWith("/chain/")) return href;
+  try {
+    const url = new URL(href);
+    return url.pathname.startsWith("/chain/") ? `${url.pathname}${url.search}` : null;
+  } catch {
+    return null;
+  }
+}

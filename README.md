@@ -98,6 +98,54 @@ MODE=fork CLEANVERSE=1 scripts/e2e-local.sh   # escrow gated by Cleanverse's rea
 
 ---
 
+## Why Monad
+
+Xorv sells AI work by the job, often for a cent or less, to buyers who include agents. That only
+works if paying is cheaper and faster than the work itself:
+- Monad's ~0.4 s blocks fund the escrow before the provider has read the prompt.
+- Its fees make a $0.001 job worth settling on chain at all.
+- Full EVM equivalence means the escrow, the x402 scheme and EIP-3009 stablecoins carry over unchanged.
+
+Agora's AUSD, native to Monad, is the settlement currency.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Buyers
+    B1[Browser: app on :3302]
+    B2[CLI: xorv run]
+    B3[Agents: xorv-agent → MCP server<br/>Kimi · Qwen]
+  end
+  subgraph Broker[Broker :8402]
+    Q[Quotes + matcher<br/>price → on-chain score → A-Pass]
+    F[x402 facilitator<br/>escrow scheme]
+    S[Operator signer<br/>key, or Privy server wallet + policy]
+  end
+  subgraph Monad
+    E[XorvEscrow]
+    R[XorvRegistry]
+    L[XorvLog]
+    K[XorvRefundKeeper]
+    G[CleanverseGate → Cleanverse A-Pass]
+    T[AUSD · USDC]
+  end
+  P[Provider node: xorv start<br/>Claude Code · Codex · Kimi · Qwen …]
+  I[Envio HyperIndex]
+  C[Chainlink CRE<br/>refund-keeper]
+
+  B1 & B2 & B3 -->|quote, 402, signed EIP-3009| Q
+  Q --> F --> S -->|fund · release · refund| E
+  E -->|isVerified| G
+  E -->|recordOutcome| R
+  S -->|receipts| L
+  E <-->|pull / pay| T
+  Q <-->|WebSocket jobs| P
+  E & R & L --> I
+  I -->|history| B1
+  I -->|expired jobs| C -->|signed report| K -->|refund| E
+```
+
 ## Monad, AUSD and the sponsor stack
 
 | | What Xorv does with it |
@@ -107,6 +155,8 @@ MODE=fork CLEANVERSE=1 scripts/e2e-local.sh   # escrow gated by Cleanverse's rea
 | **Envio HyperIndex** | [`indexer/`](indexer): jobs (full lifecycle, seconds to settle), providers (registry score, heartbeats, earnings), buyers, receipts linked to jobs, daily and network totals. The app's history comes from here. |
 | **Chainlink CRE** | [`cre/refund-keeper`](cre): cron → Envio (DON consensus) → `isRefundable` on Monad → signed report → `XorvRefundKeeper` → refund. Refunds survive the broker. |
 | **Kimi (Moonshot) · Qwen (Alibaba)** | Two ways: providers **sell** Kimi/Qwen capacity through first-class adapters, and **`xorv-agent`** uses Kimi or Qwen as an autonomous buyer with a budget enforced in code. |
+| **Cleanverse CVI** | [`CleanverseGate`](contracts/src/CleanverseGate.sol) on the escrow: a job funds only between A-Pass holders and pays out only to a provider whose A-Pass is still active, so a freeze by Cleanverse stops the payout in the same block. Verified against Cleanverse's real A-Pass on a Monad fork. Moving aUSDC (CVA) awaits Cleanverse onboarding. |
+| **Privy** | The broker's operator, its hot wallet, as a [Privy server wallet](packages/protocol/src/privy.ts) under a policy that allows exactly its eight calls on this chain at zero value, with Privy's native gas sponsorship on Monad. |
 | **x402** | A custom `escrow` scheme: the buyer signs `ReceiveWithAuthorization` with a nonce derived from the job id and refund deadline, so a signature can only ever fund that job. |
 
 ---
@@ -147,7 +197,12 @@ node packages/cli/dist/index.js init          # then: start — your provider no
 pnpm app                                      # job board on :3002
 ```
 
-Or the whole thing offline on Anvil: `scripts/local-stack.sh`, then `scripts/local-stack-run.sh broker|provider|app|landing`.
+**The one-command local demo**: a fresh local chain with real contracts, the broker, a provider node selling real Codex and Claude Code, the Envio indexer and the app. Ctrl-C stops all of it.
+
+```bash
+SERVE=1 scripts/e2e-walk.sh          # then open http://localhost:3302
+scripts/e2e-walk.sh                  # or: walk every screen in Chrome (Playwright) and stop
+```
 
 Buy a job from the terminal, paying from an address with no MON:
 
@@ -217,7 +272,9 @@ landing page, the x402 escrow scheme, `XorvEscrow` and `XorvLog`.
 **Built during Metropolis** (every commit after the first): the Monad port (networks, AUSD, MON gas,
 Monadscan, Anvil local stack, Monad fork tests), `XorvRegistry` in Solidity (ported from Rust/Stylus,
 which Monad doesn't have), `XorvRefundKeeper` and the Chainlink CRE workflow, the Envio indexer, the
-Kimi and Qwen adapters, `xorv-agent`, and the deploy and test scripts.
+Kimi and Qwen adapters, `xorv-agent`, the Cleanverse CVI gate (`CleanverseGate`, the escrow's identity hook and the
+facilitator, broker and app support), the Privy server-wallet signer and its policy, the app's indexed History and
+Identity-and-signing panels, the Playwright walk, and the deploy and test scripts.
 
 **Third-party code.** OpenZeppelin Contracts 5.4 and forge-std (MIT), as git submodules. Circle's
 `stablecoin-evm` (Apache-2.0) is fetched by `scripts/local-stack.sh` for local runs, not vendored.
