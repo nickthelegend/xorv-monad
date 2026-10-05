@@ -48,3 +48,4 @@ export function formatAgo(epochMs: number, now = Date.now()): string {
   if (delta < 86_400_000) return `${Math.round(delta / 3_600_000)}h ago`;
   return `${Math.round(delta / 86_400_000)}d ago`;
 }
+export * from "./privy.js";

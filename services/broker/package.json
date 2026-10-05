@@ -14,15 +14,17 @@
     "setup": "tsx src/scripts/setup.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "balances": "tsx src/scripts/balances.ts"
+    "balances": "tsx src/scripts/balances.ts",
+    "privy:setup": "tsx src/scripts/privy-setup.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.14.0",
-    "@xorv/protocol": "workspace:*",
+    "@privy-io/node": "^0.35.0",
     "@x402/core": "~2.21.0",
     "@x402/evm": "~2.21.0",
     "@x402/fetch": "~2.21.0",
     "@x402/hono": "~2.21.0",
+    "@xorv/protocol": "workspace:*",
     "dotenv": "^16.4.7",
     "hono": "^4.7.0",
     "mongodb": "^6.13.0",

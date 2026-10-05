@@ -24,9 +24,10 @@ import {
   explorerAddress,
   explorerTx,
   logAddress,
+  operatorWallet,
   readClient,
-  writeClient,
   type LogHeartbeat,
+  type PrivyPolicy,
   type LogJobReceipt,
   type LogMessageKind,
   type LogProviderRegistered,
@@ -72,6 +73,10 @@ export interface ChainLike {
   readonly operatorAddress: string;
   readonly publicClient: PublicClient;
   readonly walletClient: WalletClient;
+  readonly signerMode?: string;
+  readonly signerDescription?: string;
+  readonly signerPolicy?: PrivyPolicy | null;
+  readonly policyRefusals?: ReadonlyArray<{ at: string; to: string | null; reason: string }>;
   describeLog(): { address: string; url: string } | null;
   counts(): { registry: number; heartbeat: number; receipts: number };
   lastPublishError(): string | null;
@@ -94,6 +99,13 @@ export class Chain implements ChainLike {
   readonly walletClient: WalletClient;
   readonly network: string;
   readonly operatorAddress: string;
+  /** Who signs: "local key", a Privy server wallet, or PRIVY MOCK MODE. */
+  readonly signerMode: string;
+  readonly signerDescription: string;
+  /** The policy the operator runs under, when Privy (or its mock) signs. */
+  readonly signerPolicy: PrivyPolicy | null;
+  /** Transactions the policy refused, newest last, for /api/network. */
+  readonly policyRefusals: Array<{ at: string; to: string | null; reason: string }> = [];
   private readonly contract: string | null;
   /** Publish failures, kept for /api/network so a misconfig is visible. */
   private lastError: string | null = null;
@@ -107,7 +119,29 @@ export class Chain implements ChainLike {
     this.operatorAddress = config.operatorAddress;
     this.contract = config.logAddress ?? logAddress();
     this.publicClient = readClient(config.network);
-    this.walletClient = writeClient(config.network, config.operatorKey);
+    const signer = config.signer ?? { mode: "key" as const };
+    const op = operatorWallet(
+      signer,
+      {
+        network: config.network,
+        escrow: config.escrowAddress,
+        log: this.contract,
+        registry: config.registryAddress,
+      },
+      config.operatorKey,
+      {
+        onVerdict: (v, tx) => {
+          if (v.allowed) return;
+          this.policyRefusals.push({ at: new Date().toISOString(), to: tx.to ?? null, reason: v.reason });
+          if (this.policyRefusals.length > 20) this.policyRefusals.shift();
+          console.warn(`[broker] Privy policy refused a transaction to ${tx.to}: ${v.reason}`);
+        },
+      },
+    );
+    this.walletClient = op.wallet;
+    this.signerMode = signer.mode;
+    this.signerDescription = op.description;
+    this.signerPolicy = op.policy;
   }
 
   /** The log contract plus its block-explorer link, for the network panel. */

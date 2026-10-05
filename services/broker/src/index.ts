@@ -96,11 +96,14 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   line("listening", `http://localhost:${info.port}`);
   line("network", `${networkInfo(config.network).name} (${config.network})`);
   line("operator", config.operatorAddress);
+  line("signer", chain.signerDescription);
   line(
     "facilitator",
-    config.facilitatorMode === "self"
-      ? `self-hosted — the operator pays the gas in ${GAS_TOKEN_SYMBOL}`
-      : config.facilitatorMode,
+    config.facilitatorMode !== "self"
+      ? config.facilitatorMode
+      : config.signer?.privy?.sponsor
+        ? "self-hosted — Privy sponsors the gas"
+        : `self-hosted — the operator pays the gas in ${GAS_TOKEN_SYMBOL}`,
   );
   line(
     "stablecoins",
@@ -163,7 +166,8 @@ async function bootChecks(): Promise<void> {
       console.warn(`[broker] contract wiring check skipped: ${err instanceof Error ? err.message : err}`);
     }
   }
-  if (config.facilitatorMode !== "self") return;
+  // A Privy-sponsored operator needs no MON; its balance is beside the point.
+  if (config.facilitatorMode !== "self" || config.signer?.privy?.sponsor) return;
   try {
     const wei = await readClient(config.network).getBalance({
       address: config.operatorAddress as `0x${string}`,

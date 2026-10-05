@@ -16,6 +16,9 @@
 #               contract (its EIP-3009, its "Agora Dollar" domain), funded
 #               from Agora's own testnet faucet.
 #
+# SIGNER=privy-mock runs the broker's operator through PRIVY MOCK MODE: every
+# operator transaction is checked against the Privy policy before it is signed.
+#
 # Usage: scripts/e2e-local.sh    |    MODE=fork scripts/e2e-local.sh
 set -euo pipefail
 
@@ -28,6 +31,7 @@ for v in $(env | sed -n 's/^\(XORV_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 MODE=${MODE:-anvil}
+SIGNER=${SIGNER:-key}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/xorv-e2e.XXXXXX")
 BROKER_PORT=${BROKER_PORT:-8499}
 BROKER="http://127.0.0.1:$BROKER_PORT"
@@ -100,7 +104,7 @@ FROM_BLOCK=$(cast block-number --rpc-url "$RPC")
 # ---------------------------------------------------------------------------
 say "starting the broker"
 cd "$ROOT"
-env XORV_NETWORK=$NETWORK XORV_RPC_URL=$RPC XORV_OPERATOR_KEY=$OP_KEY XORV_OPERATOR_ADDRESS= \
+env XORV_NETWORK=$NETWORK XORV_RPC_URL=$RPC XORV_OPERATOR_KEY=$OP_KEY XORV_OPERATOR_ADDRESS= XORV_SIGNER=$SIGNER \
   XORV_ESCROW_ADDRESS=$ESCROW XORV_REGISTRY_ADDRESS=$REGISTRY XORV_LOG_ADDRESS=$LOG \
   XORV_LOG_FROM_BLOCK=$FROM_BLOCK XORV_BROKER_PORT=$BROKER_PORT XORV_BROKER_URL=$BROKER \
   XORV_DB="$WORK/broker.db" XORV_MONGO_URI= XORV_DEMO_PAYER_KEY= XORV_CORS_ORIGINS= \
@@ -108,7 +112,7 @@ env XORV_NETWORK=$NETWORK XORV_RPC_URL=$RPC XORV_OPERATOR_KEY=$OP_KEY XORV_OPERA
 PIDS+=($!)
 for _ in $(seq 1 60); do curl -sf "$BROKER/health" >/dev/null && break; sleep 0.5; done
 curl -sf "$BROKER/health" >/dev/null || { cat "$WORK/broker.log"; exit 1; }
-grep -E "escrow|reputation|wiring|⚠" "$WORK/broker.log" | sed 's/^/   /'
+grep -E "escrow|reputation|wiring|signer|⚠" "$WORK/broker.log" | sed 's/^/   /'
 
 say "starting a provider node (echo adapter)"
 mkdir -p "$WORK/node"
@@ -186,6 +190,25 @@ if (process.env.REGISTRY) {
 console.log(`\nmode=${process.env.MODE}  job=${run.jobId}  fund=${run.settlementTransaction}  release=${run.escrow?.releaseTx}`);
 process.exit(fails ? 1 : 0);
 ' "$WORK/run.json" || { echo; echo "--- broker log ---"; tail -40 "$WORK/broker.log"; echo "--- node log ---"; tail -20 "$WORK/node.log"; exit 1; }
+
+# ---------------------------------------------------------------------------
+# the signer (SIGNER=privy-mock): every operator write above went through the policy
+# ---------------------------------------------------------------------------
+if [ "$SIGNER" = privy-mock ]; then
+  say "operator signer: PRIVY MOCK MODE"
+  curl -sf "$BROKER/api/network" | BROKER_LOG="$WORK/broker.log" node --input-type=module -e '
+import { readFileSync } from "node:fs";
+let s = ""; for await (const d of process.stdin) s += d;
+const signer = JSON.parse(s).operator.signer;
+let fails = 0;
+const check = (label, ok, extra = "") => { console.log(`${ok ? "✓" : "✗"} ${label}${extra ? "  " + extra : ""}`); if (!ok) fails++; };
+check("broker reports the mock signer", signer.mode === "privy-mock", signer.description);
+check("labelled as a mock everywhere", signer.description.startsWith("PRIVY MOCK MODE") && readFileSync(process.env.BROKER_LOG, "utf8").includes("PRIVY MOCK MODE"));
+check("policy allows the escrow, log and registry calls", ["escrow.fund", "escrow.release", "log.append", "registry.registerFor"].every((f) => signer.policy?.allows.some((r) => r.startsWith(f))), `${signer.policy?.allows.length} rules`);
+check("the policy refused nothing the broker needed", signer.refusals.length === 0, JSON.stringify(signer.refusals));
+process.exit(fails ? 1 : 0);
+' || { tail -30 "$WORK/broker.log"; exit 1; }
+fi
 
 # ---------------------------------------------------------------------------
 # the agent (AGENT=1): xorv-agent hires the network through the real MCP server

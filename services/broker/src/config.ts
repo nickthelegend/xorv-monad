@@ -18,6 +18,8 @@ import {
   registryAddress as configuredRegistry,
   isAccountAddress,
   parsePrivateKey,
+  signerFromEnv,
+  type OperatorSigner,
 } from "@xorv/protocol";
 
 // The repo keeps one .env at the root; the broker is two directories down.
@@ -36,7 +38,10 @@ export interface BrokerConfig {
   network: string;
   /** The operator's address, derived from the key rather than configured twice. */
   operatorAddress: string;
+  /** The raw key; empty when a Privy server wallet signs instead. */
   operatorKey: string;
+  /** Who signs the operator's transactions: the key, a Privy server wallet, or the labelled mock. */
+  signer?: OperatorSigner;
   /** Deployed XorvLog contract; null disables the audit trail rather than failing. */
   logAddress: string | null;
   port: number;
@@ -82,18 +87,21 @@ function optional(name: string): string | null {
 }
 
 export function loadConfig(): BrokerConfig {
-  const operatorKey = parsePrivateKey(required("XORV_OPERATOR_KEY"));
+  const signer = signerFromEnv();
+  // With a Privy server wallet the key lives in Privy's enclave and the address
+  // is the wallet's; otherwise both come from XORV_OPERATOR_KEY.
+  const operatorKey = signer.mode === "privy" ? "" : parsePrivateKey(required("XORV_OPERATOR_KEY"));
 
   // Derived, not configured. The Hedera version required an account id
   // alongside the key and could not check that the two matched — a mismatched
   // pair produced INVALID_SIGNATURE on the first payment and nothing before it.
   // An EVM address is a pure function of its key, so the pair cannot disagree.
-  const operatorAddress = accountFor(operatorKey).address;
+  const operatorAddress = signer.privy ? signer.privy.walletAddress : accountFor(operatorKey).address;
 
   const declared = optional("XORV_OPERATOR_ADDRESS");
   if (declared && declared.toLowerCase() !== operatorAddress.toLowerCase()) {
     throw new Error(
-      `XORV_OPERATOR_ADDRESS is ${declared} but XORV_OPERATOR_KEY controls ${operatorAddress}. ` +
+      `XORV_OPERATOR_ADDRESS is ${declared} but the configured signer controls ${operatorAddress}. ` +
         `Remove the address — it is derived from the key — or fix the key.`,
     );
   }
@@ -122,6 +130,7 @@ export function loadConfig(): BrokerConfig {
     network,
     operatorAddress,
     operatorKey,
+    signer,
     logAddress,
     // Railway, Render and Fly inject `PORT` and route only to it. The explicit
     // variable still wins, so a local .env keeps working unchanged.

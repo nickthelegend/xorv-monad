@@ -192,6 +192,8 @@ export function createApp(deps: AppDeps) {
         network: config.network,
         feePayerAddress: config.operatorAddress,
         feePayerKey: config.operatorKey,
+        // The chain writer's wallet: one signer, one policy, for every operator transaction.
+        wallet: chain.walletClient,
         escrow: config.escrowAddress,
         onWrite: (phase) => chain.noteWrite?.(phase),
       });
@@ -360,6 +362,18 @@ export function createApp(deps: AppDeps) {
       operator: {
         address: config.operatorAddress,
         url: explorerAddress(config.network, config.operatorAddress),
+        // Who signs the operator's transactions, and what it may sign.
+        signer: {
+          mode: chain.signerMode ?? "key",
+          description: chain.signerDescription ?? "local key",
+          policy: chain.signerPolicy
+            ? {
+                name: chain.signerPolicy.name,
+                allows: chain.signerPolicy.rules.map((r) => r.name),
+              }
+            : null,
+          refusals: chain.policyRefusals?.slice(-5) ?? [],
+        },
       },
       stablecoins: publicTokens(),
       explorerName: explorerName(config.network),

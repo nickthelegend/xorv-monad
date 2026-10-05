@@ -106,9 +106,11 @@ export function buildLocalFacilitator(opts: {
   escrow?: string | null;
   /** Called around each escrow write, so background RPC readers can back off. */
   onWrite?: (phase: "start" | "end") => void;
+  /** The operator's wallet when something other than the raw key signs (a Privy server wallet). */
+  wallet?: WalletClient;
 }): FacilitatorClient {
   const publicClient = readClient(opts.network);
-  const wallet = writeClient(opts.network, opts.feePayerKey);
+  const wallet = opts.wallet ?? writeClient(opts.network, opts.feePayerKey);
 
   const facilitator = new x402Facilitator();
   registerExactEvmScheme(facilitator, {
@@ -185,6 +187,7 @@ export function buildFacilitator(opts: {
   feePayerKey: string;
   escrow?: string | null;
   onWrite?: (phase: "start" | "end") => void;
+  wallet?: WalletClient;
 }): { facilitator: FacilitatorClient; description: string; feePayer: string } {
   const mode = (opts.mode || "self").trim();
   if (mode === "self") {
