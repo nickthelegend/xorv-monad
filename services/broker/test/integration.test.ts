@@ -307,6 +307,9 @@ interface Harness {
   stop(): Promise<void>;
 }
 
+/** The gas payer the stubbed receipts name (the facilitator's EOA in a real run). */
+const FACILITATOR_ADDRESS = "0xfac1f4c1fac1f4c1fac1f4c1fac1f4c1fac1f4c1";
+
 async function boot(
   opts: {
     config?: Partial<BrokerConfig>;
@@ -319,6 +322,7 @@ async function boot(
     identity?: IdentitySource;
   } = {},
 ): Promise<Harness> {
+  // Every confirmed transaction "landed" in block 4242 for 84,213 gas at 50 gwei, paid by the facilitator.
   const config = testConfig(opts.config);
   const chain = new StubChain(config.ledgerAddress);
   const registry = new Registry();
@@ -344,6 +348,7 @@ async function boot(
     },
     agentAuthorizes: async (agentId, spender) => authorized.has(`${agentId}:${spender.toLowerCase()}`),
     settlementStatus: async () => settle.status,
+    txFacts: async () => ({ blockNumber: 4242, gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
     ai: opts.ai,
     trust: opts.trust,
     escrow: opts.escrow ?? null,
@@ -2560,6 +2565,19 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     expect(held.resultHash).toBe(job.resultHash);
     // When it was released, for the job page's timeline.
     expect(held.settledAt).toBeGreaterThanOrEqual((job.payment as Json).settledAt as number);
+    // The speed receipt: measured on the broker's clock, block and gas from the receipt.
+    const timed = await waitFor(async () => {
+      const j = await getJob(h, job.id as string);
+      const p = j.payment as Json;
+      return p.timing && (p.escrow as Json).settleTiming ? p : undefined;
+    });
+    for (const timing of [timed.timing, (timed.escrow as Json).settleTiming] as Json[]) {
+      expect(timing).toMatchObject({ blockNumber: 4242, gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS });
+      expect(timing.confirmMs).toEqual(expect.any(Number));
+      expect(timing.confirmMs as number).toBeGreaterThanOrEqual(0);
+    }
+    const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
+    expect(stats).toMatchObject({ timingSamples: 1, settleMedianMs: (timed.timing as Json).confirmMs, releaseMedianMs: ((timed.escrow as Json).settleTiming as Json).confirmMs });
     expect(escrow.calls.map((c) => c.op)).toEqual(["release"]);
     // The receipt carries the release: the transfer that actually paid the provider.
     const receipt = await waitFor(() => h.chain.receipts.find((r) => r.jobId === job.id));
@@ -2621,6 +2639,37 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     // Refunded money never counts as paid to providers.
     const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
     expect(stats).toMatchObject({ paidUsdMicros: 0, heldUsdMicros: 0, refundedUsdMicros: q.priceUsdMicros });
+    provider.close();
+  });
+
+  it("a provider that finishes while the cancel's refund is confirming can't turn it into a completed job", async () => {
+    const escrow = new MemoryEscrow();
+    // The refund takes a block or two on a real chain; the provider answers in the middle of it.
+    const cancel = escrow.cancel.bind(escrow);
+    let provider!: Awaited<ReturnType<typeof connectProvider>>;
+    escrow.cancel = async (jobId) => {
+      await provider.completeNextJob("finished anyway");
+      await new Promise((r) => setTimeout(r, 150));
+      return cancel(jobId);
+    };
+    h = await boot({ escrow });
+    provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    await waitFor(() => provider.dispatched[0], 4_000);
+    const res = await fetch(`${h.base}/api/jobs/${paid.jobId}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${paid.cancelToken}` },
+      body: "{}",
+    });
+    expect(await res.json()).toMatchObject({ ok: true, refunded: true, status: "failed" });
+    // The provider was told to stop before the refund was sent.
+    expect(provider.cancelled).toContain(paid.jobId);
+    await new Promise((r) => setTimeout(r, 200));
+    const job = await getJob(h, paid.jobId as string);
+    expect(job).toMatchObject({ status: "failed", error: "cancelled by the buyer", result: null });
+    expect(((job.payment as Json).escrow as Json).state).toBe("refunded");
+    expect(escrow.calls.map((c) => c.op)).toEqual(["cancel"]);
     provider.close();
   });
 

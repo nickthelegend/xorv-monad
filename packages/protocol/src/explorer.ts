@@ -29,6 +29,11 @@ export function explorerAddress(network: string, address: string): string {
   return `${networkConfig(network).explorerUrl}/address/${displayAddress(address)}`;
 }
 
+/** Explorer link for a block. */
+export function explorerBlock(network: string, block: number | bigint): string {
+  return `${networkConfig(network).explorerUrl}/block/${String(block)}`;
+}
+
 /** Explorer link for a token contract. */
 export function explorerToken(network: string, token: string): string {
   return `${networkConfig(network).explorerUrl}/token/${displayAddress(token)}`;

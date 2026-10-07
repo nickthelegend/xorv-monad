@@ -17,6 +17,7 @@ import { aiRoles, describeLatency, type AiRoleName } from "@/lib/ai";
 import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import { valueToStars } from "@/lib/rating";
+import { formatMs } from "@/lib/speed";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
 import { NansenPanel } from "@/components/trust";
 import { readNansenStatus } from "@/lib/trust";
@@ -75,6 +76,21 @@ export function NetworkView() {
           <Row label="usdc">
             {info ? <Ext href={explorerToken(NETWORK, info.usdc.address)}>{shortHex(info.usdc.address)} ↗</Ext> : "—"}
           </Row>
+          <Row label="payment final in">
+            {info?.stats.settleMedianMs != null ? (
+              <span className="tnum">
+                {formatMs(info.stats.settleMedianMs)} median
+                <span className="text-fg-4"> · {info.stats.timingSamples} recent jobs · an Ethereum block is 12 s</span>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
+          {info?.stats.releaseMedianMs != null ? (
+            <Row label="escrow release final in">
+              <span className="tnum">{formatMs(info.stats.releaseMedianMs)} median</span>
+            </Row>
+          ) : null}
           <Row label="providers live">
             <span className="tnum">{info?.stats.providersLive ?? "—"}</span>
           </Row>

@@ -164,7 +164,26 @@ export interface PaymentRecord {
   explorerUrl: string;
   /** "escrow": the money waits in XorvEscrow until the job delivers. Absent on direct payments. */
   scheme?: "exact" | "escrow";
+  /** How fast the settlement landed, and what it cost, as the broker measured and read it back. */
+  timing?: ChainTiming;
   escrow?: EscrowRecord;
+}
+
+/**
+ * One transaction's speed and cost on the chain, as the broker saw it: the
+ * time from submitting it to holding its confirmed receipt, measured on the
+ * broker's clock, and the block, gas and gas payer read from that receipt.
+ */
+export interface ChainTiming {
+  /** Milliseconds from submission to the confirmed receipt; null when it wasn't measured. */
+  confirmMs: number | null;
+  blockNumber: number;
+  /** Gas used, as an integer string. */
+  gasUsed: string;
+  /** gasUsed × effectiveGasPrice, in wei of the native token (MON), as an integer string. */
+  gasPaidWei: string;
+  /** Who paid that gas (the facilitator or the escrow's attester, never the buyer). */
+  gasPayer: string;
 }
 
 /**
@@ -188,6 +207,8 @@ export interface EscrowRecord {
   resultHash?: string;
   /** When the release or refund was confirmed (ms since epoch). */
   settledAt?: number;
+  /** The release's or refund's speed and cost. */
+  settleTiming?: ChainTiming;
   /** Who settled it, when it wasn't this broker (a keeper's refund, a buyer's own release). */
   settledBy?: string;
   /** The last settlement attempt's error, while it is still being retried. */
@@ -585,6 +606,12 @@ export interface NetworkInfo {
     heldUsdMicros?: number;
     /** Returned to buyers by XorvEscrow. */
     refundedUsdMicros?: number;
+    /** Median ms from submitting a payment to its confirmed receipt, over recent jobs; null before any. */
+    settleMedianMs?: number | null;
+    /** Median ms for an escrow release or refund to confirm; null before any. */
+    releaseMedianMs?: number | null;
+    /** How many recent settlements the medians are over. */
+    timingSamples?: number;
   };
   heartbeatIntervalMs: number;
   /** XorvEscrow, when jobs are paid into escrow; null pays providers directly. */

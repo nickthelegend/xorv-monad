@@ -85,6 +85,7 @@ import {
   type JobRequest,
   type LedgerEventKind,
   type NetworkInfo,
+  type ChainTiming,
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
@@ -189,6 +190,11 @@ export interface AppDeps {
     txHash: string,
     expect: { asset: string; from: string; to: string; amount: string },
   ) => Promise<SettlementStatus>;
+  /**
+   * A confirmed transaction's block, gas used, gas paid and gas payer, for the
+   * job's speed receipt. Defaults to reading the receipt over RPC; tests stub it.
+   */
+  txFacts?: (txHash: string) => Promise<Omit<ChainTiming, "confirmMs"> | null>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
   /**
@@ -236,6 +242,14 @@ export function createApp(deps: AppDeps) {
   const publishedRegistrations = new Map<string, string>();
   /** Settlements that landed before their job existed (the upfront flow), keyed by quote id. */
   const settlements = new Map<string, { record: PaymentRecord; at: number }>();
+  /**
+   * Jobs whose buyer is cancelling them. The escrow refund takes a block or two,
+   * and a provider that finishes meanwhile must not turn a refunded job into a
+   * "completed" one: its result and errors are ignored until the cancel lands.
+   */
+  const cancelling = new Set<string>();
+  /** When each quote's settlement was submitted, for its speed receipt. */
+  const settleStarted = new Map<string, number>();
   /**
    * Settlements broadcast but not confirmed when the facilitator stopped
    * waiting (x402 "settlement_pending"), keyed by quote id. The transfer can
@@ -410,6 +424,8 @@ export function createApp(deps: AppDeps) {
     // settlement's gas cost. The paid-route guard refuses it before this; this
     // is the backstop for a payload that guard could not read.
     x402Server.onBeforeSettle(async (ctx) => {
+      const startedQuote = quoteIdFromTransport(ctx.transportContext);
+      if (startedQuote) settleStarted.set(startedQuote, Date.now());
       const from = authorizationFrom(ctx.paymentPayload as PaymentPayload);
       // Escrow pays the contract; the payee that matters is the provider it releases to.
       const payee =
@@ -472,12 +488,24 @@ export function createApp(deps: AppDeps) {
         ctx.result as SettleResponse,
         ctx.paymentPayload as PaymentPayload,
       );
+      const started = settleStarted.get(quoteId);
+      settleStarted.delete(quoteId);
       const quote = jobs.getQuote(quoteId);
       if (quote?.jobId) {
         jobs.patch(quote.jobId, { payment: record });
       } else {
         settlements.set(quoteId, { record, at: Date.now() });
       }
+      // The speed receipt: how long the settlement took on this broker's clock, then its
+      // block and gas from the receipt. Off the request path; a failed read just leaves it out.
+      const confirmMs = started === undefined ? null : Date.now() - started;
+      void chainTiming(record.txHash, confirmMs).then((timing) => {
+        if (!timing) return;
+        record.timing = timing;
+        const jobId = jobs.getQuote(quoteId)?.jobId;
+        const job = jobId ? jobs.get(jobId) : undefined;
+        if (job?.payment && sameHash(job.payment.txHash, record.txHash)) jobs.patch(job.id, { payment: { ...job.payment, timing } });
+      });
     });
   }
 
@@ -713,6 +741,7 @@ export function createApp(deps: AppDeps) {
         paidUsdMicros: sumPrice(settled.filter((j) => !j.payment?.escrow || j.payment.escrow.state === "released")),
         heldUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "funded")),
         refundedUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "refunded")),
+        ...speedStats(settled),
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     };
@@ -1481,11 +1510,14 @@ export function createApp(deps: AppDeps) {
         403,
       );
     }
-    if (isTerminal(job.status)) {
-      return c.json({ error: `job is already ${job.status}`, status: job.status }, 409);
+    if (isTerminal(job.status) || cancelling.has(job.id)) {
+      return c.json({ error: `job is already ${cancelling.has(job.id) ? "being cancelled" : job.status}`, status: job.status }, 409);
     }
 
     const reason = "cancelled by the buyer";
+    cancelling.add(job.id);
+    // Stop the work now, not after the refund confirms.
+    if (job.providerId) deps.getHub()?.send(job.providerId, { type: "job.cancel", jobId: job.id, reason });
     // Escrowed: the money never left the contract, so stopping refunds it, with
     // no mark on the provider (cancel, not refund). Done before the job is
     // failed so the settlement subscription doesn't treat it as a provider failure.
@@ -1494,8 +1526,10 @@ export function createApp(deps: AppDeps) {
     const held = job.payment?.escrow;
     if (escrow && job.payment && held?.state === "funded") {
       try {
+        const started = Date.now();
         refundTx = await escrow.cancel(held.jobId as Hex);
         refunded = true;
+        timeEscrowSettlement(job.id, refundTx, Date.now() - started);
         jobs.patch(job.id, {
           payment: { ...job.payment, escrow: { ...held, state: "refunded", refundTx, settledAt: Date.now(), lastError: undefined } },
         });
@@ -1504,13 +1538,11 @@ export function createApp(deps: AppDeps) {
         console.warn(`[broker] escrow cancel for ${job.id}: ${err instanceof Error ? err.message : err}`);
       }
     }
-    if (job.providerId) {
-      deps.getHub()?.send(job.providerId, { type: "job.cancel", jobId: job.id, reason });
-      // The buyer changed their mind; that says nothing about the provider.
-      registry.jobReleased(job.providerId);
-    }
+    // The buyer changed their mind; that says nothing about the provider.
+    if (job.providerId) registry.jobReleased(job.providerId);
     jobs.addEvent(job.id, { at: Date.now(), kind: "status", text: reason });
     jobs.fail(job.id, reason);
+    cancelling.delete(job.id);
     metrics.inc("xorv_jobs_cancelled_total");
 
     return c.json({
@@ -2499,6 +2531,34 @@ export function createApp(deps: AppDeps) {
     jobs.patch(jobId, { payment: { ...job.payment, escrow: { ...job.payment.escrow, ...update } } });
   }
 
+  /** Read a release's or refund's block and gas, and attach them with its measured time. */
+  function timeEscrowSettlement(jobId: string, tx: string, confirmMs: number): void {
+    void chainTiming(tx, confirmMs).then((settleTiming) => {
+      if (settleTiming) patchEscrow(jobId, { settleTiming });
+    });
+  }
+
+  /** A transaction's speed receipt: `confirmMs` as measured, plus what its receipt says. */
+  async function chainTiming(txHash: string, confirmMs: number | null): Promise<ChainTiming | null> {
+    try {
+      const facts = await (deps.txFacts ?? readTxFacts)(txHash);
+      return facts ? { confirmMs, ...facts } : null;
+    } catch (err) {
+      console.warn(`[broker] speed receipt for ${txHash}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
+      return null;
+    }
+  }
+
+  async function readTxFacts(txHash: string): Promise<Omit<ChainTiming, "confirmMs"> | null> {
+    const receipt = await publicClientFor(config.network).getTransactionReceipt({ hash: txHash as Hex });
+    return {
+      blockNumber: Number(receipt.blockNumber),
+      gasUsed: receipt.gasUsed.toString(),
+      gasPaidWei: (receipt.gasUsed * receipt.effectiveGasPrice).toString(),
+      gasPayer: normalizeAddress(receipt.from),
+    };
+  }
+
   /** Point a funded escrow at the provider now running the job. */
   async function repointEscrow(jobId: string, provider: string): Promise<boolean> {
     const held = jobs.get(jobId)?.payment?.escrow;
@@ -2525,17 +2585,21 @@ export function createApp(deps: AppDeps) {
   async function settleEscrow(jobId: string): Promise<void> {
     const job = jobs.get(jobId);
     const held = job?.payment?.escrow;
-    if (!escrow || !job || !held || held.state !== "funded" || !isTerminal(job.status) || settling.has(jobId)) return;
+    if (!escrow || !job || !held || held.state !== "funded" || !isTerminal(job.status) || settling.has(jobId) || cancelling.has(jobId)) return;
     settling.add(jobId);
     try {
       if (job.status === "completed" && job.resultHash) {
         const finisher = job.providerId ? registry.get(job.providerId)?.address : undefined;
         if (finisher && !(await repointEscrow(jobId, finisher))) return;
+        const started = Date.now();
         const tx = await escrow.release(held.jobId as Hex, job.resultHash);
         patchEscrow(jobId, { state: "released", releaseTx: tx, resultHash: job.resultHash, settledAt: Date.now(), lastError: undefined });
+        timeEscrowSettlement(jobId, tx, Date.now() - started);
       } else {
+        const started = Date.now();
         const tx = await escrow.refund(held.jobId as Hex);
         patchEscrow(jobId, { state: "refunded", refundTx: tx, settledAt: Date.now(), lastError: undefined });
+        timeEscrowSettlement(jobId, tx, Date.now() - started);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
@@ -2592,9 +2656,11 @@ export function createApp(deps: AppDeps) {
         jobs.addEvent(jobId, { ...event, at: event.at || Date.now() });
       },
       onResult: (providerId: string, jobId: string, result: string, durationMs: number) => {
+        if (cancelling.has(jobId)) return;
         finishJobOk(jobId, providerId, result, durationMs);
       },
       onError: (providerId: string, jobId: string, error: string, durationMs: number) => {
+        if (cancelling.has(jobId)) return;
         finishJobFailed(jobId, providerId, providerError(jobs.get(jobId), error), durationMs);
       },
       onAccepted: (providerId: string, jobId: string) => {
@@ -2777,6 +2843,25 @@ function lastSegment(path: string): string | undefined {
 function quoteIdFromTransport(transport: unknown): string | undefined {
   const path = (transport as HTTPTransportContext | undefined)?.request?.path;
   return path ? lastSegment(path) : undefined;
+}
+
+/** Medians of the measured settlement and release times, over the 50 most recent paid jobs. */
+function speedStats(jobs: readonly { createdAt: number; payment?: PaymentRecord | null }[]): {
+  settleMedianMs: number | null;
+  releaseMedianMs: number | null;
+  timingSamples: number;
+} {
+  const recent = [...jobs].sort((a, b) => b.createdAt - a.createdAt).slice(0, 50);
+  const settle = recent.map((j) => j.payment?.timing?.confirmMs).filter((ms): ms is number => typeof ms === "number");
+  const release = recent.map((j) => j.payment?.escrow?.settleTiming?.confirmMs).filter((ms): ms is number => typeof ms === "number");
+  return { settleMedianMs: median(settle), releaseMedianMs: median(release), timingSamples: settle.length };
+}
+
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid]! : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
 }
 
 /** Total quoted price of these jobs, in USD micros. */

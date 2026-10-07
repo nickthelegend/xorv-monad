@@ -19,6 +19,7 @@ import { awaitingOnChain, followUpJob } from "@/lib/job-follow-up";
 import { cn } from "@/lib/utils";
 import { RoutingTrace } from "@/components/routing-trace";
 import { PaymentTimeline } from "@/components/payment-timeline";
+import { SpeedReceipt } from "@/components/speed-receipt";
 import { jobOutcome } from "@/lib/payment-timeline";
 
 /**
@@ -260,6 +261,8 @@ export function JobView({
       </div>
 
       <div className="space-y-6">
+        <SpeedReceipt job={job} />
+
         <Panel className="p-4">
           <h2 className="text-[13px] font-medium text-fg">Provider</h2>
           <p className="mt-2 text-[14px] text-fg-2">{job.providerLabel ?? "unassigned"}</p>

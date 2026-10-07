@@ -24,6 +24,7 @@ import {
   explorerAddress,
   explorerAgent,
   explorerToken,
+  explorerBlock,
   explorerTx,
   shortHex,
 } from "../src/explorer.js";
@@ -226,6 +227,10 @@ describe("explorer links", () => {
     expect(explorerToken(MONAD_MAINNET, "0x754704bc059f8c67012fed69bc8a327a5aafb603")).toBe(
       "https://monadscan.com/token/0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
     );
+  });
+
+  it("links a block by number", () => {
+    expect(explorerBlock(MONAD_TESTNET, 68_998_123)).toBe("https://testnet.monadscan.com/block/68998123");
   });
 
   it("links an ERC-8004 agent as the Identity Registry NFT page", () => {
