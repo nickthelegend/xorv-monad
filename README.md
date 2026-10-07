@@ -240,6 +240,26 @@ job. Monad does both, and it is EVM, so the standards already exist.
 | **Monad's billing model is handled** | Monad charges for the gas **limit**, not the gas used. Every write carries `eth_estimateGas` × 1.15, never a padded constant (`withGasHeadroom`, `packages/protocol/src/evm.ts`). Receipts are batched and heartbeats sampled (1 in 20), because the fixed cost dominates small transactions. `XorvLedger` stores one packed slot per job and puts everything else in events. |
 | **Public RPC log limits are handled** | `eth_getLogs` is capped at 100 blocks on the public RPC. Reads go to the Envio indexer first and fall back to a bounded backward scan in 100-block windows. |
 
+## Monad-native
+
+What Xorv uses that a generic EVM chain doesn't have, and where each one runs: **live** (real Monad
+testnet, read-only until the testnet go), **built** (code and tests; runs wherever the deployment
+does), or **local fork** (the `pnpm demo` chain, labelled as such in the app). The coverage table,
+with the reasons for anything not applicable, is in
+[docs/ROADMAP-WIN.md](docs/ROADMAP-WIN.md#monad-native-coverage).
+
+| Monad feature | What Xorv does with it | Runs | Code |
+|---|---|---|---|
+| **Commit states** (`monadNewHeads`, `monadLogs`) | The Network page subscribes to Monad's WebSocket and shows every block going Proposed → Voted → Finalized → Verified, with the milliseconds this browser measured (about 290 / 570 / 1,500 ms on testnet). XorvLedger and ERC-8004 events stream with their commit state. Competing proposals are dropped when another finalizes | live | [`apps/app/lib/commit-states.ts`](apps/app/lib/commit-states.ts), [`components/monad-live.tsx`](apps/app/components/monad-live.tsx) |
+| **Receipts in the send** (`eth_sendRawTransactionSync`) | Escrow writes (fund, release, refund, cancel) get their receipt back in the send's own response; a node without the method gets a plain send | built (fork-tested) | [`packages/protocol/src/sync-send.ts`](packages/protocol/src/sync-send.ts) |
+| **Two honest timers** | Every payment and release records *executed* (submit → receipt) and *final* (the `finalized` head holds the block, with its hash checked), measured on the broker's clock and labelled with the chain. A fork's timings are never shown as Monad's | built | [`services/broker/src/app.ts`](services/broker/src/app.ts) (`chainTiming`), [`components/speed-receipt.tsx`](apps/app/components/speed-receipt.tsx) |
+| **Transaction status** (`txpool_statusByHash`, block tags) | `GET /api/tx/:hash`: pending, dropped or unknown from Monad's txpool; Proposed / Voted / Finalized from the latest, safe and finalized heads. Each transaction in a job's timeline has a live badge | live + built | [`packages/protocol/src/tx-status.ts`](packages/protocol/src/tx-status.ts) |
+| **Native staking** (`0x1000`) | *Who secures the payments*: epoch, the validator proposing now with its stake and commission, and the consensus set size, read from the staking precompile on the real network | live | [`packages/protocol/src/staking.ts`](packages/protocol/src/staking.ts), [`components/staking-panel.tsx`](apps/app/components/staking-panel.tsx) |
+| **P256 precompile** (`0x0100`) | `verifyPasskeyAssertion` checks a WebAuthn passkey signature on chain. Tested on anvil's precompile and confirmed on testnet's. Buyers' private-job keys already come from their passkeys (Mera) | built + live check | [`packages/protocol/src/p256.ts`](packages/protocol/src/p256.ts) |
+| **Gas billed on the limit; 10 MON reserve; MIP-8; parallel execution** | Explicit limits (estimate × 1.15; a reverting estimate never sends). The broker watches its gas payers against the reserve. The escrow keeps one struct per job (one storage page) and a transient-storage reentrancy guard (no global slot written per call) | built | [docs/MONAD-GAS.md](docs/MONAD-GAS.md) |
+| **Monad's x402 facilitator** | The default settlement path: `exact` USDC payments settle through `x402-facilitator.molandak.org`, which pays the gas. A live testnet job settled through it | live since 28 Sep | [`packages/protocol/src/x402.ts`](packages/protocol/src/x402.ts) |
+| **Canonical contracts and MonadVision** | Multicall3 (`0xcA11…CA11`) batches payment checks into one `eth_call`. Circle USDC and the ERC-8004 registries are used directly. XorvLedger is Sourcify-verified, and every hash links to MonadVision (plain text on a fork, where no explorer has it) | live + built | [`packages/protocol/src/evm.ts`](packages/protocol/src/evm.ts) (`readBatch`) |
+
 ## How it works
 
 ```

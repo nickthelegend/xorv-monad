@@ -101,6 +101,25 @@ ledger stores one slot per job; reads go through Envio because the public RPC ca
 100 blocks. More detail in [README → Why Monad](README.md#why-monad) and
 [ARCHITECTURE.md](ARCHITECTURE.md#xorvledger-the-public-record).
 
+### Monad-native integrations
+
+Each one says where it runs today: **live** on Monad testnet (read-only until the testnet go),
+**built** (code and tests), or on the **local fork** that `pnpm demo` runs (labelled so in the app).
+Details and file links are in [README → Monad-native](README.md#monad-native); coverage per item is in
+[docs/ROADMAP-WIN.md](docs/ROADMAP-WIN.md#monad-native-coverage).
+
+| Monad feature | In Xorv | Runs | Evidence |
+|---|---|---|---|
+| `monadNewHeads` / `monadLogs` commit states | Live block pipeline (Proposed → Voted → Finalized → Verified, measured ms) and live XorvLedger / ERC-8004 events | live | `docs/screens/wave/m1-commit-*.png` |
+| `eth_sendRawTransactionSync` | Escrow writes get their receipt in the send | built, fork-tested | `packages/protocol/test/escrow.anvil.test.ts` |
+| Executed vs final timers | Speed receipt: executed and final, labelled with the chain | built | `docs/screens/wave/m2-timers-*.png` |
+| `txpool_statusByHash` + block tags | `GET /api/tx/:hash`, live badges per transaction | live + built | testnet read of `0x5792…02d7` → finalized |
+| Staking precompile `0x1000` | Epoch, current proposer and stake, consensus set size | live | testnet read: epoch 1381, validator #172, 199 validators |
+| P256 precompile `0x0100` | Passkey (WebAuthn) signatures verified on chain | built + live check | `packages/protocol/test/p256.anvil.test.ts`; testnet `eth_call` true/false |
+| Gas on the limit, 10 MON reserve, MIP-8, parallel execution | Explicit limits, reserve monitoring, one-page job struct, transient guard | built | [docs/MONAD-GAS.md](docs/MONAD-GAS.md) |
+| Monad's x402 facilitator | Default settlement for `exact` payments | live since 28 Sep | settlement `0x579205fe…02d7` |
+| Multicall3, MonadVision, Sourcify | Batched payment reads; every hash on MonadVision; XorvLedger verified | live + built | XorvLedger on Sourcify |
+
 ## Deployed contracts and transactions
 
 XorvLedger is deployed and verified. Replace each remaining **TODO(deploy)** with the real value, as an explorer link,

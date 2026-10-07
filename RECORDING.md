@@ -45,7 +45,7 @@ xorv start           # leave it running; it must show "ERC-8004 agent #<id>"
 curl -s $BROKER/api/network | jq .nansen
 # mode "live", auth "x402", a payer address, lastError null. After the demo provider's node
 # connected (the signal is bought when a node opens its control socket, not at registration),
-# callsToday ≥ 3 and lastPaidTx is a monadscan.com (mainnet) link: open it once, it must show USDC
+# callsToday ≥ 3 and lastPaidTx is a monadvision.com (mainnet) link: open it once, it must show USDC
 # from the payer to Nansen.
 curl -s $BROKER/api/providers | jq '.providers[0].trust | {score, band, firstFunder, paidUsdc}'
 ```
@@ -86,7 +86,7 @@ agent beforehand. The first job of a session is always the slowest (cold RPC, co
 a cold agent CLI).
 
 **Screen.** 1920×1080. Terminal at about 16 pt. Browser tabs open in this order: landing, app,
-Monadscan (`https://testnet.monadscan.com`), the Privy dashboard's Policies page, and the Envio
+MonadVision (`https://testnet.monadvision.com`), the Privy dashboard's Policies page, and the Envio
 GraphQL playground or a terminal with the `curl` below. Claude Code (with the MCP server) in its own
 terminal. Notifications silenced.
 
@@ -94,12 +94,15 @@ terminal. Notifications silenced.
 
 ## The demo, shot by shot (about 3:00)
 
-### 0:00–0:08 · The hook
+### 0:00–0:08 · The hook: Monad, live
 
-[Landing page hero, then cut to the app.]
+[App → **Network**, top panel: the live block pipeline. Chips appear every 300 ms and turn from
+Proposed to Voted to Finalized; the medians read about 290 / 570 / 1,500 ms. Hold two seconds, then
+cut to the board.]
 
-> "Xorv is a marketplace for AI capacity. You pay for one AI job at a time, in USDC, on Monad.
-> Every job gets an on-chain receipt, and every provider builds reputation in ERC-8004."
+> "This is Monad testnet, live: a block every 300 milliseconds, final in about 600. Xorv is a
+> marketplace for AI capacity that settles on it: pay for one AI job at a time, in USDC, with the
+> money held in escrow until the work is delivered."
 
 ### 0:08–0:16 · Log in with Privy
 
@@ -125,20 +128,27 @@ any provider saw the prompt; let it sit on screen without a line of its own.
 
 ### 0:30–0:42 · Pay from the embedded wallet (Privy, 1 of 3)
 
-[Click **Pay $0.0100 USDC from …**. Privy's signature modal opens: point at
-`TransferWithAuthorization`, the provider as `to`, and the amount. Approve.]
+[The quote card reads *XorvEscrow 0x… holds it → pays → 0x… on delivery* and names the refund time.
+Click **Pay $0.0100 USDC from …**. Privy's signature modal opens: point at the authorization, the
+escrow as `to`, and the amount. Approve.]
 
-> "Paying is one signature in my Privy wallet: an EIP-3009 USDC authorization, straight to the
-> provider's address. The facilitator submits it and pays the gas. Xorv's broker never holds the
-> money."
+> "Paying is one signature in my Privy wallet: a USDC authorization into XorvEscrow. The money goes to
+> the provider only when the job delivers, and comes back to me if it doesn't. The facilitator pays the
+> gas, and the broker never holds the money."
 
-### 0:42–0:56 · The job runs; the payment is on Monad
+(Before the escrow is deployed to testnet, the card shows a direct payment to the provider instead;
+see [docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md).)
 
-[The job page streams the provider's reasoning, then the result. Click the settlement link and show
-the Monadscan transaction: a USDC transfer from the buyer to the provider, sent by the facilitator.]
+### 0:42–0:56 · The job runs; the money moves on Monad
 
-> "The payment settled on Monad before the job was dispatched, so the provider knows it has been paid
-> before it starts. Here it is: USDC from me to the provider, and I paid no gas."
+[The job page streams the result. Point at **Where the money is**: *Paid into XorvEscrow* → *Running*
+→ *Delivered* → *Released to …* turning green, each with its transaction and a badge going Proposed →
+Voted → Finalized. Then the **Monad speed receipt**: two numbers, *payment executed* and *payment
+final*, the block, the gas paid by the facilitator, and *buyer paid in gas: 0 MON*.]
+
+> "The payment landed before the job was dispatched. The escrow released it to the provider the moment
+> the result came back, with the result's hash on chain. And these are measured, not quoted: executed
+> in a few hundred milliseconds, final a couple of blocks later. I paid no gas."
 
 ### 0:56–1:06 · Kimi verifies and writes ERC-8004 reputation
 
@@ -176,7 +186,8 @@ to the provider.]
 
 ### 1:40–1:55 · The network, indexed by Envio
 
-[App → **Network**. Point at "indexed by Envio", the leaderboard (earnings, success rate, stars,
+[App → **Network**. One glance at *Who secures the payments*: the epoch and the validator proposing
+right now, read live from Monad's staking precompile. Then point at "indexed by Envio", the leaderboard (earnings, success rate, stars,
 agent), and the receipts and ratings feeds with the job you just ran at the top. Then run one query:]
 
 ```bash
@@ -191,7 +202,7 @@ curl -s "$XORV_INDEXER_URL" -H 'content-type: application/json' -d '{"query":"{ 
 
 [App → **Providers**. The provider's row shows the Nansen badge (`● Trust 84`), the wallet's age, its
 first funder, and "Xorv paid Nansen $0.03 over x402 on Monad". Click **details** → the provider page's
-*Wallet trust* panel. Click one payment link: monadscan.com (mainnet) shows the USDC transfer from the
+*Wallet trust* panel. Click one payment link: monadvision.com (mainnet) shows the USDC transfer from the
 broker's payer to Nansen. Then the staged tab: a job paid by the wallet the provider funded. Click five
 stars and sign → **Rating refused** with Nansen's reason.]
 
@@ -229,8 +240,8 @@ read** → the same answer decrypts.]
 
 [Back to the network page, or the landing page's ledger.]
 
-> "Pay per job on Monad, a receipt for every job, and reputation that only independent, paying
-> buyers can write. Xorv."
+> "Pay per job on Monad, held in escrow until the work is done, a receipt for every job, and reputation
+> that only independent, paying buyers can write. Xorv."
 
 ### Optional cutaways (only if the take runs short)
 
@@ -246,7 +257,7 @@ These are product features, not bounty entries. Keep them out of the main three 
 - **The MetaMask Agent Wallet plugin.** `mm xorv providers --format text`, then
   `mm xorv run "Write a haiku about Monad" --max 0.02`. MetaMask signs the same USDC authorization
   under its own policy (on the phone if Guard Mode is on), and the command prints
-  `Paid: https://testnet.monadscan.com/tx/…`, the result and the receipt link. It needs `mm` signed
+  `Paid: https://testnet.monadvision.com/tx/…`, the result and the receipt link. It needs `mm` signed
   in with test USDC, the plugin installed from the directory
   ([packages/mm-plugin/README.md](packages/mm-plugin/README.md#from-this-repository-local-development)),
   and a wallet that is not the provider's payout address.

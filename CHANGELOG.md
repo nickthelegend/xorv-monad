@@ -169,6 +169,40 @@ exist.
   and the adapter list are rewritten for Monad, and a "Built with" section says where each sponsor
   sits in the loop.
 
+### Development wave: what a judge sees (7–8 Oct)
+
+From a judge's-eye review ([docs/ROADMAP-WIN.md](docs/ROADMAP-WIN.md)); before and after screens are
+in `docs/screens/wave/`.
+
+- **`pnpm demo`**: the whole product on a local Monad fork in one command, with no keys. Two
+  providers registered as ERC-8004 agents, seeded paid, refunded and rated jobs, and a funded demo
+  account in the app.
+- **Escrow timeline**: each job's money as a live timeline (paid into XorvEscrow → running →
+  delivered → released or refunded → receipted), each step with its time and transaction. The quote
+  card says the money waits in escrow. A refunded job reads Refunded, not Failed, and refunds no
+  longer count as "paid to providers".
+- **Speed receipt**: the broker times each payment and release (executed and final), and reads its
+  block, gas and gas payer; the network page shows the medians.
+- **Provider earnings**: earned, held in escrow and refunded; earnings per day; each payout with its
+  transaction.
+- **Browse jobs**: `/jobs` with outcome and provider filters and search.
+- **Fixed**: a provider finishing while a buyer's cancel was being refunded on chain turned the
+  refunded job into a "completed" one.
+
+### Monad-native (7–8 Oct)
+
+- Live commit-state pipeline from `monadNewHeads`, and live XorvLedger and ERC-8004 events from
+  `monadLogs`.
+- Escrow writes with `eth_sendRawTransactionSync`; executed and final timers, labelled with the chain
+  they were measured on.
+- `txpool_statusByHash` and block-tag consensus states (`GET /api/tx/:hash`), with live badges.
+- Staking precompile (`0x1000`) read live: epoch, proposer, stake, consensus set.
+- P256 precompile (`0x0100`): WebAuthn passkey signatures verified on chain.
+- Monad gas: the broker monitors its gas payers against the 10 MON reserve, and the escrow's guard
+  moves to transient storage. See [docs/MONAD-GAS.md](docs/MONAD-GAS.md).
+- Multicall3 for batched payment reads; MonadVision for every explorer link (plain text on a fork);
+  demo blocks at Monad's 300 ms.
+
 ### Escrow, Chainlink CRE and Cleanverse (new `contracts/`, `cre/`)
 
 Ported from the `metropolis-escrow` line (built 4–7 Oct) and adapted to XorvLedger and ERC-8004.
