@@ -118,8 +118,8 @@ Considered and not picked for this wave:
 | 1 | `pnpm demo` | 3ea6e93 | `f1-demo-*.png` |
 | 2 | Escrow timeline | 94abd85 | `f2-escrow-*.png` |
 | 3 | Monad speed receipt | db47247 | `f3-speed-*.png` |
-| 4 | Provider earnings dashboard | this commit | `f4-earnings-*.png` |
-| 5 | Job browse page | | |
+| 4 | Provider earnings dashboard | 7679a53 | `f4-earnings-*.png` |
+| 5 | Job browse page | this commit | `f5-browse-*.png` |
 
 ## The next 5 (after this wave)
 

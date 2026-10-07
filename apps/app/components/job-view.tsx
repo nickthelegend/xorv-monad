@@ -364,7 +364,7 @@ export function JobView({
         <RateJob job={job} onRated={(rating) => setJob((prev) => (prev ? { ...prev, rating } : prev))} />
 
         <Link
-          href="/"
+          href="/jobs"
           className="block text-[12.5px] text-fg-4 transition-colors hover:text-fg-2"
         >
           ← all jobs
