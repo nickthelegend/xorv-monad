@@ -162,6 +162,35 @@ export interface PaymentRecord {
   settledAt: number;
   /** Direct explorer link, precomputed so every surface shows the same one. */
   explorerUrl: string;
+  /** "escrow": the money waits in XorvEscrow until the job delivers. Absent on direct payments. */
+  scheme?: "exact" | "escrow";
+  escrow?: EscrowRecord;
+}
+
+/**
+ * Where an escrowed payment stands. `txHash` on the payment is the funding
+ * (buyer → XorvEscrow); `payTo` stays the provider the escrow releases to.
+ */
+export interface EscrowRecord {
+  /** XorvEscrow's address. */
+  address: string;
+  /** The escrow's job id (bytes32), derived from the quote id. */
+  jobId: string;
+  /** Unix seconds; after this anyone may refund the buyer. */
+  deadline: number;
+  state: "funded" | "released" | "refunded";
+  /** The provider the escrow currently pays on release (moves on reassignment). */
+  provider: string;
+  releaseTx?: string;
+  refundTx?: string;
+  reassignTxs?: string[];
+  /** SHA-256 of the result, recorded on chain with the release. */
+  resultHash?: string;
+  /** Who settled it, when it wasn't this broker (a keeper's refund, a buyer's own release). */
+  settledBy?: string;
+  /** The last settlement attempt's error, while it is still being retried. */
+  lastError?: string;
+  explorerUrl: string;
 }
 
 /** How the AI router (Qwen) chose where a job goes. */
@@ -466,17 +495,18 @@ export interface PublicJob {
 
 /** One `accepts` row as the quote advertises it — exactly what the 402 will ask for. */
 export interface QuoteAccept {
-  scheme: "exact";
+  /** "escrow": paid into XorvEscrow, released to `extra.provider` on delivery. */
+  scheme: "exact" | "escrow";
   network: string;
   /** ERC-20 address (USDC). */
   asset: string;
   /** Smallest units, integer string — frozen at quote time. */
   amount: string;
-  /** The provider's address; the broker is never the payee. */
+  /** The provider's address (exact), or XorvEscrow's (escrow); the broker is never the payee. */
   payTo: string;
   maxTimeoutSeconds: number;
-  /** The token's EIP-712 domain, which the buyer signs against. */
-  extra: { name: string; version: string };
+  /** The token's EIP-712 domain, which the buyer signs against; escrow adds its terms. */
+  extra: { name: string; version: string; escrow?: string; jobId?: string; deadline?: number; provider?: string };
 }
 
 /** `POST /api/quotes` → a frozen, single-use price commitment. */
@@ -502,6 +532,12 @@ export interface QuoteResponse {
     stats: ProviderStats;
   };
   accepts: QuoteAccept[];
+  /**
+   * When the broker escrows payments: the contract, the job id the money is
+   * bound to, and the refund deadline. Buyers pass `escrow.address` to the
+   * client's quote check, which then signs the escrow option and nothing else.
+   */
+  escrow?: { address: string; jobId: string; deadline: number; explorerUrl: string } | null;
   routing?: JobRouting | null;
   screening?: JobScreening | null;
 }

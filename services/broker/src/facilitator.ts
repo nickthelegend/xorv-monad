@@ -35,7 +35,7 @@ export interface FacilitatorResolution {
 }
 
 export function resolveFacilitator(
-  config: Pick<BrokerConfig, "network" | "facilitatorMode" | "facilitatorAccount">,
+  config: Pick<BrokerConfig, "network" | "facilitatorMode" | "facilitatorAccount" | "escrowAddress">,
   opts: { injected?: FacilitatorClient; log?: (line: string) => void } = {},
 ): FacilitatorResolution {
   if (opts.injected) {
@@ -75,6 +75,8 @@ export function resolveFacilitator(
     network: config.network,
     account: config.facilitatorAccount,
     log: opts.log,
+    // Escrow needs a facilitator that knows the scheme and holds the attester key: self-hosted only.
+    escrow: mode === "self" ? (config.escrowAddress ?? null) : null,
   });
   return {
     facilitator: choice.facilitator,

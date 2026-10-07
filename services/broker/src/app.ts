@@ -47,6 +47,10 @@ import {
   JOB_TIMEOUT_MS,
   QUOTE_TTL_SECONDS,
   XORV_SCHEME,
+  ESCROW_SCHEME,
+  EscrowServerScheme,
+  escrowJobId,
+  escrowPaymentOption,
   buildAgentRegistration,
   explorerAddress,
   explorerToken,
@@ -102,6 +106,8 @@ import {
 import { bodyLimit, rateLimit, requestLog } from "./guards.js";
 import { Metrics } from "./metrics.js";
 import { resolveFacilitator } from "./facilitator.js";
+import { chainEscrow, type EscrowOps } from "./escrow.js";
+import { IdentityBook, chainIdentity, type IdentitySource } from "./identity.js";
 import { createLedgerReader, type LedgerReader } from "./ledger-reader.js";
 import { hookDeadline, withHookTimeout, type AiHooks, type JobVerifier } from "./ai-hooks.js";
 import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/feedback.js";
@@ -198,6 +204,10 @@ export interface AppDeps {
    * a fixture-backed one.
    */
   trust?: NansenTrust;
+  /** XorvEscrow operations. Defaults to the chain when XORV_ESCROW_ADDRESS is set; `null` pays providers directly. */
+  escrow?: EscrowOps | null;
+  /** The escrow's Cleanverse identity gate. Defaults to reading it off the escrow; `null` turns it off. */
+  identity?: IdentitySource | null;
 }
 
 export function createApp(deps: AppDeps) {
@@ -335,9 +345,44 @@ export function createApp(deps: AppDeps) {
   if (settlement.notice) console.warn(`[broker] ${settlement.notice}`);
   if (settlement.unavailableReason) console.warn(`[broker] ${settlement.unavailableReason}`);
 
+  /**
+   * Where paid jobs' money waits, or null to pay providers directly.
+   *
+   * With an escrow the 402 offers the `escrow` scheme first and `exact` after
+   * it: a buyer who reads the quote's escrow pays into XorvEscrow, where the
+   * money is released to the provider on delivery and refunded if the job
+   * fails; a stock x402 client that only speaks `exact` can still pay. It needs
+   * the self-hosted facilitator, whose key is the escrow's attester.
+   */
+  const escrow: EscrowOps | null =
+    deps.escrow !== undefined
+      ? deps.escrow
+      : config.escrowAddress && settlement.mode === "self" && settlement.facilitator && config.facilitatorAccount
+        ? chainEscrow(config.network, config.escrowAddress, config.facilitatorAccount)
+        : null;
+  if (config.escrowAddress && !escrow && deps.escrow === undefined) {
+    console.warn(
+      "[broker] XORV_ESCROW_ADDRESS is set, but escrow needs XORV_FACILITATOR=self with a funded key " +
+        "(the escrow's attester); providers are paid directly until it has one",
+    );
+  }
+  const escrowDeadlineSeconds = config.escrowDeadlineSeconds ?? 1_800;
+
+  /** Cleanverse CVI standing, when the escrow has an identity gate. */
+  const identitySource: IdentitySource | null =
+    deps.identity !== undefined ? deps.identity : escrow ? chainIdentity(config.network, escrow.address) : null;
+  const identity = identitySource
+    ? new IdentityBook(identitySource, { log: (m) => console.warn(`[broker] ${m}`) })
+    : null;
+  if (identity) void identity.load().then(() => identity.refresh(registry.live().map((p) => p.address)));
+  /** Providers the gate is known to refuse: never quoted, never handed a job. */
+  const unverifiedProviders = (): string[] =>
+    identity ? registry.live().filter((p) => identity.blocked(p.address)).map((p) => p.id) : [];
+
   const x402Server = settlement.facilitator
     ? new x402ResourceServer(settlement.facilitator).register(config.network as Network, new ExactEvmScheme())
     : null;
+  if (x402Server && escrow) x402Server.register(config.network as Network, new EscrowServerScheme());
 
   if (x402Server) {
     // A rejected payment is the most confusing failure in this system — the
@@ -366,7 +411,12 @@ export function createApp(deps: AppDeps) {
     // is the backstop for a payload that guard could not read.
     x402Server.onBeforeSettle(async (ctx) => {
       const from = authorizationFrom(ctx.paymentPayload as PaymentPayload);
-      if (from && sameAddress(from, ctx.requirements.payTo)) {
+      // Escrow pays the contract; the payee that matters is the provider it releases to.
+      const payee =
+        ctx.requirements.scheme === ESCROW_SCHEME
+          ? String((ctx.requirements.extra as { provider?: unknown } | undefined)?.provider ?? "")
+          : ctx.requirements.payTo;
+      if (from && sameAddress(from, payee)) {
         return { abort: true, reason: "self_payment", message: "the payer is the provider being paid" };
       }
     });
@@ -440,17 +490,38 @@ export function createApp(deps: AppDeps) {
     // (`authorization.from`), which covers a facilitator that leaves it out.
     const from = (payload.payload as { authorization?: { from?: string } } | undefined)?.authorization?.from;
     const payer = [result.payer, from].find((a): a is string => typeof a === "string" && isEvmAddress(a));
-    return {
-      asset: "usdc",
+    const base = {
+      asset: "usdc" as const,
       assetAddress: safeAddress(requirements.asset),
       amount: result.amount ?? requirements.amount,
       network: requirements.network,
       txHash: result.transaction,
       payer: payer ? normalizeAddress(payer) : "unknown",
-      payTo: safeAddress(requirements.payTo),
       settledAt: Date.now(),
       explorerUrl: explorerTx(config.network, result.transaction),
     };
+    if (requirements.scheme === ESCROW_SCHEME) {
+      // The money is in XorvEscrow. `payTo` stays the provider it will be
+      // released to, so ratings, receipts and the self-payment guard keep
+      // meaning "who gets paid"; `txHash` is the funding.
+      const extra = (requirements.extra ?? {}) as { escrow?: string; jobId?: string; deadline?: number; provider?: string };
+      const provider = safeAddress(extra.provider ?? "");
+      const address = safeAddress(extra.escrow ?? requirements.payTo);
+      return {
+        ...base,
+        payTo: provider,
+        scheme: "escrow",
+        escrow: {
+          address,
+          jobId: String(extra.jobId ?? ""),
+          deadline: Number(extra.deadline ?? 0),
+          state: "funded",
+          provider,
+          explorerUrl: explorerAddress(config.network, address),
+        },
+      };
+    }
+    return { ...base, payTo: safeAddress(requirements.payTo), scheme: "exact" };
   }
 
   // -------------------------------------------------------------------------
@@ -606,6 +677,15 @@ export function createApp(deps: AppDeps) {
         validation: net.erc8004.validation,
       } as NetworkInfo["erc8004"],
       indexer: config.indexerUrl ? { url: config.indexerUrl } : null,
+      // XorvEscrow, when jobs are paid into escrow; its Cleanverse gate, when it has one.
+      escrow: escrow
+        ? {
+            address: escrow.address,
+            url: explorerAddress(config.network, escrow.address),
+            deadlineSeconds: escrowDeadlineSeconds,
+            identityGate: identity?.gate() ?? null,
+          }
+        : null,
       published: chain.counts(),
       pendingReceipts: chain.pendingReceipts(),
       lastPublishError: chain.lastPublishError(),
@@ -640,7 +720,11 @@ export function createApp(deps: AppDeps) {
     return c.json({
       providers: registry
         .list()
-        .map((p) => publicProvider(config.network, p, hub?.isConnected(p.id) ?? false, trust.publicSignal(p.address))),
+        .map((p) => ({
+          ...publicProvider(config.network, p, hub?.isConnected(p.id) ?? false, trust.publicSignal(p.address)),
+          // Cleanverse CVI standing, when the escrow has an identity gate; null otherwise.
+          identity: identity?.get(p.address) ?? null,
+        })),
     });
   });
 
@@ -650,7 +734,10 @@ export function createApp(deps: AppDeps) {
     if (!provider) return c.json({ error: "unknown provider" }, 404);
     const connected = deps.getHub()?.isConnected(provider.id) ?? false;
     return c.json({
-      provider: publicProvider(config.network, provider, connected, trust.publicSignal(provider.address)),
+      provider: {
+        ...publicProvider(config.network, provider, connected, trust.publicSignal(provider.address)),
+        identity: identity?.get(provider.address) ?? null,
+      },
     });
   });
 
@@ -724,6 +811,7 @@ export function createApp(deps: AppDeps) {
     let outcome: RegisterOutcome;
     try {
       outcome = registry.registerNode({ ...parsed.registration, agentId }, { token: presented });
+      if (identity) void identity.refresh([parsed.registration.address]);
     } catch (err) {
       if (err instanceof RegistrationRefused) {
         console.warn(`[broker] registration "${parsed.registration.label}" refused: node id has a live session`);
@@ -890,7 +978,12 @@ export function createApp(deps: AppDeps) {
     }
 
     // 2. Everything that could take the job right now, in matcher order.
-    const candidates = registry.candidates({ adapter: request.adapter ?? null, maxPriceUsdMicros: maxPrice });
+    const candidates = registry.candidates({
+      adapter: request.adapter ?? null,
+      maxPriceUsdMicros: maxPrice,
+      // The escrow's identity gate would refuse to fund a job for these.
+      exclude: unverifiedProviders(),
+    });
     if (candidates.length === 0) {
       const live = registry.live().length;
       return c.json(
@@ -974,6 +1067,14 @@ export function createApp(deps: AppDeps) {
       routing,
       screening,
     });
+    if (escrow) {
+      // Frozen with the price: the buyer's signature binds to this job id and deadline.
+      quote.escrow = {
+        address: escrow.address,
+        jobId: escrowJobId(quote.id),
+        deadline: Math.floor(Date.now() / 1000) + escrowDeadlineSeconds,
+      };
+    }
 
     const response: QuoteResponse = {
       quoteId: quote.id,
@@ -997,6 +1098,26 @@ export function createApp(deps: AppDeps) {
       // Exactly what the 402 will ask for, so a buyer can check it before
       // signing (protocol `quoteMatchPolicy`).
       accepts: [
+        ...(quote.escrow
+          ? [
+              {
+                scheme: ESCROW_SCHEME as "escrow",
+                network: config.network,
+                asset: net.usdc.address,
+                amount: quote.usdcAmount,
+                payTo: quote.escrow.address,
+                maxTimeoutSeconds: QUOTE_TTL_SECONDS,
+                extra: {
+                  name: net.usdc.name,
+                  version: net.usdc.version,
+                  escrow: quote.escrow.address,
+                  jobId: quote.escrow.jobId,
+                  deadline: quote.escrow.deadline,
+                  provider: quote.providerAddress,
+                },
+              },
+            ]
+          : []),
         {
           scheme: XORV_SCHEME,
           network: config.network,
@@ -1007,6 +1128,9 @@ export function createApp(deps: AppDeps) {
           extra: { name: net.usdc.name, version: net.usdc.version },
         },
       ],
+      escrow: quote.escrow
+        ? { ...quote.escrow, explorerUrl: explorerAddress(config.network, quote.escrow.address) }
+        : null,
       routing,
       screening,
     };
@@ -1028,20 +1152,43 @@ export function createApp(deps: AppDeps) {
       description: "Run one AI job on a live Xorv provider",
       serviceName: "Xorv",
       mimeType: "application/json",
-      accepts: {
-        // Both resolvers read the amounts frozen on the quote — see
-        // Quote.usdcAmount for why recomputing here silently breaks
-        // correctly-signed payments. Straight to the provider: the broker is
-        // never the payee.
-        ...usdcPaymentOption({
-          network: config.network,
-          payTo: (ctx) => quoteFromContext(ctx)?.providerAddress ?? "",
-          amount: (ctx) => quoteFromContext(ctx)?.usdcAmount ?? "0",
-          maxTimeoutSeconds: QUOTE_TTL_SECONDS,
-        }),
-        // Settle before the handler runs — see the note at the top of the file.
-        extra: { paymentFlow: "upfront" },
-      },
+      accepts: [
+        // Escrow first when there is one: the money waits in XorvEscrow until
+        // the job delivers. Its terms are the ones frozen on the quote.
+        ...(escrow
+          ? [
+              {
+                ...escrowPaymentOption({
+                  network: config.network,
+                  escrow: escrow.address,
+                  amount: (ctx) => quoteFromContext(ctx)?.usdcAmount ?? "0",
+                  terms: (ctx) => {
+                    const quote = quoteFromContext(ctx);
+                    return quote?.escrow
+                      ? { jobId: quote.escrow.jobId, deadline: quote.escrow.deadline, provider: quote.providerAddress }
+                      : null;
+                  },
+                  maxTimeoutSeconds: QUOTE_TTL_SECONDS,
+                }),
+                extra: { paymentFlow: "upfront" },
+              },
+            ]
+          : []),
+        {
+          // Both resolvers read the amounts frozen on the quote — see
+          // Quote.usdcAmount for why recomputing here silently breaks
+          // correctly-signed payments. Straight to the provider: the broker is
+          // never the payee.
+          ...usdcPaymentOption({
+            network: config.network,
+            payTo: (ctx) => quoteFromContext(ctx)?.providerAddress ?? "",
+            amount: (ctx) => quoteFromContext(ctx)?.usdcAmount ?? "0",
+            maxTimeoutSeconds: QUOTE_TTL_SECONDS,
+          }),
+          // Settle before the handler runs — see the note at the top of the file.
+          extra: { paymentFlow: "upfront" },
+        },
+      ],
       // A failed settlement answers 402. When the transfer was broadcast and
       // may still land, say so plainly: "nothing was charged" would be wrong,
       // and paying again would pay twice.
@@ -1222,7 +1369,8 @@ export function createApp(deps: AppDeps) {
       return await (deps.settlementStatus ?? readSettlementStatus)(record.txHash, {
         asset: record.assetAddress,
         from: record.payer,
-        to: record.payTo,
+        // An escrowed payment's transfer goes into the contract, not to the provider.
+        to: record.escrow?.address ?? record.payTo,
         amount: record.amount,
       });
     } catch (err) {
@@ -1334,6 +1482,24 @@ export function createApp(deps: AppDeps) {
     }
 
     const reason = "cancelled by the buyer";
+    // Escrowed: the money never left the contract, so stopping refunds it, with
+    // no mark on the provider (cancel, not refund). Done before the job is
+    // failed so the settlement subscription doesn't treat it as a provider failure.
+    let refunded = false;
+    let refundTx: string | null = null;
+    const held = job.payment?.escrow;
+    if (escrow && job.payment && held?.state === "funded") {
+      try {
+        refundTx = await escrow.cancel(held.jobId as Hex);
+        refunded = true;
+        jobs.patch(job.id, {
+          payment: { ...job.payment, escrow: { ...held, state: "refunded", refundTx, lastError: undefined } },
+        });
+      } catch (err) {
+        // Not refunded now: failing the job below hands it to the settlement path, which refunds.
+        console.warn(`[broker] escrow cancel for ${job.id}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     if (job.providerId) {
       deps.getHub()?.send(job.providerId, { type: "job.cancel", jobId: job.id, reason });
       // The buyer changed their mind; that says nothing about the provider.
@@ -1343,7 +1509,13 @@ export function createApp(deps: AppDeps) {
     jobs.fail(job.id, reason);
     metrics.inc("xorv_jobs_cancelled_total");
 
-    return c.json({ ok: true, jobId: job.id, status: "failed", refunded: false });
+    return c.json({
+      ok: true,
+      jobId: job.id,
+      status: "failed",
+      refunded: refunded || Boolean(held),
+      ...(refundTx ? { refundTx, refundUrl: explorerTx(config.network, refundTx) } : {}),
+    });
   });
 
   /** Server-sent events: the poster watches their job run, token by token. */
@@ -1981,7 +2153,7 @@ export function createApp(deps: AppDeps) {
     const match = registry.match({
       adapter: job.request.adapter ?? job.routing?.adapter ?? null,
       maxPriceUsdMicros: job.request.maxPriceUsdMicros,
-      exclude: tried,
+      exclude: [...tried, ...unverifiedProviders()],
     });
     if (!match) return false;
 
@@ -2012,6 +2184,10 @@ export function createApp(deps: AppDeps) {
       capabilityAdapter: match.capability.adapter,
     });
     registry.jobStarted(match.provider.id);
+    // Escrowed: point the money at the new provider. The buyer's funds never
+    // move; only the eventual payee changes. If this write fails, the release
+    // path re-points it before paying (see settleEscrow).
+    if (escrow && job.payment?.escrow?.state === "funded") void repointEscrow(job.id, match.provider.address);
     return true;
   }
 
@@ -2043,7 +2219,8 @@ export function createApp(deps: AppDeps) {
     // Earnings follow the money: the USDC went to the quoted provider at
     // settlement, even if a reassignment means someone else finished the job.
     const micros = done.payment ? usdcUnitsToUsdMicros(done.payment.amount) : 0;
-    const payee = done.quotedProviderId ?? providerId;
+    // Escrowed money follows the job to whoever finished it; direct money stayed with the quoted provider.
+    const payee = done.payment?.escrow ? providerId : (done.quotedProviderId ?? providerId);
     registry.jobFinished(providerId, { ok: true, durationMs, usdcMicros: payee === providerId ? micros : 0 });
     if (payee !== providerId && !done.quotedUndelivered) registry.creditEarnings(payee, micros);
     metrics.inc("xorv_jobs_completed_total");
@@ -2242,6 +2419,8 @@ export function createApp(deps: AppDeps) {
    */
   function enqueueReceipt(job: StoredJob): Promise<PublishResult | null> | null {
     if (chain.mode() !== "write" || receiptLanded(job) || !job.payment || !isTerminal(job.status)) return null;
+    // An escrowed job is attested once its money has gone somewhere.
+    if (job.payment.escrow?.state === "funded") return null;
     const state = receipts.get(job.id) ?? { attempts: 0, pending: null };
     if (state.pending) return state.pending;
     if (state.attempts >= MAX_RECEIPT_ATTEMPTS) return null;
@@ -2257,7 +2436,8 @@ export function createApp(deps: AppDeps) {
         buyer: isEvmAddress(job.payment.payer) ? job.payment.payer : null,
         payTo: job.payment.payTo,
         amount: job.payment.amount,
-        paymentTx: job.payment.txHash,
+        // Escrowed and delivered: the release is the transfer that paid the provider.
+        paymentTx: job.payment.escrow?.releaseTx ?? job.payment.txHash,
         prompt: job.request.prompt,
         result: job.result ?? "",
         durationMs: Math.max(0, (job.completedAt ?? Date.now()) - started),
@@ -2297,8 +2477,82 @@ export function createApp(deps: AppDeps) {
   }
 
   jobs.subscribe((job) => {
+    // Escrow first: the receipt waits for the money to move.
+    if (isTerminal(job.status) && job.payment?.escrow?.state === "funded") void settleEscrow(job.id);
     if (isTerminal(job.status) && job.payment && !receiptLanded(job)) enqueueReceipt(job);
   });
+
+  // -------------------------------------------------------------------------
+  // Escrow settlement
+  // -------------------------------------------------------------------------
+
+  /** Jobs whose escrow write is in flight, so a burst of job updates sends one. */
+  const settling = new Set<string>();
+
+  function patchEscrow(jobId: string, update: Partial<NonNullable<NonNullable<StoredJob["payment"]>["escrow"]>>): void {
+    const job = jobs.get(jobId);
+    if (!job?.payment?.escrow) return;
+    jobs.patch(jobId, { payment: { ...job.payment, escrow: { ...job.payment.escrow, ...update } } });
+  }
+
+  /** Point a funded escrow at the provider now running the job. */
+  async function repointEscrow(jobId: string, provider: string): Promise<boolean> {
+    const held = jobs.get(jobId)?.payment?.escrow;
+    if (!escrow || !held || held.state !== "funded" || sameAddress(held.provider, provider)) return true;
+    try {
+      const tx = await escrow.reassign(held.jobId as Hex, provider);
+      patchEscrow(jobId, { provider: normalizeAddress(provider), reassignTxs: [...(held.reassignTxs ?? []), tx], lastError: undefined });
+      return true;
+    } catch (err) {
+      patchEscrow(jobId, { lastError: `reassign: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}` });
+      return false;
+    }
+  }
+
+  /**
+   * Move a finished job's escrowed money: release to the provider that
+   * delivered (with the result's hash), or refund the buyer when it failed.
+   * Runs from the job-store subscription, so every way a job ends (result,
+   * failure, timeout) lands here; a cancel refunds in its own route. A write
+   * that fails is retried by the sweep. One that reverts because someone else
+   * already settled the job (the buyer's own release, a Chainlink CRE keeper's
+   * refund after the deadline) is recorded as theirs.
+   */
+  async function settleEscrow(jobId: string): Promise<void> {
+    const job = jobs.get(jobId);
+    const held = job?.payment?.escrow;
+    if (!escrow || !job || !held || held.state !== "funded" || !isTerminal(job.status) || settling.has(jobId)) return;
+    settling.add(jobId);
+    try {
+      if (job.status === "completed" && job.resultHash) {
+        const finisher = job.providerId ? registry.get(job.providerId)?.address : undefined;
+        if (finisher && !(await repointEscrow(jobId, finisher))) return;
+        const tx = await escrow.release(held.jobId as Hex, job.resultHash);
+        patchEscrow(jobId, { state: "released", releaseTx: tx, resultHash: job.resultHash, lastError: undefined });
+      } else {
+        const tx = await escrow.refund(held.jobId as Hex);
+        patchEscrow(jobId, { state: "refunded", refundTx: tx, lastError: undefined });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
+      // Already settled by someone else? Then record what happened instead of retrying forever.
+      const onChain = await escrow.read(held.jobId as Hex).catch(() => null);
+      if (onChain && onChain.status !== "funded" && onChain.status !== "none") {
+        const settled = await escrow.settlement(held.jobId as Hex, job.payment?.txHash).catch(() => null);
+        patchEscrow(jobId, {
+          state: onChain.status,
+          ...(onChain.status === "released" ? { releaseTx: settled?.tx } : { refundTx: settled?.tx }),
+          settledBy: settled?.by,
+          lastError: undefined,
+        });
+      } else {
+        patchEscrow(jobId, { lastError: message });
+        console.warn(`[broker] escrow settlement for ${jobId} failed (will retry): ${message}`);
+      }
+    } finally {
+      settling.delete(jobId);
+    }
+  }
 
   // -------------------------------------------------------------------------
   // helpers
@@ -2382,6 +2636,14 @@ export function createApp(deps: AppDeps) {
           if (isTerminal(job.status) && job.payment && !receiptLanded(job)) enqueueReceipt(job);
         }
       }
+      // Escrowed jobs whose release or refund didn't land yet.
+      if (escrow) {
+        for (const job of jobs.list({ limit: 1_000 })) {
+          if (isTerminal(job.status) && job.payment?.escrow?.state === "funded") void settleEscrow(job.id);
+        }
+      }
+      // A freeze or revocation by Cleanverse takes a provider out of matching within a sweep or two.
+      if (identity) void identity.load().then(() => identity.refresh(registry.live().map((p) => p.address)));
       // Settlements broadcast but not confirmed when the facilitator gave up.
       void settlePending();
       // Quotes nobody paid for, past their TTL.

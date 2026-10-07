@@ -52,6 +52,8 @@ export interface Quote {
    * commitment; this is where it's kept.
    */
   usdcAmount: string;
+  /** XorvEscrow terms frozen with the price, when the broker escrows payments. */
+  escrow?: { address: string; jobId: string; deadline: number } | null;
   /** What the AI router (Qwen) decided, when it ran — carried onto the job. */
   routing?: RoutingRecord | null;
   /** The prompt screen's (Hunyuan) verdict — carried onto the job. */

@@ -48,6 +48,8 @@ import type { LedgerReader } from "../src/ledger-reader.js";
 import type { AiHooks } from "../src/ai-hooks.js";
 import { createAiHooks, type FeedbackSink, type GiveFeedbackInput } from "../src/ai/index.js";
 import { Hub } from "../src/hub.js";
+import { MemoryEscrow } from "../src/escrow.js";
+import type { GateInfo, IdentitySource } from "../src/identity.js";
 import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { NANSEN_OFF, createNansenTrust, type NansenTrust } from "../src/trust/index.js";
@@ -155,6 +157,8 @@ const TRANSFER_WITH_AUTHORIZATION = {
 
 interface FacilitatorControl {
   settled: PaymentRequirements[];
+  /** The escrow an `escrow`-scheme settlement funds, as the real facilitator's fund() would. */
+  escrow?: MemoryEscrow;
   /** Runs at the moment of settlement — before any job exists, under upfront. */
   onSettle?: (requirements: PaymentRequirements) => void | Promise<void>;
   /** Fail the next settlement the way an unfunded buyer does. */
@@ -179,11 +183,15 @@ function stubFacilitator(control: FacilitatorControl): FacilitatorClient {
     const extra = requirements.extra as { name?: string; version?: string };
     if (authorization.to.toLowerCase() !== requirements.payTo.toLowerCase()) return "payee mismatch";
     if (authorization.value !== requirements.amount) return "amount mismatch";
+    // Escrow is the same EIP-3009 message under ReceiveWithAuthorization, payable only by the escrow itself.
+    const receive = requirements.scheme === "escrow";
     const ok = await verifyTypedData({
       address: authorization.from,
       domain: { name: extra.name, version: extra.version, chainId: 10143, verifyingContract: requirements.asset as Hex },
-      types: TRANSFER_WITH_AUTHORIZATION,
-      primaryType: "TransferWithAuthorization",
+      types: receive
+        ? { ReceiveWithAuthorization: TRANSFER_WITH_AUTHORIZATION.TransferWithAuthorization }
+        : TRANSFER_WITH_AUTHORIZATION,
+      primaryType: receive ? "ReceiveWithAuthorization" : "TransferWithAuthorization",
       message: {
         from: authorization.from,
         to: authorization.to,
@@ -215,6 +223,10 @@ function stubFacilitator(control: FacilitatorControl): FacilitatorClient {
         return { success: false, errorReason: problem, transaction: "", network: requirements.network, payer: from };
       }
       control.settled.push(requirements);
+      if (requirements.scheme === "escrow") {
+        const terms = requirements.extra as { jobId: string; provider: string; deadline: number };
+        control.escrow?.fund(terms.jobId, terms.provider, terms.deadline);
+      }
       return {
         success: true,
         transaction: `0x${"5e".repeat(31)}${control.settled.length.toString(16).padStart(2, "0")}`,
@@ -223,7 +235,14 @@ function stubFacilitator(control: FacilitatorControl): FacilitatorClient {
       };
     },
     async getSupported() {
-      return { kinds: [{ x402Version: 2, scheme: "exact", network: NETWORK }], extensions: [], signers: {} };
+      return {
+        kinds: [
+          { x402Version: 2, scheme: "exact", network: NETWORK },
+          ...(control.escrow ? [{ x402Version: 2, scheme: "escrow", network: NETWORK }] : []),
+        ],
+        extensions: [],
+        signers: {},
+      };
     },
   } as unknown as FacilitatorClient;
 }
@@ -295,6 +314,9 @@ async function boot(
     ai?: AiHooks;
     trust?: NansenTrust;
     buyer?: PrivateKeyAccount;
+    /** Pay into this in-memory XorvEscrow instead of straight to the provider. */
+    escrow?: MemoryEscrow;
+    identity?: IdentitySource;
   } = {},
 ): Promise<Harness> {
   const config = testConfig(opts.config);
@@ -302,7 +324,7 @@ async function boot(
   const registry = new Registry();
   const jobs = new JobStore();
   const reader = new StubReader();
-  const control: FacilitatorControl = { settled: [] };
+  const control: FacilitatorControl = { settled: [], escrow: opts.escrow };
   const agentWallets = new Map<string, string>();
   const authorized = new Set<string>();
   const settle = { status: "pending" as SettlementStatus };
@@ -324,6 +346,8 @@ async function boot(
     settlementStatus: async () => settle.status,
     ai: opts.ai,
     trust: opts.trust,
+    escrow: opts.escrow ?? null,
+    identity: opts.identity ?? null,
     // The router's erc8004_reputation tool: buyer ratings via the ledger, verifier scores via its EOA.
     reputationSummary: async (_agentId, _clients, tag1) =>
       tag1 === "starred"
@@ -2478,4 +2502,176 @@ describe("Nansen trust", () => {
     expect(providers[0].trust).toMatchObject({ score: 50, degraded: true, band: "unknown" });
     provider.close();
   }, 20_000);
+});
+
+
+describe("XorvEscrow: the money waits until the job delivers", () => {
+  const GATE: GateInfo = {
+    address: "0x00000000000000000000000000000000000Ca7e5",
+    kind: "cleanverse",
+    apass: "0xbA82D189540CaC9DC6FF46B6837CaC1BFdEC58B9",
+    validator: "0xaC7e5179C2C7f03f209136886c172eb34F161792",
+    pool: null,
+  };
+  /** Cleanverse's A-Pass as far as the broker sees it. */
+  class MemoryAPass implements IdentitySource {
+    readonly valid = new Set<string>();
+    async gate() {
+      return GATE;
+    }
+    async verified(addresses: string[]) {
+      return addresses.map((a) => this.valid.has(a.toLowerCase()));
+    }
+  }
+
+  it("quotes escrow first, with the terms frozen on the quote", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const provider = await connectProvider(h);
+    const { body } = await quote(h);
+    expect(body.escrow).toMatchObject({ address: escrow.address });
+    const accepts = body.accepts as Array<Json>;
+    expect(accepts.map((a) => a.scheme)).toEqual(["escrow", "exact"]);
+    expect(accepts[0]).toMatchObject({
+      payTo: escrow.address,
+      extra: { escrow: escrow.address, provider: provider.address, jobId: (body.escrow as Json).jobId },
+    });
+    provider.close();
+  });
+
+  it("funds the escrow, releases to the provider with the result hash, and receipts the release", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    expect(paid.payment).toMatchObject({
+      scheme: "escrow",
+      payTo: provider.address,
+      escrow: { address: escrow.address, state: "funded", provider: provider.address },
+    });
+    await provider.completeNextJob("the answer");
+    const job = await waitFor(async () => {
+      const j = await getJob(h, paid.jobId as string);
+      return (j.payment as Json)?.escrow && ((j.payment as Json).escrow as Json).state === "released" ? j : undefined;
+    });
+    const held = (job.payment as Json).escrow as Json;
+    expect(held.releaseTx).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(held.resultHash).toBe(job.resultHash);
+    expect(escrow.calls.map((c) => c.op)).toEqual(["release"]);
+    // The receipt carries the release: the transfer that actually paid the provider.
+    const receipt = await waitFor(() => h.chain.receipts.find((r) => r.jobId === job.id));
+    expect(receipt).toMatchObject({ payTo: provider.address, paymentTx: held.releaseTx, ok: true });
+    provider.close();
+  });
+
+  it("refunds the buyer when the job fails and nobody else can take it", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    await provider.failNextJob("adapter crashed");
+    await waitFor(async () => {
+      const held = ((await getJob(h, paid.jobId as string)).payment as Json).escrow as Json;
+      return held.state === "refunded" ? held : undefined;
+    });
+    expect(escrow.calls.map((c) => c.op)).toEqual(["refund"]);
+    provider.close();
+  });
+
+  it("re-points the escrow when the job moves, and pays whoever finished it", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const first = await connectProvider(h, { label: "first", nodeId: "n-1", price: 1_000 });
+    const second = await connectProvider(h, { label: "second", nodeId: "n-2", price: 2_000, address: PAYEE_B });
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    await first.failNextJob("node lost its login");
+    await second.completeNextJob("done elsewhere");
+    await waitFor(async () => {
+      const held = ((await getJob(h, paid.jobId as string)).payment as Json).escrow as Json;
+      return held.state === "released" ? held : undefined;
+    });
+    expect(escrow.calls.map((c) => [c.op, c.arg?.toLowerCase().slice(0, 10)])).toEqual([
+      ["reassign", PAYEE_B.toLowerCase().slice(0, 10)],
+      ["release", expect.any(String)],
+    ]);
+    first.close();
+    second.close();
+  });
+
+  it("a buyer's cancel refunds in full with no mark on the provider", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    const res = await fetch(`${h.base}/api/jobs/${paid.jobId}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${paid.cancelToken}` },
+      body: "{}",
+    });
+    const cancelled = (await res.json()) as Json;
+    expect(cancelled).toMatchObject({ ok: true, refunded: true, refundTx: expect.stringMatching(/^0x/) });
+    expect(escrow.calls.map((c) => c.op)).toEqual(["cancel"]);
+    provider.close();
+  });
+
+  it("records a refund someone else made (a CRE keeper after the deadline) instead of retrying", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    const jobId = ((paid.payment as Json).escrow as Json).jobId as string;
+    const keeper = "0x00000000000000000000000000000000000c0ffe";
+    escrow.refundExternally(jobId, keeper);
+    await provider.failNextJob("too late");
+    const held = await waitFor(async () => {
+      const e = ((await getJob(h, paid.jobId as string)).payment as Json).escrow as Json;
+      return e.state === "refunded" ? e : undefined;
+    });
+    expect(held.settledBy).toBe(keeper);
+    provider.close();
+  });
+
+  it("a stock client that only speaks exact still pays the provider directly", async () => {
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const exactOnly = wrapFetchWithPayment(
+      fetch,
+      // A quote check without the escrow: escrow options are refused, exact is paid.
+      buyerX402Client({
+        signer: h.buyer,
+        network: NETWORK,
+        maxUsdcUnits: "10000000",
+        expect: { payTo: provider.address, amount: q.usdcAmount as string },
+      }),
+    ) as typeof fetch;
+    const { body: paid } = await pay(h, q.quoteId as string, exactOnly);
+    expect(paid.payment).toMatchObject({ scheme: "exact", payTo: provider.address });
+    expect((paid.payment as Json).escrow).toBeUndefined();
+    provider.close();
+  });
+
+  it("with a Cleanverse gate, never quotes a provider without an active A-Pass", async () => {
+    const apass = new MemoryAPass();
+    apass.valid.add(PAYEE_B.toLowerCase());
+    h = await boot({ escrow: new MemoryEscrow(), identity: apass });
+    const unverified = await connectProvider(h, { label: "cheap", nodeId: "n-cheap", price: 1_000 });
+    const verified = await connectProvider(h, { label: "verified", nodeId: "n-ok", price: 5_000, address: PAYEE_B });
+    await waitFor(async () => {
+      const { providers } = (await (await fetch(`${h.base}/api/providers`)).json()) as { providers: Json[] };
+      return providers.length === 2 && providers.every((p) => p.identity !== null) ? true : undefined;
+    });
+    const { body } = await quote(h);
+    expect((body.provider as Json).address).toBe(verified.address);
+    const net = (await (await fetch(`${h.base}/api/network`)).json()) as Json;
+    expect((net.escrow as Json).identityGate).toEqual(GATE);
+    unverified.close();
+    verified.close();
+  });
 });

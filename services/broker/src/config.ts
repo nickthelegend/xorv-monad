@@ -81,6 +81,15 @@ export interface BrokerConfig {
   facilitatorMode: string | null;
   /** XorvLedger address; null runs the broker with no ledger at all. */
   ledgerAddress: Address | null;
+  /**
+   * XorvEscrow address; null pays providers directly (exact). With an escrow
+   * the money waits in the contract until the job delivers and is refunded if
+   * it doesn't. Needs the self-hosted facilitator: its key is the escrow's
+   * attester, the only account that may fund, release and refund.
+   */
+  escrowAddress?: Address | null;
+  /** Seconds from quote to the point anyone (a keeper) may refund the buyer. */
+  escrowDeadlineSeconds?: number;
   /** The ledger's deploy block — the floor for RPC log scans. */
   ledgerFromBlock: bigint | null;
   /** Publish one heartbeat in this many per provider (0 = never). */
@@ -242,6 +251,20 @@ export function loadConfig(): BrokerConfig {
       throw new Error(`XORV_LEDGER_ADDRESS: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  const escrowRaw = optional("XORV_ESCROW_ADDRESS");
+  let escrowAddress: Address | null = null;
+  if (escrowRaw) {
+    try {
+      escrowAddress = normalizeAddress(escrowRaw);
+    } catch (err) {
+      throw new Error(`XORV_ESCROW_ADDRESS: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  const escrowDeadlineSeconds = nonNegativeInt("XORV_ESCROW_DEADLINE_S", 1_800);
+  if (escrowDeadlineSeconds < 120) {
+    // The contract refuses deadlines under a minute; under two leaves no room for a job.
+    throw new Error(`XORV_ESCROW_DEADLINE_S must be at least 120, got ${escrowDeadlineSeconds}`);
+  }
   const fromBlockRaw = optional("XORV_LEDGER_FROM_BLOCK");
   if (fromBlockRaw !== null && !/^\d+$/.test(fromBlockRaw)) {
     throw new Error(`XORV_LEDGER_FROM_BLOCK must be a block number, got "${fromBlockRaw}"`);
@@ -261,6 +284,8 @@ export function loadConfig(): BrokerConfig {
     verifierAccount,
     facilitatorMode: optional("XORV_FACILITATOR"),
     ledgerAddress,
+    escrowAddress,
+    escrowDeadlineSeconds,
     ledgerFromBlock: fromBlockRaw === null ? null : BigInt(fromBlockRaw),
     heartbeatPublishEvery: nonNegativeInt("XORV_HEARTBEAT_PUBLISH_EVERY", 20),
     receiptBatchMs: nonNegativeInt("XORV_RECEIPT_BATCH_MS", 4_000),

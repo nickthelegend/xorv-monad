@@ -89,6 +89,53 @@ export function usdcPaymentOption(opts: {
   };
 }
 
+/** The escrow terms a quote froze: which job id and refund deadline the money is bound to, for whom. */
+export interface EscrowTerms {
+  jobId: string;
+  /** Unix seconds; after this anyone may refund the buyer. */
+  deadline: number;
+  /** The provider the escrow will release to. */
+  provider: string;
+}
+
+/**
+ * The `escrow` row: the same USDC amount, paid into XorvEscrow rather than to
+ * the provider, with the job id, refund deadline and provider in `extra`. The
+ * buyer's ReceiveWithAuthorization nonce is derived from the job id and the
+ * deadline, so the signature can only ever fund that one job.
+ */
+export function escrowPaymentOption(opts: {
+  network: string;
+  escrow: string;
+  amount: (context: HTTPRequestContext) => string | Promise<string>;
+  terms: (context: HTTPRequestContext) => EscrowTerms | null | Promise<EscrowTerms | null>;
+  maxTimeoutSeconds?: number;
+}): PaymentOption {
+  const cfg = networkConfig(opts.network);
+  const escrow = normalizeAddress(opts.escrow);
+  return {
+    scheme: ESCROW_SCHEME,
+    network: cfg.caip2 as Network,
+    payTo: escrow,
+    price: async (context: HTTPRequestContext) => {
+      const base = usdcAssetAmount(cfg.caip2, await opts.amount(context));
+      const terms = await opts.terms(context);
+      return {
+        ...base,
+        extra: {
+          ...base.extra,
+          escrow,
+          // An unresolvable quote renders a 402 nobody can pay, like exact's "".
+          jobId: terms?.jobId ?? "0x",
+          deadline: terms?.deadline ?? 0,
+          provider: terms ? normalizeAddress(terms.provider) : "",
+        },
+      };
+    },
+    maxTimeoutSeconds: opts.maxTimeoutSeconds ?? QUOTE_TTL_SECONDS,
+  };
+}
+
 /** What a buyer expects a 402 to ask for: the frozen quote it was shown. */
 export interface QuoteExpectation {
   payTo: string;
