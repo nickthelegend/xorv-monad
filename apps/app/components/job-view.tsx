@@ -291,6 +291,7 @@ export function JobView({
                   <span className="tnum">{job.payment.amount} units (6 dp)</span>
                 </Row>
                 <Row label="network">{job.payment.network === NETWORK ? NETWORK_LABEL : job.payment.network}</Row>
+                {job.payment.escrow ? <EscrowRows escrow={job.payment.escrow} /> : null}
               </div>
 
               <div className="mt-4 space-y-2">
@@ -300,7 +301,7 @@ export function JobView({
                   external
                   className="w-full"
                 >
-                  View USDC transfer
+                  {job.payment.escrow ? "View escrow deposit" : "View USDC transfer"}
                 </Button>
                 {job.receiptTxHash ? (
                   <Button
@@ -518,5 +519,38 @@ function Check({
         <p className="mt-1 text-[11.5px] text-fg-4">{link.href ? <Ext href={link.href}>{link.label}</Ext> : link.label}</p>
       ) : null}
     </div>
+  );
+}
+
+/** Where an escrowed payment stands: held, released with the result hash, or refunded. */
+function EscrowRows({ escrow }: { escrow: NonNullable<NonNullable<Job["payment"]>["escrow"]> }) {
+  const state =
+    escrow.state === "funded"
+      ? "held until the job delivers"
+      : escrow.state === "released"
+        ? "released to the provider"
+        : "refunded to the buyer";
+  const tx = escrow.state === "released" ? escrow.releaseTx : escrow.state === "refunded" ? escrow.refundTx : null;
+  return (
+    <>
+      <Row label="escrow">
+        <Ext href={explorerAddress(NETWORK, escrow.address)}>XorvEscrow {shortHex(escrow.address)}</Ext>
+      </Row>
+      <Row label="state">
+        <span className={escrow.state === "released" ? "text-live" : "text-fg-2"}>
+          {state}
+          {escrow.settledBy ? ` · by ${shortHex(escrow.settledBy)}` : ""}
+        </span>
+      </Row>
+      {tx ? (
+        <Row label={escrow.state === "released" ? "release" : "refund"}>
+          <Ext href={explorerTx(NETWORK, tx)}>{shortHex(tx)}</Ext>
+        </Row>
+      ) : escrow.state === "funded" ? (
+        <Row label="refundable after">
+          <span className="tnum">{new Date(escrow.deadline * 1000).toLocaleTimeString()}</span>
+        </Row>
+      ) : null}
+    </>
   );
 }

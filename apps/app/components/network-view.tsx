@@ -103,6 +103,35 @@ export function NetworkView() {
               "—"
             )}
           </Row>
+          <Row label="XorvEscrow">
+            {info?.escrow ? (
+              <Ext href={info.escrow.url || explorerAddress(NETWORK, info.escrow.address)}>
+                {shortHex(info.escrow.address)} ↗ · refundable after {Math.round(info.escrow.deadlineSeconds / 60)} min
+              </Ext>
+            ) : info ? (
+              "off: providers are paid directly"
+            ) : (
+              "—"
+            )}
+          </Row>
+          {info?.escrow ? (
+            <Row label="identity gate">
+              {info.escrow.identityGate ? (
+                <span>
+                  Cleanverse CVI ·{" "}
+                  <Ext href={explorerAddress(NETWORK, info.escrow.identityGate.address)}>gate ↗</Ext>
+                  {info.escrow.identityGate.apass ? (
+                    <>
+                      {" · "}
+                      <Ext href={explorerAddress(NETWORK, info.escrow.identityGate.apass)}>A-Pass ↗</Ext>
+                    </>
+                  ) : null}
+                </span>
+              ) : (
+                "off: anyone can fund and be paid"
+              )}
+            </Row>
+          ) : null}
           <Row label="ERC-8004 identity">
             {info ? <Ext href={explorerAddress(NETWORK, info.erc8004.identity)}>{shortHex(info.erc8004.identity)} ↗</Ext> : "—"}
           </Row>

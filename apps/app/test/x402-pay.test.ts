@@ -180,12 +180,33 @@ describe("payableQuote", () => {
   };
 
   it("takes the payee and amount the buyer was shown", () => {
-    expect(payableQuote(base)).toEqual(quote);
+    expect(payableQuote(base)).toEqual({ ...quote, escrow: null });
   });
 
   it("refuses a quote whose accepts disagree with its display", () => {
     expect(() => payableQuote({ ...base, accepts: [requirement({ payTo: OTHER }) as never] })).toThrow(PaymentError);
     expect(() => payableQuote({ ...base, accepts: [requirement({ amount: "20000" }) as never] })).toThrow(/inconsistent/);
+  });
+
+  describe("with an escrow", () => {
+    const ESCROW = "0x00000000000000000000000000000000000e5c20";
+    const escrowRow = (over: { payTo?: string; provider?: string } = {}) =>
+      requirement({
+        scheme: "escrow",
+        payTo: over.payTo ?? ESCROW,
+        extra: { name: "USDC", version: "2", escrow: ESCROW, provider: over.provider ?? PROVIDER },
+      } as never) as never;
+    const withEscrow = { escrow: { address: ESCROW, jobId: "0x01", deadline: 1, explorerUrl: "" } };
+
+    it("passes the escrow the quote named on to the payment", () => {
+      expect(payableQuote({ ...base, ...withEscrow, accepts: [escrowRow(), ...base.accepts] }).escrow).toBe(ESCROW);
+    });
+
+    it("refuses an escrow row the quote didn't name, or that releases to someone else", () => {
+      expect(() => payableQuote({ ...base, accepts: [escrowRow(), ...base.accepts] })).toThrow(/inconsistent/);
+      expect(() => payableQuote({ ...base, ...withEscrow, accepts: [escrowRow({ provider: OTHER })] })).toThrow(/inconsistent/);
+      expect(() => payableQuote({ ...base, ...withEscrow, accepts: [escrowRow({ payTo: OTHER })] })).toThrow(/inconsistent/);
+    });
   });
 });
 

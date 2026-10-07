@@ -37,8 +37,10 @@ export interface PayableQuote {
   network?: string | null;
   /** USDC smallest units, frozen at quote time. */
   usdcAmount: string;
-  /** The provider's address — x402 `payTo`. */
+  /** The provider's address — x402 `payTo` for exact, the payee the escrow releases to. */
   payTo: string;
+  /** XorvEscrow, when the broker escrows payments: the only contract the client will pay into. */
+  escrow?: string | null;
 }
 
 export type PaymentFailureKind =
@@ -86,16 +88,35 @@ export interface PaymentResult {
  * matcher and the response is wrong, and the time to find out is before a
  * signature exists.
  */
-export function payableQuote(quote: Pick<QuoteResponse, "quoteId" | "network" | "usdcAmount" | "provider" | "accepts">): PayableQuote {
-  const accept = quote.accepts?.[0];
-  if (accept && (!sameAddress(accept.payTo, quote.provider.address) || accept.amount !== quote.usdcAmount)) {
-    throw new PaymentError(
+export function payableQuote(
+  quote: Pick<QuoteResponse, "quoteId" | "network" | "usdcAmount" | "provider" | "accepts" | "escrow">,
+): PayableQuote {
+  const inconsistent = (payTo: string, amount: string) =>
+    new PaymentError(
       "quote_mismatch",
       `The quote is inconsistent: it shows ${quote.provider.address} for ${quote.usdcAmount} units but asks for ` +
-        `${accept.payTo} / ${accept.amount}. Nothing was signed — request a new quote.`,
+        `${payTo} / ${amount}. Nothing was signed — request a new quote.`,
     );
+  for (const accept of quote.accepts ?? []) {
+    if (accept.amount !== quote.usdcAmount) throw inconsistent(accept.payTo, accept.amount);
+    if (accept.scheme === "escrow") {
+      // Into the escrow the quote named, releasing to the quoted provider — nothing else.
+      const ok =
+        Boolean(quote.escrow) &&
+        sameAddress(accept.payTo, quote.escrow!.address) &&
+        sameAddress(accept.extra.provider ?? "", quote.provider.address);
+      if (!ok) throw inconsistent(accept.payTo, accept.amount);
+    } else if (!sameAddress(accept.payTo, quote.provider.address)) {
+      throw inconsistent(accept.payTo, accept.amount);
+    }
   }
-  return { quoteId: quote.quoteId, network: quote.network, usdcAmount: quote.usdcAmount, payTo: quote.provider.address };
+  return {
+    quoteId: quote.quoteId,
+    network: quote.network,
+    usdcAmount: quote.usdcAmount,
+    payTo: quote.provider.address,
+    escrow: quote.escrow?.address ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +292,7 @@ export async function payQuote(opts: PayQuoteOptions): Promise<PaymentResult> {
       signer,
       network,
       maxUsdcUnits: opts.maxUsdcUnits ?? quote.usdcAmount,
-      expect: { payTo: quote.payTo, amount: quote.usdcAmount },
+      expect: { payTo: quote.payTo, amount: quote.usdcAmount, escrow: quote.escrow ?? null },
     });
   } catch (err) {
     throw new PaymentError("quote_mismatch", `The quote can't be paid as shown: ${errorMessage(err)}`);

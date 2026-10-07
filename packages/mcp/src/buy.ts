@@ -214,7 +214,14 @@ export async function buyJob(deps: BuyDeps, args: BuyArgs): Promise<BuyResult> {
     signer: payer.account,
     network: cfg.caip2,
     maxUsdcUnits: usdMicrosToUsdcUnits(ceiling),
-    expect: { payTo: quote.provider.address, amount: quote.usdcAmount, network: cfg.caip2, asset: cfg.usdc.address },
+    expect: {
+      payTo: quote.provider.address,
+      amount: quote.usdcAmount,
+      network: cfg.caip2,
+      asset: cfg.usdc.address,
+      // The broker's escrow, when the quote named one: the money waits there until the job delivers.
+      escrow: quote.escrow?.address ?? null,
+    },
   });
   let signed = false;
   client.onAfterPaymentCreation(async () => {

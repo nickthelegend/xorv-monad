@@ -193,6 +193,8 @@ export function payingFetch(opts: {
       amount: opts.quote.usdcAmount,
       network: opts.network,
       asset: networkConfig(opts.network).usdc.address,
+      // The broker's escrow, when the quote named one: pay into it, nowhere else.
+      escrow: opts.quote.escrow?.address ?? null,
     },
   });
   return {

@@ -90,7 +90,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const global = guards.payGlobal.take("*");
   if (!global.ok) return tooMany(global.retryAfterMs, "The demo account is busy — try again in a few minutes, or log in and pay from your own wallet.");
 
-  let body: { quoteId?: unknown; payTo?: unknown; usdcAmount?: unknown; network?: unknown };
+  let body: { quoteId?: unknown; payTo?: unknown; usdcAmount?: unknown; network?: unknown; escrow?: unknown };
   try {
     body = (await request.json()) as typeof body;
   } catch {
@@ -136,7 +136,14 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   try {
     const result = await payQuote({
-      quote: { quoteId, usdcAmount, payTo, network: typeof body.network === "string" ? body.network : null },
+      quote: {
+        quoteId,
+        usdcAmount,
+        payTo,
+        network: typeof body.network === "string" ? body.network : null,
+        // The escrow the quote named, if any; anything that isn't an address is ignored (pays exact).
+        escrow: typeof body.escrow === "string" && ADDRESS.test(body.escrow.trim()) ? body.escrow.trim() : null,
+      },
       signer: account,
       network,
       brokerUrl,

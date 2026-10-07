@@ -580,4 +580,13 @@ export interface NetworkInfo {
     paidUsdMicros: number;
   };
   heartbeatIntervalMs: number;
+  /** XorvEscrow, when jobs are paid into escrow; null pays providers directly. */
+  escrow?: {
+    address: string;
+    url: string;
+    /** Seconds from quote until anyone (a keeper) may refund the buyer. */
+    deadlineSeconds: number;
+    /** Cleanverse CVI: when set, only active A-Pass holders can fund the escrow or be paid by it. */
+    identityGate: { address: string; kind: "cleanverse"; apass: string | null; validator: string | null; pool: string | null } | null;
+  } | null;
 }
