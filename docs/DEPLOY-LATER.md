@@ -68,13 +68,9 @@ cast send $XORV_REGISTRY_ADDRESS "setOperator(address)" <privy wallet> --rpc-url
 Then in `.env` and on Railway: `XORV_SIGNER=privy`, `XORV_PRIVY_WALLET_ID`, `XORV_PRIVY_WALLET_ADDRESS`,
 `PRIVY_APP_ID`, `PRIVY_APP_SECRET`. Testnet subsidy: monad@privy.io.
 
-## 4. Repo (~2 min, user says go)
+## 4. Repo
 
-```bash
-gh repo create nickthelegend/xorv-monad --public --source . --push --description "Trustless AI capacity on Monad"
-```
-
-The README's links and the submission's repo URL already point here.
+Published (7 Oct) as branch `metropolis-escrow` of https://github.com/nickthelegend/xorv-monad, next to that repo's `main` (the 26–28 Sep ERC-8004 build, already live on Monad testnet). Which line becomes the submission's `main`, or how the two merge, is the user's call; nothing here force-pushes `main`.
 
 ## 5. Hosting (~15 min)
 

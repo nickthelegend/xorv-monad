@@ -21,7 +21,7 @@ Paying a stranger, or a stranger's machine, for AI work is a trust problem on bo
 | Project name | Xorv |
 | Track (one per project) | 04 — Trust, Identity & AI Infrastructure |
 | One-liner | Sell idle AI capacity per job; humans and agents buy it in AUSD through an on-chain escrow on Monad, gated by Cleanverse identity, with reputation written by the settlement itself. |
-| Repo (OSI licence) | https://github.com/nickthelegend/xorv-monad (MIT) — _created at go, see docs/DEPLOY-LATER.md §4_ |
+| Repo (OSI licence) | https://github.com/nickthelegend/xorv-monad (MIT), branch [`metropolis-escrow`](https://github.com/nickthelegend/xorv-monad/tree/metropolis-escrow). The repo's `main` is the 26–28 Sep ERC-8004 build with its live testnet deployment. |
 | Live app | _after go: the Vercel URL_ |
 | Demo video (≤ 3 min) | _after go_ (script below) |
 | Pitch video (≤ 2 min) | _after go_ (script below) |

@@ -20,6 +20,8 @@ Rent out the Claude / Codex / Kimi / Qwen capacity you already pay for. Get paid
 
 ---
 
+> **About this branch.** `metropolis-escrow` is the escrow build of Xorv for Monad Metropolis: on-chain escrow with refunds, a Chainlink CRE refund keeper, a Cleanverse identity gate, a policy-locked Privy operator wallet, and zero mocks in the product. The repo's [`main`](https://github.com/nickthelegend/xorv-monad/tree/main) is the 26–28 Sep build: ERC-8004 reputation through `XorvLedger`, live on Monad testnet. The two were built independently from earlier Xorv versions.
+
 ## The problem
 
 Millions of people pay $20–200 a month for an AI subscription and use a fraction of it. Anyone who
