@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Connect } from "@/components/connect";
 import { api, type NetworkInfo } from "@/lib/api";
-import { NETWORK, NETWORK_LABEL } from "@/lib/network";
 import { cn } from "@/lib/utils";
+import { LiveHeartbeat, MonadLiveProvider } from "@/components/monad-live";
 
 /**
  * The app shell.
@@ -36,6 +36,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const setOpen = (next: boolean): void => setOpenAt(next ? pathname : null);
 
   return (
+    <MonadLiveProvider>
     <div className="flex min-h-dvh">
       {/* Mobile scrim */}
       {open ? (
@@ -127,6 +128,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 lg:px-8 lg:py-10">{children}</main>
       </div>
     </div>
+    </MonadLiveProvider>
   );
 }
 
@@ -168,9 +170,7 @@ function NetworkFoot() {
           {down ? "broker offline" : info ? `${info.stats.providersLive} provider(s) live` : "connecting…"}
         </span>
       </div>
-      <p className="mono mt-1.5 text-[11px] text-fg-4">
-        {info ? `Monad ${info.label} · ${info.network}` : `${NETWORK_LABEL} · ${NETWORK}`}
-      </p>
+      <LiveHeartbeat />
     </div>
   );
 }

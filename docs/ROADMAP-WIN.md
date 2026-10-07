@@ -128,3 +128,21 @@ Considered and not picked for this wave:
 3. A CRE refund replay: show a job refunded by the Chainlink keeper after its deadline, from the job page.
 4. Agent buyer view: an MCP agent's session, its budget and every job it bought, on one page.
 5. A Cleanverse "verified" badge on providers and buyers, read from the gate.
+
+## Monad-native coverage
+
+The user asked for all eight Monad-native items (`../../METROPOLIS-ORCHESTRATION.md`, "MONAD TECH";
+research in `MONAD-TECH.md`). One line per item. Each item says where it runs: **live-read** (real
+Monad testnet, read-only), **fork** (the local anvil fork), **built** (code and tests, runs wherever
+the deployment runs), or **awaiting testnet go** (needs MON).
+
+| # | Item | Status | Where in the code | Screens |
+|---|---|---|---|---|
+| 1 | Live commit-state strip (`monadNewHeads`, `monadLogs`) | **live-read**: every Monad testnet block goes Proposed → Voted → Finalized → Verified with measured ms, and XorvLedger and ERC-8004 events stream with their commit state. Works while payments run on a fork, and is labelled as the real network | `apps/app/lib/{commit-states,use-monad-live}.ts`, `components/monad-live.tsx` | `m1-commit-*.png` |
+| 2 | Two-timer receipts (executed, final) | | | |
+| 3 | Transaction status (`txpool_statusByHash`) | | | |
+| 4 | Passkeys on chain (P256 `0x0100`) | | | |
+| 5 | Native staking (`0x1000`) | | | |
+| 6 | Monad gas correctness (limit billing, reserve balance, 128 KB, MIP-8) | | | |
+| 7 | Monad-native payments (x402 facilitator, MPP) | | | |
+| 8 | Canonical contracts, Sourcify, linked hashes | | | |

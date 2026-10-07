@@ -66,3 +66,31 @@ export const APP_CHAIN: Chain = defineChain({
 
 /** "Monad testnet" / "Monad mainnet" — for chrome, never for logic. */
 export const NETWORK_LABEL = `Monad ${CHAIN_CONFIG.label}`;
+
+/**
+ * Whether this app's contracts and payments run on a local chain (a fork, a
+ * dev node) rather than on Monad itself. Timings measured there are the local
+ * chain's, never Monad's, so every speed figure says which one it is.
+ */
+export function isLocalRpc(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1" || host.endsWith(".localhost");
+  } catch {
+    return false;
+  }
+}
+
+export const IS_LOCAL_CHAIN = isLocalRpc(PUBLIC_RPC_URL);
+
+/**
+ * Monad's own WebSocket, for the live block pipeline (`monadNewHeads`). Always
+ * the real network, even when the app's contracts run on a local fork: the
+ * pipeline is Monad's heartbeat, read-only, and labelled as such.
+ */
+export const MONAD_WS_URL = process.env.NEXT_PUBLIC_XORV_MONAD_WS_URL?.trim() || CHAIN_CONFIG.wsUrl;
+
+/** XorvLedger as deployed on Monad testnet (packages/contracts/deployments/monadTestnet.json). */
+export const LIVE_LEDGER: Record<string, `0x${string}`> = {
+  "eip155:10143": "0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD",
+};
