@@ -148,6 +148,8 @@ adherence is 40% of each bounty score.
 | Best Builds Powered by KIMI | Kimi | All tracks | $3,000 in credits |
 | Mera: One Passkey, Many Keys | Monad Foundation | All tracks | $2,500 USD |
 | Best Builds with Qwen 3.8 Max | Alibaba Cloud | Trust, Identity & AI Infrastructure | $5,000 in credits |
+| Best workflow with CRE | Chainlink | All tracks | $3,000 USD |
+| Best Integration of CVI/CVA | Cleanverse | Trust, Identity & AI Infrastructure | $2,000 USD |
 
 ### Privy: "Privy!"
 
@@ -179,7 +181,7 @@ public `config.yaml`, `schema.graphql` and handlers, a consumer, and a short dem
 | Requirement | Evidence | Status |
 |---|---|---|
 | HyperIndex indexer, public config, schema and handlers | `services/indexer/config.yaml`, `config.mainnet.yaml`, `schema.graphql`, `src/handlers/{XorvLedger,IdentityRegistry,ReputationRegistry}.ts` | Code |
-| Depth: more than a single-event indexer | 3 contracts, 13 events, 14 entity types; derived `Provider` earnings, success rate and rating; `Agent` reputation split by writer; `NetworkStats`, `DailyStats`, `ProviderDay`, `BuyerDay` | Code |
+| Depth: more than a single-event indexer | 4 contracts (XorvLedger, XorvEscrow, the two ERC-8004 registries), 17 events, 15 entity types, including `EscrowJob` (funded → reassigned → released/refunded), which the Chainlink CRE refund keeper queries; derived `Provider` earnings, success rate and rating; `Agent` reputation split by writer; `NetworkStats`, `DailyStats`, `ProviderDay`, `BuyerDay` | Code |
 | Non-trivial logic | Feedback classified by client address (ledger = buyer rating, broker = verified, else other); revocations undo exactly; receipts that arrive before their registration are claimed later; broker rotation respected (`src/lib/trust.ts`, `src/lib/aggregates.ts`) | Code |
 | Real on-chain data driving a feature | Broker `/api/leaderboard`, `/api/ledger`, `/api/receipts` read Envio first (`services/broker/src/indexer.ts`, `ledger-reader.ts`) → app network page ("indexed by Envio"), providers leaderboard, landing ledger | Code |
 | Envio in the core loop (matching, routing) | The Qwen router's `indexer_provider_stats` and `recent_receipts` tools read the indexer while choosing a provider; when no router runs, the deterministic matcher breaks price ties on indexed reputation (buyer ratings + Kimi scores, shrunk toward a neutral prior; one batched GraphQL query a minute at most) — `services/broker/src/ai/router-tools.ts`, `router-data.ts`, `reputation-book.ts` | Code |
@@ -260,6 +262,35 @@ live option under the ceiling, it reads Monad state and then picks the provider 
 | Provider backend: `qwen` adapter (`qwen3.8-max`, streamed reasoning, token cost) | `packages/cli/src/adapters/hosted.ts` | Code |
 | Provider backend: `qwen-code` adapter (Qwen Code CLI with tools, on Qwen 3.8 Max) | `packages/cli/src/adapters/qwen-code.ts` | Code |
 | Live calls with a Model Studio key | `DASHSCOPE_API_KEY` on the demo broker and provider | Live: TODO(deploy) |
+
+### Chainlink: "Best workflow with CRE"
+
+> **Card** (Chainlink · All tracks · $3,000 USD): "Build, simulate, or deploy a Chainlink Runtime
+> Environment (CRE) Workflow used as an orchestration layer within your project." A CLI simulation is
+> accepted.
+
+Xorv's buyers can pay into **XorvEscrow** (`contracts/`), which releases to the provider on delivery
+and lets anyone refund the buyer once a job's deadline passes. The CRE workflow is what makes that
+guarantee real when the broker is gone: it orchestrates the refunds off the broker.
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| A CRE workflow as an orchestration layer | `cre/refund-keeper`: cron → HTTP with DON consensus (the Envio index's `EXPIRED_ESCROW_JOBS_QUERY`) → an EVM read of `XorvEscrow.isRefundable` on Monad for each job → one DON-signed report → KeystoneForwarder → `XorvRefundKeeper.onReport` → `XorvEscrow.refund` | Code |
+| A correct on-chain receiver | `contracts/src/XorvRefundKeeper.sol` (IReceiver, forwarder-only, per-job try/catch, batch cap); 6 Foundry tests against the real escrow | Code |
+| Tested | 4 tests on the CRE SDK's own test runtime (`HttpActionsMock`, `EvmMock` on the `monad-testnet` selector): only refundable jobs reach the report, DON time sets the cut-off, empty/ahead-of-chain/unreachable index; compiles to WASM; CI job `cre` | Code |
+| Simulation | `cre workflow simulate refund-keeper --target staging-settings --broadcast` against the deployed escrow and keeper | Live: TODO(deploy) (needs `cre login` and the escrow on testnet) |
+
+### Cleanverse: "Best Integration of CVI/CVA"
+
+> **Card** (Cleanverse · Trust, Identity & AI Infrastructure · $2,000 USD): "Build an app that gates
+> CVA asset movement behind on-chain CVI identity verification."
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| CVI identity verification, on chain, where value moves | `contracts/src/CleanverseGate.sol` reads Cleanverse's own A-Pass validity (false once frozen, revoked or expired) and, once a pool is registered, the compliance validator's `complianceVerify`. `XorvEscrow.setIdentityGate`: `fund` requires buyer and provider verified, `release`/`reassign` require the payee; refunds are never gated | Code |
+| Against Cleanverse's real contracts | Fork tests against the real A-Pass and validator on Monad testnet (issue, freeze, unfreeze, revoke, expiry, an unregistered pool failing closed), with real AUSD (`contracts/test/CleanverseGate.fork.t.sol`); `pnpm e2e:escrow`'s gate stage (a buyer without an A-Pass refused with nothing moved, then paying once issued one) | Code |
+| The product respects it | The facilitator refuses an unverified party before signing (`identity_not_verified`); the broker never quotes or reassigns to a provider without an active A-Pass; the network page shows the gate | Code |
+| Moving CVA (aUSDC) itself | aUSDC has no EIP-3009 and its transfer policy keeps its own credential store: every unregistered pool reverts `PoolNotRegistered()`, and on a fork every aUSDC transfer reverts `TransferNotAllowed()`. No app can move CVA until Cleanverse onboards it | Blocked: Cleanverse docs access, pool registration and test A-Passes |
 
 ### Also built (not entered: track-locked to other tracks)
 

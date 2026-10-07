@@ -80,6 +80,8 @@ export async function payQuote(opts: {
       amount: opts.quote.usdcAmount,
       network: opts.network,
       asset: networkConfig(opts.network).usdc.address,
+      // When the quote names an escrow, pay into it (pnpm e2e:escrow); otherwise exact.
+      escrow: opts.quote.escrow?.address ?? null,
     },
   });
   const paidFetch = wrapFetchWithPayment(globalThis.fetch, client);

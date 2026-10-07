@@ -10,6 +10,13 @@ pnpm build          # the harness runs the built broker, CLI and MCP server
 pnpm e2e            # ≈ 2–4 minutes, most of it the fork reading the public RPC; writes e2e/last-run.md
 ```
 
+`pnpm e2e:escrow` (needs `forge build` in `contracts/` first) runs the escrow path on the same fork, and
+writes `e2e/last-run-escrow.md`. It deploys `XorvEscrow` next to the ledger, then checks:
+- `xorv run` funds the escrow and the release pays the provider with the result's hash;
+- the ledger's `JobRecorded.paymentTx` is that release;
+- a cancel refunds the buyer in full with no fault;
+- a `CleanverseGate` over Cleanverse's **real A-Pass** refuses a buyer without one, with nothing moved, then lets the same buyer pay once the validator issues one.
+
 Exit code 0 means every step finished and every check held; anything else is a failure, with the tail of
 each process's output printed and the full logs kept in a temp directory (the path is printed).
 
