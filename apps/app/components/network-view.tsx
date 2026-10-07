@@ -19,6 +19,7 @@ import { NETWORK } from "@/lib/network";
 import { valueToStars } from "@/lib/rating";
 import { formatMon, formatMs } from "@/lib/speed";
 import { CommitPipeline } from "@/components/monad-live";
+import { StakingPanel } from "@/components/staking-panel";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
 import { NansenPanel } from "@/components/trust";
 import { readNansenStatus } from "@/lib/trust";
@@ -52,6 +53,8 @@ export function NetworkView() {
   return (
     <div className="space-y-8">
       <CommitPipeline />
+
+      <StakingPanel />
 
       {/* Facts, as a definition list. Four numbers in four boxes would say
           "we have metrics" without saying anything true. */}
