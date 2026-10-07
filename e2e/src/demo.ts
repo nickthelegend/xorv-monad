@@ -67,7 +67,7 @@ const SEED_PROMPTS = [
   "Summarise what an x402 payment is in two sentences.",
   "List three things a provider should check before accepting a job.",
   "Explain ERC-8004 reputation to a new user.",
-  "Write a haiku about 400 ms blocks.",
+  "Write a haiku about 300 ms blocks.",
 ];
 
 const group = new ProcessGroup(path.join(RUN_DIR, "logs"));
@@ -98,13 +98,13 @@ function artifact(name: string): { abi: Abi; bytecode: Hex } {
   return { abi: json.abi, bytecode: json.bytecode.object };
 }
 
-/** anvil, forking Monad testnet: Monad's 400 ms block interval, bounded state history. */
+/** anvil, forking Monad testnet: Monad's 300 ms block interval (MIP-12), bounded state history. */
 async function startChain(forkUrl: string): Promise<Fork> {
   const url = `http://127.0.0.1:${PORTS.chain}`;
   const proc = group.start(
     "chain",
     "anvil",
-    ["--fork-url", forkUrl, "--port", String(PORTS.chain), "--block-time", "0.4", "--prune-history", "300", "--silent", "--retries", "8", "--fork-retry-backoff", "500", "--timeout", "30000"],
+    ["--fork-url", forkUrl, "--port", String(PORTS.chain), "--block-time", "0.3", "--prune-history", "300", "--silent", "--retries", "8", "--fork-retry-backoff", "500", "--timeout", "30000"],
     { cwd: RUN_DIR, env: cleanEnv() },
   );
   const rpc = async <T>(method: string, params: unknown[] = []): Promise<T> => {

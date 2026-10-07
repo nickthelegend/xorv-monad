@@ -81,7 +81,7 @@ pnpm install && pnpm build && (cd contracts && forge build) && pnpm demo
 
 `pnpm demo` runs the whole product on your machine against **real contract code**, with no keys
 and no testnet funds:
-- a local fork of Monad testnet (anvil, 400 ms blocks) with Circle's real USDC and the canonical
+- a local fork of Monad testnet (anvil, 300 ms blocks like Monad's) with Circle's real USDC and the canonical
   ERC-8004 registries;
 - XorvLedger and XorvEscrow;
 - the broker, with its self-hosted facilitator;

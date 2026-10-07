@@ -52,7 +52,7 @@ Considered and not picked for this wave:
 
 **1. `pnpm demo`**
 - One command, after `pnpm build` and `forge build`, starts:
-  - an anvil fork of Monad testnet (0.4 s blocks, `--prune-history 300`);
+  - an anvil fork of Monad testnet (0.3 s blocks, `--prune-history 300`);
   - XorvLedger and XorvEscrow;
   - the broker (self-hosted facilitator as the escrow's attester);
   - two provider nodes;
