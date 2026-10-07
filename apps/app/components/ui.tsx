@@ -106,6 +106,7 @@ const STATUS: Record<string, { dot: string; text: string; label?: string }> = {
   paid: { dot: "bg-fg-3", text: "text-fg-2" },
   quoted: { dot: "bg-fg-4", text: "text-fg-3" },
   failed: { dot: "bg-fail", text: "text-fail" },
+  refunded: { dot: "bg-fg-3", text: "text-fg-2" },
   expired: { dot: "bg-fg-4", text: "text-fg-3" },
   online: { dot: "bg-live", text: "text-fg-2" },
   busy: { dot: "bg-warn", text: "text-fg-2" },

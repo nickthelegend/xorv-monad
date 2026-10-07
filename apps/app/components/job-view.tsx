@@ -18,6 +18,8 @@ import { checkResultAgainstReceipt, type ReceiptCheck, type ReceiptReader } from
 import { awaitingOnChain, followUpJob } from "@/lib/job-follow-up";
 import { cn } from "@/lib/utils";
 import { RoutingTrace } from "@/components/routing-trace";
+import { PaymentTimeline } from "@/components/payment-timeline";
+import { jobOutcome } from "@/lib/payment-timeline";
 
 /**
  * Event glyphs.
@@ -159,7 +161,7 @@ export function JobView({
         <div>
           <div className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-2.5">
-              <Status status={job.status} />
+              <Status status={jobOutcome(job)} />
               {job.private ? <PrivateTag /> : null}
             </span>
             <span className="mono text-[11.5px] text-fg-4">{job.id}</span>
@@ -195,7 +197,17 @@ export function JobView({
           ) : null}
         </AnimatePresence>
 
-        {job.error ? (
+        {job.error && jobOutcome(job) === "refunded" ? (
+          <section>
+            <h2 className="mb-2.5 text-[13px] font-medium text-fg">Refunded</h2>
+            <Panel className="p-4">
+              <p className="text-[13.5px] leading-relaxed text-fg-2">
+                {job.error.charAt(0).toUpperCase() + job.error.slice(1)}. XorvEscrow returned the full{" "}
+                {job.payment ? formatUsdc(job.payment.amount) : "amount"} to the buyer.
+              </p>
+            </Panel>
+          </section>
+        ) : job.error ? (
           <section>
             <h2 className="mb-2.5 text-[13px] font-medium text-fail">Failed</h2>
             <Panel className="border-fail/25 bg-fail/[0.04] p-4">
@@ -203,6 +215,8 @@ export function JobView({
             </Panel>
           </section>
         ) : null}
+
+        {job.payment || !TERMINAL.has(job.status) ? <PaymentTimeline job={job} /> : null}
 
         <AiChecks job={job} />
 

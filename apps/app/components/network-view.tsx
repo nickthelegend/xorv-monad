@@ -55,8 +55,10 @@ export function NetworkView() {
         <h2 className="text-[13px] font-medium text-fg">Settlement</h2>
         <p className="measure mt-1.5 text-[12.5px] leading-relaxed text-fg-3">
           Every job is paid with an x402 EIP-3009 authorization: the buyer signs, the facilitator submits the
-          USDC transfer and pays the gas, so a buyer needs no MON at all. The money goes straight to the
-          provider.
+          USDC transfer and pays the gas, so a buyer needs no MON at all.{" "}
+          {info?.escrow
+            ? "The money waits in XorvEscrow until the job delivers, then goes to the provider; a job that fails is refunded in full."
+            : "The money goes straight to the provider."}
         </p>
         <div className="mt-4 border-t border-[var(--line)] pt-1">
           <Row label="network">{info ? `Monad ${info.label} · chain ${info.chainId}` : "—"}</Row>
@@ -82,6 +84,16 @@ export function NetworkView() {
           <Row label="paid to providers">
             <span className="tnum">{info ? formatUsd(info.stats.paidUsdMicros) : "—"}</span>
           </Row>
+          {info?.escrow ? (
+            <>
+              <Row label="held in escrow now">
+                <span className="tnum">{formatUsd(info.stats.heldUsdMicros ?? 0)}</span>
+              </Row>
+              <Row label="refunded to buyers">
+                <span className="tnum">{formatUsd(info.stats.refundedUsdMicros ?? 0)}</span>
+              </Row>
+            </>
+          ) : null}
         </div>
       </Panel>
 

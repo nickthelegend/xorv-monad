@@ -2558,6 +2558,8 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     const held = (job.payment as Json).escrow as Json;
     expect(held.releaseTx).toMatch(/^0x[0-9a-f]{64}$/);
     expect(held.resultHash).toBe(job.resultHash);
+    // When it was released, for the job page's timeline.
+    expect(held.settledAt).toBeGreaterThanOrEqual((job.payment as Json).settledAt as number);
     expect(escrow.calls.map((c) => c.op)).toEqual(["release"]);
     // The receipt carries the release: the transfer that actually paid the provider.
     const receipt = await waitFor(() => h.chain.receipts.find((r) => r.jobId === job.id));
@@ -2615,6 +2617,10 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     const cancelled = (await res.json()) as Json;
     expect(cancelled).toMatchObject({ ok: true, refunded: true, refundTx: expect.stringMatching(/^0x/) });
     expect(escrow.calls.map((c) => c.op)).toEqual(["cancel"]);
+    expect((((await getJob(h, paid.jobId as string)).payment as Json).escrow as Json).settledAt).toEqual(expect.any(Number));
+    // Refunded money never counts as paid to providers.
+    const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
+    expect(stats).toMatchObject({ paidUsdMicros: 0, heldUsdMicros: 0, refundedUsdMicros: q.priceUsdMicros });
     provider.close();
   });
 

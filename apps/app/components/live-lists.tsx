@@ -10,6 +10,7 @@ import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import type { LeaderboardRow } from "@/lib/wire";
 import { Empty, Ext, Skeleton, Status } from "@/components/ui";
+import { jobOutcome } from "@/lib/payment-timeline";
 import { PrivateTag } from "@/components/passkey-panel";
 import { valueToStars } from "@/lib/rating";
 import { readTrust } from "@/lib/trust";
@@ -195,7 +196,7 @@ export function JobList({ limit = 15 }: { limit?: number }) {
           >
             <div className="min-w-0">
               <div className="flex items-center gap-2.5">
-                <Status status={job.status} />
+                <Status status={jobOutcome(job)} />
                 <span className="mono truncate text-[11.5px] text-fg-4">{job.id}</span>
               </div>
               {job.private ? (
@@ -211,7 +212,7 @@ export function JobList({ limit = 15 }: { limit?: number }) {
               )}
               <p className="mt-1 truncate text-[11.5px] text-fg-4">
                 {job.providerLabel ?? "unassigned"} · {formatAgo(job.createdAt)}
-                {job.payment ? " · paid in USDC" : ""}
+                {job.payment ? paymentNote(job) : ""}
                 {job.rating ? ` · ${"★".repeat(valueToStars(job.rating.value))}` : ""}
               </p>
             </div>
@@ -224,4 +225,11 @@ export function JobList({ limit = 15 }: { limit?: number }) {
       </AnimatePresence>
     </ul>
   );
+}
+
+/** How the job's USDC moved, in a few words for the list. */
+function paymentNote(job: Job): string {
+  const held = job.payment?.escrow;
+  if (!held) return " · paid in USDC";
+  return held.state === "released" ? " · escrow released" : held.state === "refunded" ? " · refunded in full" : " · held in escrow";
 }

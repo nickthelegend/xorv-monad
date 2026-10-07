@@ -186,6 +186,8 @@ export interface EscrowRecord {
   reassignTxs?: string[];
   /** SHA-256 of the result, recorded on chain with the release. */
   resultHash?: string;
+  /** When the release or refund was confirmed (ms since epoch). */
+  settledAt?: number;
   /** Who settled it, when it wasn't this broker (a keeper's refund, a buyer's own release). */
   settledBy?: string;
   /** The last settlement attempt's error, while it is still being retried. */
@@ -577,7 +579,12 @@ export interface NetworkInfo {
     capacity: number;
     jobsTotal: number;
     jobsCompleted: number;
+    /** Reached a provider: direct payments plus escrows that released. */
     paidUsdMicros: number;
+    /** Funded into XorvEscrow and not yet released or refunded. */
+    heldUsdMicros?: number;
+    /** Returned to buyers by XorvEscrow. */
+    refundedUsdMicros?: number;
   };
   heartbeatIntervalMs: number;
   /** XorvEscrow, when jobs are paid into escrow; null pays providers directly. */

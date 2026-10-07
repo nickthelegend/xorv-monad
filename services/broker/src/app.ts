@@ -708,7 +708,11 @@ export function createApp(deps: AppDeps) {
         capacity: live.reduce((n, p) => n + p.capabilities.length, 0),
         jobsTotal: allJobs.length,
         jobsCompleted: allJobs.filter((j) => j.status === "completed").length,
-        paidUsdMicros: settled.reduce((sum, j) => sum + (j.priceUsdMicros ?? 0), 0),
+        // Paid means it reached a provider: a direct payment, or an escrow that released.
+        // Money still held, or refunded to the buyer, is reported on its own.
+        paidUsdMicros: sumPrice(settled.filter((j) => !j.payment?.escrow || j.payment.escrow.state === "released")),
+        heldUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "funded")),
+        refundedUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "refunded")),
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     };
@@ -1493,7 +1497,7 @@ export function createApp(deps: AppDeps) {
         refundTx = await escrow.cancel(held.jobId as Hex);
         refunded = true;
         jobs.patch(job.id, {
-          payment: { ...job.payment, escrow: { ...held, state: "refunded", refundTx, lastError: undefined } },
+          payment: { ...job.payment, escrow: { ...held, state: "refunded", refundTx, settledAt: Date.now(), lastError: undefined } },
         });
       } catch (err) {
         // Not refunded now: failing the job below hands it to the settlement path, which refunds.
@@ -2528,10 +2532,10 @@ export function createApp(deps: AppDeps) {
         const finisher = job.providerId ? registry.get(job.providerId)?.address : undefined;
         if (finisher && !(await repointEscrow(jobId, finisher))) return;
         const tx = await escrow.release(held.jobId as Hex, job.resultHash);
-        patchEscrow(jobId, { state: "released", releaseTx: tx, resultHash: job.resultHash, lastError: undefined });
+        patchEscrow(jobId, { state: "released", releaseTx: tx, resultHash: job.resultHash, settledAt: Date.now(), lastError: undefined });
       } else {
         const tx = await escrow.refund(held.jobId as Hex);
-        patchEscrow(jobId, { state: "refunded", refundTx: tx, lastError: undefined });
+        patchEscrow(jobId, { state: "refunded", refundTx: tx, settledAt: Date.now(), lastError: undefined });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
@@ -2541,6 +2545,7 @@ export function createApp(deps: AppDeps) {
         const settled = await escrow.settlement(held.jobId as Hex, job.payment?.txHash).catch(() => null);
         patchEscrow(jobId, {
           state: onChain.status,
+          settledAt: Date.now(),
           ...(onChain.status === "released" ? { releaseTx: settled?.tx } : { refundTx: settled?.tx }),
           settledBy: settled?.by,
           lastError: undefined,
@@ -2772,6 +2777,11 @@ function lastSegment(path: string): string | undefined {
 function quoteIdFromTransport(transport: unknown): string | undefined {
   const path = (transport as HTTPTransportContext | undefined)?.request?.path;
   return path ? lastSegment(path) : undefined;
+}
+
+/** Total quoted price of these jobs, in USD micros. */
+function sumPrice(jobs: readonly { priceUsdMicros?: number | null }[]): number {
+  return jobs.reduce((sum, j) => sum + (j.priceUsdMicros ?? 0), 0);
 }
 
 function safeAddress(value: string): string {

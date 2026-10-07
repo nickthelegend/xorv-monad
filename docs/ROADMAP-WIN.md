@@ -115,8 +115,8 @@ Considered and not picked for this wave:
 
 | Rank | Feature | Commit | Screens |
 |---|---|---|---|
-| 1 | `pnpm demo` | this commit | `f1-demo-*.png` |
-| 2 | Escrow timeline | | |
+| 1 | `pnpm demo` | 3ea6e93 | `f1-demo-*.png` |
+| 2 | Escrow timeline | this commit | `f2-escrow-*.png` |
 | 3 | Monad speed receipt | | |
 | 4 | Provider earnings dashboard | | |
 | 5 | Job browse page | | |

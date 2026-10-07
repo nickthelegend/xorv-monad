@@ -307,8 +307,9 @@ export function Composer() {
       </motion.h1>
 
       <motion.p {...rise(0.18)} className="mx-auto mt-3.5 max-w-md text-[14px] leading-relaxed text-fg-3">
-        Paid per job in USDC from your own wallet, settled on Monad in about a second, straight to the
-        person whose machine ran it.
+        {info?.escrow
+          ? "Paid per job in USDC from your own wallet, settled on Monad in about a second, and held in escrow until the work is delivered: released to the person whose machine ran it, or refunded."
+          : "Paid per job in USDC from your own wallet, settled on Monad in about a second, straight to the person whose machine ran it."}
       </motion.p>
 
       {/* --- the input ------------------------------------------------------ */}
@@ -419,6 +420,19 @@ export function Composer() {
                     {quote.provider.agentId ? ` · agent #${quote.provider.agentId}` : ""}
                   </p>
                   <p className="mono mt-1.5 truncate text-[11.5px] text-fg-4">
+                    {quote.escrow ? (
+                      <>
+                        <a
+                          href={quote.escrow.explorerUrl || explorerAddress(NETWORK, quote.escrow.address)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline-offset-4 hover:text-fg-2 hover:underline"
+                        >
+                          XorvEscrow {shortHex(quote.escrow.address)}
+                        </a>{" "}
+                        holds it →{" "}
+                      </>
+                    ) : null}
                     pays →{" "}
                     <a
                       href={quote.provider.addressUrl || explorerAddress(NETWORK, quote.provider.address)}
@@ -428,7 +442,7 @@ export function Composer() {
                     >
                       {shortHex(quote.provider.address)}
                     </a>{" "}
-                    · the provider, never the broker
+                    {quote.escrow ? " on delivery" : " · the provider, never the broker"}
                   </p>
                 </div>
                 <p className="tnum shrink-0 text-[19px] font-semibold text-fg">{quote.priceLabel}</p>
@@ -488,7 +502,9 @@ export function Composer() {
               ) : null}
 
               <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-fg-4">
-                You sign once, for exactly {quote.priceLabel} to this provider. The facilitator pays the gas.
+                {quote.escrow
+                  ? `You sign once, for exactly ${quote.priceLabel} into XorvEscrow. It goes to this provider only when the job delivers, and comes back to you in full if it doesn't; after ${new Date(quote.escrow.deadline * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} anyone can refund it. The facilitator pays the gas.`
+                  : `You sign once, for exactly ${quote.priceLabel} to this provider. The facilitator pays the gas.`}
               </p>
 
               <button
