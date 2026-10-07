@@ -29,3 +29,38 @@ describe("P256 encoding for the 0x0100 precompile", () => {
     expect(input.slice(2 + 64, 2 + 128)).toBe(`${"0".repeat(63)}2`);
   });
 });
+
+describe("passkey public keys", () => {
+  it("reads x and y from the SPKI a passkey hands out at creation", async () => {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { spkiToXY } = await import("../src/p256.js");
+    const { publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const spki = new Uint8Array(publicKey.export({ format: "der", type: "spki" }));
+    const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+    const coord = (b64: string) => BigInt(`0x${Buffer.from(b64, "base64url").toString("hex")}`);
+    expect(spkiToXY(spki)).toEqual({ x: coord(jwk.x), y: coord(jwk.y) });
+    expect(() => spkiToXY(new Uint8Array(10))).toThrow();
+  });
+
+  it("recovers a passkey's key from two of its assertions, and refuses two different passkeys", async () => {
+    const { createHash, generateKeyPairSync, sign } = await import("node:crypto");
+    const { recoverPasskeyKey, verifyPasskeyLocally } = await import("../src/p256.js");
+    const key = () => {
+      const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+      const jwk = publicKey.export({ format: "jwk" }) as { x: string; y: string };
+      const coord = (b64: string) => BigInt(`0x${Buffer.from(b64, "base64url").toString("hex")}`);
+      return { privateKey, x: coord(jwk.x), y: coord(jwk.y) };
+    };
+    const assert = (k: ReturnType<typeof key>, challenge: string) => {
+      const authenticatorData = new Uint8Array(Buffer.concat([createHash("sha256").update("localhost").digest(), Buffer.from([5, 0, 0, 0, 1])]));
+      const clientDataJSON = new Uint8Array(Buffer.from(JSON.stringify({ type: "webauthn.get", challenge, origin: "http://localhost" })));
+      const signature = new Uint8Array(sign("sha256", Buffer.concat([authenticatorData, createHash("sha256").update(clientDataJSON).digest()]), k.privateKey));
+      return { authenticatorData, clientDataJSON, signature };
+    };
+    const a = key();
+    const recovered = recoverPasskeyKey(assert(a, "one"), assert(a, "two"));
+    expect(recovered).toEqual({ x: a.x, y: a.y });
+    expect(verifyPasskeyLocally(assert(a, "three"), recovered!)).toBe(true);
+    expect(recoverPasskeyKey(assert(a, "one"), assert(key(), "two"))).toBeNull();
+  });
+});

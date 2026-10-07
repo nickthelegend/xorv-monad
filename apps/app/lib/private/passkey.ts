@@ -25,6 +25,7 @@ import {
   type WebAuthnClient,
 } from "@category-labs/mera";
 import { prfSaltFor, type PrfNamespace } from "@xorv/protocol/web";
+import { capturingWebAuthnClient } from "./passkey-onchain";
 
 export type { PasskeyCredentialMetadata, WebAuthnClient };
 
@@ -38,7 +39,9 @@ export interface PasskeyEnv {
 }
 
 export function browserPasskeyEnv(): PasskeyEnv {
-  return { rpId: window.location.hostname, rpName: "Xorv" };
+  // Mera's ceremonies, through a client that also keeps the passkey's public key and its
+  // unlock assertions, so the passkey can be checked on Monad's P256 precompile.
+  return { rpId: window.location.hostname, rpName: "Xorv", webAuthnClient: capturingWebAuthnClient };
 }
 
 /** What the authenticator shows as the passkey's name — says what it is for. */

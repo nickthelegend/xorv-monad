@@ -5,6 +5,7 @@ import { PRF_NAMESPACES } from "@xorv/protocol/web";
 import { usePrivateKeys } from "@/components/private-keys";
 import { Button, Panel } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { PasskeyOnChain } from "@/components/passkey-onchain";
 
 /**
  * The passkey keyring, made visible.
@@ -100,6 +101,8 @@ export function PasskeyPanel({ className }: { className?: string }) {
           </Button>
         ) : null}
       </div>
+
+      <PasskeyOnChain credentialId={snapshot.credentialId} />
 
       {error ? (
         <p role="alert" className={cn("mt-3 text-[12px] leading-relaxed", error.kind === "cancelled" ? "text-fg-3" : "text-fail")}>

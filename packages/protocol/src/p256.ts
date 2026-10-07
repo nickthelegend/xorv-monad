@@ -13,7 +13,8 @@
  * malleable; the precompile accepts both, but contracts should store one), and
  * run the check against a chain.
  */
-import { concatHex, sha256, toHex, type Hex, type PublicClient } from "viem";
+import { p256 } from "@noble/curves/nist.js";
+import { concatHex, hexToBytes, sha256, toHex, type Hex, type PublicClient } from "viem";
 
 export const P256_VERIFY = "0x0000000000000000000000000000000000000100" as const;
 
@@ -72,4 +73,56 @@ export async function verifyPasskeyAssertion(
 ): Promise<boolean> {
   const { r, s } = derToRs(a.signature);
   return p256VerifyOnChain(client, { hash: webauthnDigest(a.authenticatorData, a.clientDataJSON), r, s, x: a.x, y: a.y });
+}
+
+/** One WebAuthn assertion, as navigator.credentials.get() returns it. */
+export interface PasskeyAssertion {
+  authenticatorData: Uint8Array;
+  clientDataJSON: Uint8Array;
+  /** DER-encoded ECDSA signature. */
+  signature: Uint8Array;
+}
+
+/**
+ * A passkey's public key from the SubjectPublicKeyInfo that
+ * `AuthenticatorAttestationResponse.getPublicKey()` returns at creation: for
+ * P-256 (COSE alg -7) it ends in the uncompressed point 0x04 ‖ x ‖ y.
+ */
+export function spkiToXY(spki: Uint8Array): { x: bigint; y: bigint } {
+  const point = spki.slice(spki.length - 65);
+  if (spki.length < 65 || point[0] !== 0x04) throw new Error("not an uncompressed P-256 public key");
+  return { x: BigInt(toHex(point.slice(1, 33))), y: BigInt(toHex(point.slice(33, 65))) };
+}
+
+/** Check an assertion against a public key locally (no chain), as P256VERIFY would. */
+export function verifyPasskeyLocally(a: PasskeyAssertion, key: { x: bigint; y: bigint }): boolean {
+  const { r, s } = derToRs(a.signature);
+  const sig = hexToBytes(concatHex([toHex(r, { size: 32 }), toHex(s, { size: 32 })]));
+  const pub = hexToBytes(concatHex(["0x04", toHex(key.x, { size: 32 }), toHex(key.y, { size: 32 })]));
+  return p256.verify(sig, hexToBytes(webauthnDigest(a.authenticatorData, a.clientDataJSON)), pub, { prehash: false, lowS: false });
+}
+
+/**
+ * Recover a passkey's public key from two of its assertions.
+ *
+ * WebAuthn only hands out a passkey's public key when it is created. For a
+ * passkey made before anyone kept it, ECDSA key recovery gets it back: one
+ * signature yields two candidate keys, and the one that also verifies a
+ * second, independent assertion is the passkey's. Null if no candidate
+ * verifies both (two different passkeys, or a damaged assertion).
+ */
+export function recoverPasskeyKey(first: PasskeyAssertion, second: PasskeyAssertion): { x: bigint; y: bigint } | null {
+  const { r, s } = derToRs(first.signature);
+  const digest = hexToBytes(webauthnDigest(first.authenticatorData, first.clientDataJSON));
+  const compact = hexToBytes(concatHex([toHex(r, { size: 32 }), toHex(s, { size: 32 })]));
+  for (const bit of [0, 1]) {
+    try {
+      const point = p256.Signature.fromBytes(compact, "compact").addRecoveryBit(bit).recoverPublicKey(digest).toAffine();
+      const key = { x: point.x, y: point.y };
+      if (verifyPasskeyLocally(first, key) && verifyPasskeyLocally(second, key)) return key;
+    } catch {
+      // no point for this recovery bit
+    }
+  }
+  return null;
 }
