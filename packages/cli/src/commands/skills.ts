@@ -94,9 +94,9 @@ network matches the best live provider under the ceiling.
     "usdcAmount": "40000"
   },
   "settlementTransaction": "0x…",
-  "explorer": "https://testnet.monadscan.com/tx/0x…",
-  "receiptExplorer": "https://testnet.monadscan.com/tx/0x…",
-  "agentExplorer": "https://testnet.monadscan.com/nft/0x8004…/42",
+  "explorer": "https://testnet.monadvision.com/tx/0x…",
+  "receiptExplorer": "https://testnet.monadvision.com/tx/0x…",
+  "agentExplorer": "https://testnet.monadvision.com/nft/0x8004…/42",
   "status": "completed",
   "result": "…"
 }

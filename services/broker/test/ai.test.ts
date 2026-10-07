@@ -119,7 +119,7 @@ function job(over: Partial<StoredJob> = {}): StoredJob {
       payer: "0x2222222222222222222222222222222222222222",
       payTo: "0xaaaa00000000000000000000000000000000000a",
       settledAt: 2,
-      explorerUrl: "https://testnet.monadscan.com/tx/0x",
+      explorerUrl: "https://testnet.monadvision.com/tx/0x",
     },
     result: "Blocks every half second / parallel lanes of state / finality waits not",
     resultHash: textHash("Blocks every half second / parallel lanes of state / finality waits not"),

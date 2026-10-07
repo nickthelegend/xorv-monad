@@ -164,7 +164,7 @@ describe("job lifecycle", () => {
       payer: "0x2222222222222222222222222222222222222222",
       payTo: PAYEE,
       settledAt: Date.now(),
-      explorerUrl: "https://testnet.monadscan.com/tx/0xab",
+      explorerUrl: "https://testnet.monadvision.com/tx/0xab",
     };
     const job = store.createJob(store.createQuote(quoteInput()), { payment, cancelTokenHash: "h" });
     expect(store.get(job.id)!.payment).toEqual(payment);

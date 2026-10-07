@@ -113,7 +113,7 @@ const BASE: Readonly<Record<MonadNetwork, NetworkConfig>> = {
     label: "testnet",
     rpcUrl: "https://testnet-rpc.monad.xyz",
     wsUrl: "wss://testnet-rpc.monad.xyz",
-    explorerUrl: "https://testnet.monadscan.com",
+    explorerUrl: "https://testnet.monadvision.com",
     usdc: {
       address: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
       name: "USDC",
@@ -137,7 +137,7 @@ const BASE: Readonly<Record<MonadNetwork, NetworkConfig>> = {
     label: "mainnet",
     rpcUrl: "https://rpc.monad.xyz",
     wsUrl: "wss://rpc.monad.xyz",
-    explorerUrl: "https://monadscan.com",
+    explorerUrl: "https://monadvision.com",
     usdc: {
       address: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
       name: "USDC",
@@ -223,6 +223,9 @@ export function viemChain(network: string): Chain {
     blockTime: MONAD_BLOCK_TIME_MS,
     rpcUrls: { default: { http: [cfg.rpcUrl], webSocket: [cfg.wsUrl] } },
     blockExplorers: { default: { name: "Explorer", url: cfg.explorerUrl } },
+    // Canonical Multicall3. viem's definition carries a creation block from before
+    // testnet's December 2025 reset, so it is restated without one.
+    contracts: { ...base.contracts, multicall3: { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } },
   });
 }
 

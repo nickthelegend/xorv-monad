@@ -147,7 +147,7 @@ function BlockChip({ block }: { block: TrackedBlock }) {
       title={`#${block.number} ${block.state}${COMMIT_STATES.map((s) => (block.ms[s] !== undefined ? ` · ${s} +${block.ms[s]} ms` : "")).join("")}`}
       data-state={block.state}
     >
-      <Ext href={explorerBlock(NETWORK, block.number)}>…{String(block.number).slice(-4)}</Ext>
+      <Ext live href={explorerBlock(NETWORK, block.number)}>…{String(block.number).slice(-4)}</Ext>
       <span className="ml-1 opacity-80">{block.state === "Proposed" ? "·" : ms !== undefined ? `${ms}` : block.state[0]}</span>
     </li>
   );
@@ -168,9 +168,9 @@ function LogRow({ log }: { log: LiveLog }) {
   return (
     <li className="flex items-baseline justify-between gap-3 text-[12px]">
       <span className="mono min-w-0 truncate text-fg-3">
-        <Ext href={explorerAddress(NETWORK, log.address)}>{LABELS[log.address.toLowerCase()] ?? shortHex(log.address)}</Ext>
+        <Ext live href={explorerAddress(NETWORK, log.address)}>{LABELS[log.address.toLowerCase()] ?? shortHex(log.address)}</Ext>
         {" · "}
-        <Ext href={explorerTx(NETWORK, log.txHash)}>{shortHex(log.txHash)} ↗</Ext>
+        <Ext live href={explorerTx(NETWORK, log.txHash)}>{shortHex(log.txHash)} ↗</Ext>
       </span>
       <span className={cn("shrink-0 rounded border px-1.5 text-[11px]", CHIP[log.state])}>
         {log.state}

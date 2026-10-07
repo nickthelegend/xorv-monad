@@ -71,7 +71,7 @@ describe("networks", () => {
       label: "testnet",
       rpcUrl: "https://testnet-rpc.monad.xyz",
       wsUrl: "wss://testnet-rpc.monad.xyz",
-      explorerUrl: "https://testnet.monadscan.com",
+      explorerUrl: "https://testnet.monadvision.com",
       facilitatorUrl: "https://x402-facilitator.molandak.org",
       faucets: { mon: "https://faucet.monad.xyz", usdc: "https://faucet.circle.com" },
     });
@@ -95,7 +95,7 @@ describe("networks", () => {
       chainId: 143,
       label: "mainnet",
       rpcUrl: "https://rpc.monad.xyz",
-      explorerUrl: "https://monadscan.com",
+      explorerUrl: "https://monadvision.com",
       faucets: { mon: null, usdc: null },
     });
     expect(cfg.usdc.address).toBe("0x754704Bc059F8C67012fEd69BC8A327a5aafb603");
@@ -198,7 +198,7 @@ describe("viemChain", () => {
     expect(chain.blockTime).toBe(MONAD_BLOCK_TIME_MS);
     expect(chain.rpcUrls.default.http).toEqual(["https://testnet-rpc.monad.xyz"]);
     expect(chain.rpcUrls.default.webSocket).toEqual(["wss://testnet-rpc.monad.xyz"]);
-    expect(chain.blockExplorers?.default.url).toBe("https://testnet.monadscan.com");
+    expect(chain.blockExplorers?.default.url).toBe("https://testnet.monadvision.com");
     expect(chain.nativeCurrency.symbol).toBe("MON");
     expect(viemChain(MONAD_MAINNET).id).toBe(143);
   });
@@ -217,16 +217,16 @@ describe("explorer links", () => {
   const TX = "0x5f1c7e3b2a9d8c7b6a5f4e3d2c1b0a9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b";
 
   it("links transactions verbatim — EVM hashes need no rewriting", () => {
-    expect(explorerTx(MONAD_TESTNET, TX)).toBe(`https://testnet.monadscan.com/tx/${TX}`);
-    expect(explorerTx(MONAD_MAINNET, TX)).toBe(`https://monadscan.com/tx/${TX}`);
+    expect(explorerTx(MONAD_TESTNET, TX)).toBe(`https://testnet.monadvision.com/tx/${TX}`);
+    expect(explorerTx(MONAD_MAINNET, TX)).toBe(`https://monadvision.com/tx/${TX}`);
   });
 
   it("checksums addresses and tokens for display", () => {
     expect(explorerAddress(MONAD_TESTNET, "0xd8da6bf26964af9d7eed9e03e53415d37aa96045")).toBe(
-      "https://testnet.monadscan.com/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      "https://testnet.monadvision.com/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
     );
     expect(explorerToken(MONAD_MAINNET, "0x754704bc059f8c67012fed69bc8a327a5aafb603")).toBe(
-      "https://monadscan.com/token/0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
+      "https://monadvision.com/token/0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
     );
   });
 
@@ -239,15 +239,15 @@ describe("explorer links", () => {
   });
 
   it("links a block by number", () => {
-    expect(explorerBlock(MONAD_TESTNET, 68_998_123)).toBe("https://testnet.monadscan.com/block/68998123");
+    expect(explorerBlock(MONAD_TESTNET, 68_998_123)).toBe("https://testnet.monadvision.com/block/68998123");
   });
 
   it("links an ERC-8004 agent as the Identity Registry NFT page", () => {
     expect(explorerAgent(MONAD_TESTNET, 42)).toBe(
-      "https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/42",
+      "https://testnet.monadvision.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/42",
     );
     expect(explorerAgent(MONAD_MAINNET, "10259")).toBe(
-      "https://monadscan.com/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/10259",
+      "https://monadvision.com/nft/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432/10259",
     );
     expect(explorerAgent(MONAD_MAINNET, 7n)).toMatch(/\/7$/);
   });

@@ -1,6 +1,9 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { explorerHref } from "@/lib/network";
+
+const LOCAL_ONLY = "On the local fork: no public explorer has this transaction";
 
 /* ---------------------------------------------------------------------------
    The app's component vocabulary.
@@ -38,6 +41,13 @@ export function Button({
   external?: boolean;
 } & Omit<ComponentProps<"button">, "ref">) {
   const cls = cn(base, variants[variant], className);
+  if (href && external && explorerHref(href) === null) {
+    return (
+      <span className={cn(cls, "pointer-events-none opacity-50")} title={LOCAL_ONLY}>
+        {children} · local fork
+      </span>
+    );
+  }
   if (href) {
     return (
       <Link
@@ -143,7 +153,15 @@ export function Skeleton({ rows = 3, className }: { rows?: number; className?: s
   );
 }
 
-export function Ext({ href, children }: { href: string; children: ReactNode }) {
+/** An outside link. An explorer link to a local fork's state renders as text; `live` marks a real-network link. */
+export function Ext({ href, children, live }: { href: string; children: ReactNode; live?: boolean }) {
+  if (explorerHref(href, live) === null) {
+    return (
+      <span title={LOCAL_ONLY} className="cursor-default">
+        {children}
+      </span>
+    );
+  }
   return (
     <Link
       href={href}

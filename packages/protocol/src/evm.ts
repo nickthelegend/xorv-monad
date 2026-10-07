@@ -350,3 +350,33 @@ export function withSignerLock<T>(address: string, task: () => Promise<T>): Prom
 }
 
 export type { Account, Address, Chain, Hex };
+
+/** Multicall3, at its canonical address on Monad testnet and mainnet (and on any fork of them). */
+export const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as const;
+
+/** One read for `readBatch`: the same shape as `readContract`'s parameters. */
+export interface BatchCall {
+  address: `0x${string}`;
+  abi: readonly unknown[];
+  functionName: string;
+  args?: readonly unknown[];
+}
+
+/**
+ * Several contract reads as one `eth_call` through Multicall3.
+ *
+ * Monad's public RPC allows 25 `eth_call`s a second, so a payment check that
+ * needs four reads spends one of them instead of four. A chain without
+ * Multicall3 (a bare dev node) or any failure of the batch falls back to the
+ * reads one by one, which then reports the real error, if there is one.
+ */
+export async function readBatch(client: PublicClient, calls: readonly BatchCall[]): Promise<unknown[]> {
+  if (calls.length > 1 && client.chain?.contracts?.multicall3) {
+    try {
+      return await client.multicall({ contracts: calls as never, allowFailure: false });
+    } catch {
+      // fall through to individual reads
+    }
+  }
+  return Promise.all(calls.map((call) => client.readContract(call as never)));
+}

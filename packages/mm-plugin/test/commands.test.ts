@@ -203,12 +203,12 @@ describe("mm xorv run", () => {
       payer: PAYER.address,
       price: "$0.0100",
       usdcAmount: "10000",
-      payment: { txHash: SETTLE_TX, explorerUrl: `https://testnet.monadscan.com/tx/${SETTLE_TX}` },
+      payment: { txHash: SETTLE_TX, explorerUrl: `https://testnet.monadvision.com/tx/${SETTLE_TX}` },
       receiptExplorerUrl: expect.stringContaining("/tx/0xcdcd"),
       rate: `mm xorv rate ${JOB_ID} --stars 5`,
       jobUrl: `${BROKER_URL}/api/jobs/${JOB_ID}`,
     });
-    expect(hint).toContain(`https://testnet.monadscan.com/tx/${SETTLE_TX}`);
+    expect(hint).toContain(`https://testnet.monadvision.com/tx/${SETTLE_TX}`);
 
     // The executor was requested under this command's manifest id, once.
     expect(harness.executorSources).toEqual(["xorv:run"]);
@@ -222,7 +222,7 @@ describe("mm xorv run", () => {
     // The broker accepted the signature (it verifies it), and the balance was checked first.
     expect(harness.broker.payments).toHaveLength(1);
     expect(harness.balanceReads).toBe(1);
-    expect(harness.lines.join("\n")).toMatch(/Paid: https:\/\/testnet\.monadscan\.com\/tx\//);
+    expect(harness.lines.join("\n")).toMatch(/Paid: https:\/\/testnet\.monadvision\.com\/tx\//);
     expect(harness.lines.join("\n")).toMatch(/› Drafting the haiku/);
   });
 

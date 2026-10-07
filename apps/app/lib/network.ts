@@ -72,6 +72,15 @@ export const NETWORK_LABEL = `Monad ${CHAIN_CONFIG.label}`;
 export const IS_LOCAL_CHAIN = isLocalRpc(PUBLIC_RPC_URL);
 
 /**
+ * An explorer link, or null when it would be dead: on a local fork, no public
+ * explorer has ever seen the fork's transactions, so they show as plain text.
+ * Links to the real network (the live pipeline) pass `live`.
+ */
+export function explorerHref(href: string, live = false): string | null {
+  return !live && IS_LOCAL_CHAIN && href.startsWith(CHAIN_CONFIG.explorerUrl) ? null : href;
+}
+
+/**
  * Monad's own WebSocket, for the live block pipeline (`monadNewHeads`). Always
  * the real network, even when the app's contracts run on a local fork: the
  * pipeline is Monad's heartbeat, read-only, and labelled as such.

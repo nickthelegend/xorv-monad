@@ -145,4 +145,4 @@ the deployment runs), or **awaiting testnet go** (needs MON).
 | 5 | Native staking (`0x1000`) | | | |
 | 6 | Monad gas correctness (limit billing, reserve balance, 128 KB, MIP-8) | | | |
 | 7 | Monad-native payments (x402 facilitator, MPP) | | | |
-| 8 | Canonical contracts, Sourcify, linked hashes | | | |
+| 8 | Canonical contracts, Sourcify, linked hashes | **built + live**. Every hash and address links to MonadVision (Sourcify-verified XorvLedger shows its source there). On a local fork, links to fork state render as plain text instead of dead links, while the live pipeline still links real testnet blocks. Multicall3 (`0xcA11…CA11`, viem's stale pre-reset creation block dropped) batches the escrow verify's 4 reads and the gate's identity reads into one `eth_call`. Canonical ERC-8004 registries, Circle USDC and Monad's x402 facilitator were already in use | `packages/protocol/src/{chains,evm,escrow}.ts`, `apps/app/lib/network.ts` (`explorerHref`), `components/ui.tsx` | screenshots pending: memory |

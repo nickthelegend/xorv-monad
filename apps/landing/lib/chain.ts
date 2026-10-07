@@ -36,7 +36,7 @@ const NETWORKS: Record<string, ChainFacts> = {
     network: "eip155:10143",
     chainId: 10143,
     name: "Monad testnet",
-    explorerUrl: "https://testnet.monadscan.com",
+    explorerUrl: "https://testnet.monadvision.com",
     usdc: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
     erc8004: {
       identity: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
@@ -47,7 +47,7 @@ const NETWORKS: Record<string, ChainFacts> = {
     network: "eip155:143",
     chainId: 143,
     name: "Monad mainnet",
-    explorerUrl: "https://monadscan.com",
+    explorerUrl: "https://monadvision.com",
     usdc: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
     erc8004: {
       identity: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",

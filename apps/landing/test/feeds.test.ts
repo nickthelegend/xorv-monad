@@ -22,7 +22,7 @@ function receipt(overrides: Record<string, unknown> = {}, data: Record<string, u
     sequence: "1200:3",
     blockNumber: 1200,
     txHash: RECEIPT_TX,
-    explorerUrl: `https://testnet.monadscan.com/tx/${RECEIPT_TX}`,
+    explorerUrl: `https://testnet.monadvision.com/tx/${RECEIPT_TX}`,
     at: 1_790_000_000_000,
     brokerJobId: "job_Ab3dEf9h",
     payload: {
@@ -46,7 +46,7 @@ function receipt(overrides: Record<string, unknown> = {}, data: Record<string, u
         providerAccountId: PROVIDER,
         asset: "0x534b2f3A21130d7a60830c2Df862319e593943A3",
         transactionId: PAYMENT_TX,
-        paymentUrl: `https://testnet.monadscan.com/tx/${PAYMENT_TX}`,
+        paymentUrl: `https://testnet.monadvision.com/tx/${PAYMENT_TX}`,
         ...data,
       },
     },
@@ -69,8 +69,8 @@ describe("parseReceipts", () => {
         ok: true,
         durationMs: 8400,
         at: 1_790_000_000_000,
-        explorerUrl: `https://testnet.monadscan.com/tx/${RECEIPT_TX}`,
-        paymentUrl: `https://testnet.monadscan.com/tx/${PAYMENT_TX}`,
+        explorerUrl: `https://testnet.monadvision.com/tx/${RECEIPT_TX}`,
+        paymentUrl: `https://testnet.monadvision.com/tx/${PAYMENT_TX}`,
       },
     ]);
   });
@@ -134,9 +134,9 @@ describe("parseNetwork", () => {
     const net = parseNetwork({
       network: "eip155:10143",
       chainId: 10143,
-      explorerUrl: "https://testnet.monadscan.com",
-      usdc: { address: "0x534b2f3A21130d7a60830c2Df862319e593943A3", url: "https://testnet.monadscan.com/token/0x534b" },
-      ledger: { address: PROVIDER, url: `https://testnet.monadscan.com/address/${PROVIDER}`, mode: "write" },
+      explorerUrl: "https://testnet.monadvision.com",
+      usdc: { address: "0x534b2f3A21130d7a60830c2Df862319e593943A3", url: "https://testnet.monadvision.com/token/0x534b" },
+      ledger: { address: PROVIDER, url: `https://testnet.monadvision.com/address/${PROVIDER}`, mode: "write" },
       erc8004: { identity: "0x8004A818BFB912233c491871b3d84c89A494BD9e", reputation: "0x8004B663056A597Dffe9eCcC1965A193B7388713" },
       indexer: { url: "https://indexer.example/v1/graphql" },
       ai: { router: { by: "qwen", model: "qwen3.8-max" }, screener: null, verifier: { by: "kimi", model: "kimi-k3" } },
@@ -170,9 +170,9 @@ describe("parseLeaderboard", () => {
           rank: 1,
           label: "nivesh-macbook",
           address: PROVIDER,
-          addressUrl: `https://testnet.monadscan.com/address/${PROVIDER}`,
+          addressUrl: `https://testnet.monadvision.com/address/${PROVIDER}`,
           agentId: "42",
-          agentUrl: "https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/42",
+          agentUrl: "https://testnet.monadvision.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/42",
           live: true,
           jobsTotal: 9,
           jobsOk: 8,
@@ -209,7 +209,7 @@ describe("formatting", () => {
   });
 
   it("only lets http(s) URLs through", () => {
-    expect(safeUrl("https://monadscan.com/tx/0x1")).toBe("https://monadscan.com/tx/0x1");
+    expect(safeUrl("https://monadvision.com/tx/0x1")).toBe("https://monadvision.com/tx/0x1");
     expect(safeUrl("javascript:alert(1)")).toBeNull();
     expect(safeUrl(42)).toBeNull();
   });

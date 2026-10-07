@@ -174,7 +174,7 @@ describe("paying Nansen over x402", () => {
     // The settlement is captured as a Monad mainnet explorer link.
     if (!result.ok) throw new Error("unreachable");
     expect(result.paid).toMatchObject({ endpoint: NANSEN_PATHS.firstFunder, amountUnits: "10000", network: "eip155:143" });
-    expect(result.paid!.url).toBe(`https://monadscan.com/tx/${result.paid!.txHash}`);
+    expect(result.paid!.url).toBe(`https://monadvision.com/tx/${result.paid!.txHash}`);
     expect(client.budget.spentToday()).toBe(10_000n);
     expect(client.usageToday()).toMatchObject({ calls: 1, paidCalls: 1 });
   });
@@ -486,7 +486,7 @@ function okPaid<T>(data: T, paid: { txHash: string; amountUnits: string } | null
     paid: paid
       ? {
           txHash: paid.txHash,
-          url: `https://monadscan.com/tx/${paid.txHash}`,
+          url: `https://monadvision.com/tx/${paid.txHash}`,
           endpoint: NANSEN_PATHS.firstFunder,
           amountUnits: paid.amountUnits,
           network: "eip155:143",
@@ -668,11 +668,11 @@ describe("publicTrustView", () => {
       source: "nansen",
     });
     expect(view.paidTx.map((p) => p.url)).toEqual([
-      `https://monadscan.com/tx/0x${"1".repeat(64)}`,
-      `https://monadscan.com/tx/0x${"2".repeat(64)}`,
-      `https://monadscan.com/tx/0x${"3".repeat(64)}`,
+      `https://monadvision.com/tx/0x${"1".repeat(64)}`,
+      `https://monadvision.com/tx/0x${"2".repeat(64)}`,
+      `https://monadvision.com/tx/0x${"3".repeat(64)}`,
     ]);
-    expect(view.firstFunder?.url).toBe(`https://monadscan.com/address/${OTHER}`);
+    expect(view.firstFunder?.url).toBe(`https://monadvision.com/address/${OTHER}`);
   });
 });
 
@@ -937,7 +937,7 @@ describe("nansen:probe", () => {
     expect(result.status).toMatchObject({ auth: "x402", paidCallsToday: 5, spentTodayUsdc: "0.05" });
     const out = lines.join("\n");
     expect(out).toContain("Xorv paid Nansen $0.05 over x402 on Monad:");
-    expect(out).toMatch(/\$0\.01 {2}profiler\/address\/first-funder {2}https:\/\/monadscan\.com\/tx\/0x/);
+    expect(out).toMatch(/\$0\.01 {2}profiler\/address\/first-funder {2}https:\/\/monadvision\.com\/tx\/0x/);
     expect(result.check).toMatchObject({ related: false });
   });
 });

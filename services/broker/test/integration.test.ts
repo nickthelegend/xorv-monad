@@ -110,7 +110,7 @@ class StubChain implements ChainLike {
   private result(): PublishResult {
     this.tx += 1;
     const txHash = `0x${this.tx.toString(16).padStart(64, "0")}`;
-    return { contract: LEDGER, txHash, explorerUrl: `https://testnet.monadscan.com/tx/${txHash}`, blockNumber: "1" };
+    return { contract: LEDGER, txHash, explorerUrl: `https://testnet.monadvision.com/tx/${txHash}`, blockNumber: "1" };
   }
   async registerProvider(provider: { id: string; address: string; agentId: string | null }) {
     this.registrations.push({ id: provider.id, address: provider.address, agentId: provider.agentId });
@@ -571,7 +571,7 @@ describe("registration", () => {
     const listed = await (await fetch(`${h.base}/api/providers`)).json();
     expect(listed.providers).toHaveLength(1);
     expect(listed.providers[0].connected).toBe(true);
-    expect(listed.providers[0].addressUrl).toContain("testnet.monadscan.com/address/");
+    expect(listed.providers[0].addressUrl).toContain("testnet.monadvision.com/address/");
     provider.close();
   });
 
@@ -839,7 +839,7 @@ describe("the paid path", () => {
     expect(done.payment.payer).toBe(h.buyer.address);
     expect(done.payment.asset).toBe("usdc");
     expect(done.payment.assetAddress).toBe(USDC);
-    expect(done.payment.explorerUrl).toBe(`https://testnet.monadscan.com/tx/${settle.transaction}`);
+    expect(done.payment.explorerUrl).toBe(`https://testnet.monadvision.com/tx/${settle.transaction}`);
     expect(done.events.length).toBeGreaterThan(0);
 
     // The receipt was queued once the job was terminal and paid, carrying the
@@ -1703,7 +1703,7 @@ describe("public surface", () => {
       network: NETWORK,
       chainId: 10143,
       label: "testnet",
-      explorerUrl: "https://testnet.monadscan.com",
+      explorerUrl: "https://testnet.monadvision.com",
       usdc: { address: USDC, symbol: "USDC", decimals: 6 },
       facilitator: { mode: "self", available: true },
       ledger: { address: LEDGER, mode: "write" },
@@ -1795,7 +1795,7 @@ describe("public surface", () => {
     expect(ledger.events[0]).toMatchObject({
       id: "900:1",
       brokerJobId: paid.jobId,
-      explorerUrl: `https://testnet.monadscan.com/tx/${tx}`,
+      explorerUrl: `https://testnet.monadvision.com/tx/${tx}`,
     });
     expect((await fetch(`${h.base}/api/ledger?kind=registrations`)).status).toBe(200);
     expect((await fetch(`${h.base}/api/ledger?kind=bogus`)).status).toBe(400);
@@ -1892,7 +1892,7 @@ class StubFeedback implements FeedbackSink {
     if (this.fail) throw new Error("insufficient funds for gas");
     this.writes.push(input);
     const txHash = `0x${"fb".repeat(31)}${this.writes.length.toString(16).padStart(2, "0")}`;
-    return { contract: this.reputationRegistry, txHash, explorerUrl: `https://testnet.monadscan.com/tx/${txHash}`, blockNumber: "1" };
+    return { contract: this.reputationRegistry, txHash, explorerUrl: `https://testnet.monadvision.com/tx/${txHash}`, blockNumber: "1" };
   }
   counts() {
     return { published: this.writes.length, failed: 0, lastError: null };

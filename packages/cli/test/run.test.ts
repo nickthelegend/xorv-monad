@@ -50,7 +50,7 @@ function quote(over: Partial<QuoteResponse> = {}, provider: Partial<QuoteRespons
       id: "prv_1",
       label: "someone's qwen",
       address: PROVIDER,
-      addressUrl: `https://testnet.monadscan.com/address/${PROVIDER}`,
+      addressUrl: `https://testnet.monadvision.com/address/${PROVIDER}`,
       agentId: "42",
       capability: "Qwen 3.8 Max",
       adapter: "qwen",
@@ -248,10 +248,10 @@ describe("the --json contract", () => {
       network: NETWORK,
       payer: BUYER,
       settlementTransaction: SETTLE_TX,
-      explorer: `https://testnet.monadscan.com/tx/${SETTLE_TX}`,
+      explorer: `https://testnet.monadvision.com/tx/${SETTLE_TX}`,
       receiptTransaction: `0x${"ef".repeat(32)}`,
-      receiptExplorer: `https://testnet.monadscan.com/tx/0x${"ef".repeat(32)}`,
-      agentExplorer: "https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/42",
+      receiptExplorer: `https://testnet.monadvision.com/tx/0x${"ef".repeat(32)}`,
+      agentExplorer: "https://testnet.monadvision.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/42",
       status: "completed",
       result: "4",
     });
@@ -282,7 +282,7 @@ describe("the --json contract", () => {
       },
       durationMs: 5,
     });
-    expect(out.explorer).toBe(`https://testnet.monadscan.com/tx/${SETTLE_TX}`);
+    expect(out.explorer).toBe(`https://testnet.monadvision.com/tx/${SETTLE_TX}`);
     expect(out.agentExplorer).toBeNull();
     expect(out.receiptExplorer).toBeNull();
     expect(out.status).toBe("failed");

@@ -63,7 +63,7 @@ describe("spending discipline", () => {
 describe("the receipt", () => {
   it("requires the explorer link to be reported with every paid job", () => {
     expect(body).toMatch(/Never report a paid job without its link/i);
-    expect(body).toContain("\"explorer\": \"https://testnet.monadscan.com/tx/0x");
+    expect(body).toContain("\"explorer\": \"https://testnet.monadvision.com/tx/0x");
   });
 
   it("documents the run --json keys exactly as run.ts emits them", () => {

@@ -115,7 +115,7 @@ describe("jobs survive a restart", () => {
         payer: PAYER,
         payTo: PAYEE,
         settledAt: Date.now(),
-        explorerUrl: `https://testnet.monadscan.com/tx/${TX}`,
+        explorerUrl: `https://testnet.monadvision.com/tx/${TX}`,
       },
       receiptTxHash: `0x${"cd".repeat(32)}`,
     });

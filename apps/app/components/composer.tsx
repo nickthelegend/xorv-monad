@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { explorerAddress, shortHex } from "@xorv/protocol/web";
+import { Ext } from "@/components/ui";
 import { ModelPicker, type ModelOption } from "./model-picker";
 import { useWallet } from "@/components/wallet-provider";
 import { api, BROKER_URL, type Quote } from "@/lib/api";
@@ -422,26 +423,16 @@ export function Composer() {
                   <p className="mono mt-1.5 truncate text-[11.5px] text-fg-4">
                     {quote.escrow ? (
                       <>
-                        <a
-                          href={quote.escrow.explorerUrl || explorerAddress(NETWORK, quote.escrow.address)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline-offset-4 hover:text-fg-2 hover:underline"
-                        >
+                        <Ext href={quote.escrow.explorerUrl || explorerAddress(NETWORK, quote.escrow.address)}>
                           XorvEscrow {shortHex(quote.escrow.address)}
-                        </a>{" "}
+                        </Ext>{" "}
                         holds it →{" "}
                       </>
                     ) : null}
                     pays →{" "}
-                    <a
-                      href={quote.provider.addressUrl || explorerAddress(NETWORK, quote.provider.address)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline-offset-4 hover:text-fg-2 hover:underline"
-                    >
+                    <Ext href={quote.provider.addressUrl || explorerAddress(NETWORK, quote.provider.address)}>
                       {shortHex(quote.provider.address)}
-                    </a>{" "}
+                    </Ext>{" "}
                     {quote.escrow ? " on delivery" : " · the provider, never the broker"}
                   </p>
                 </div>

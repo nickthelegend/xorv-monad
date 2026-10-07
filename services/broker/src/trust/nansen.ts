@@ -53,7 +53,7 @@ export const MONAD_MAINNET_USDC = "0x754704Bc059F8C67012fEd69BC8A327a5aafb603";
 /** The Monad `payTo` every probed endpoint named. Opt-in pin: refuse a swapped payee. */
 export const NANSEN_OBSERVED_PAY_TO = "0x93053f1e7A5eFEDa532Fe69CbbE43cBEc3A0F13f";
 /** Paid-call links go to the mainnet explorer, not the one the broker is configured with. */
-export const MONAD_MAINNET_EXPLORER = "https://monadscan.com";
+export const MONAD_MAINNET_EXPLORER = "https://monadvision.com";
 export const NANSEN_ATTRIBUTION = "Powered by Nansen";
 export const NANSEN_ATTRIBUTION_URL = "https://nansen.ai";
 

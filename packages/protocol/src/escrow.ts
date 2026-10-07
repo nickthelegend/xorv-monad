@@ -52,6 +52,7 @@ import {
 } from "viem";
 import { XORV_ESCROW_ABI } from "./xorv-escrow.abi.js";
 import { syncReceipt } from "./sync-send.js";
+import { readBatch } from "./evm.js";
 
 // Re-exported so browser code on the ./escrow subpath can decode escrow events.
 export { XORV_ESCROW_ABI };
@@ -328,11 +329,10 @@ export async function readIdentityGate(pub: PublicClient, escrow: Address): Prom
 
 /** Each account's standing with the gate, in order. */
 export async function identityVerified(pub: PublicClient, gate: Address, accounts: Address[]): Promise<boolean[]> {
-  return Promise.all(
-    accounts.map((account) =>
-      pub.readContract({ address: gate, abi: IDENTITY_GATE_ABI, functionName: "isVerified", args: [account] }) as Promise<boolean>,
-    ),
-  );
+  return (await readBatch(
+    pub,
+    accounts.map((account) => ({ address: gate, abi: IDENTITY_GATE_ABI, functionName: "isVerified", args: [account] })),
+  )) as boolean[];
 }
 
 function invalid(reason: string, message: string, payer?: string): VerifyResponse {
@@ -443,11 +443,12 @@ export class EscrowFacilitatorScheme implements SchemeNetworkFacilitator {
     }
 
     const asset = getAddress(requirements.asset);
-    const [balance, used, allowed, job] = await Promise.all([
-      pub.readContract({ address: asset, abi: ERC20_READ_ABI, functionName: "balanceOf", args: [getAddress(auth.from)] }),
-      pub.readContract({ address: asset, abi: ERC20_READ_ABI, functionName: "authorizationState", args: [getAddress(auth.from), expectedNonce] }),
-      pub.readContract({ address: extra.escrow, abi: XORV_ESCROW_ABI, functionName: "tokenAllowed", args: [asset] }),
-      pub.readContract({ address: extra.escrow, abi: XORV_ESCROW_ABI, functionName: "getJob", args: [extra.jobId] }),
+    // Four reads, one eth_call (Multicall3).
+    const [balance, used, allowed, job] = await readBatch(pub, [
+      { address: asset, abi: ERC20_READ_ABI, functionName: "balanceOf", args: [getAddress(auth.from)] },
+      { address: asset, abi: ERC20_READ_ABI, functionName: "authorizationState", args: [getAddress(auth.from), expectedNonce] },
+      { address: extra.escrow, abi: XORV_ESCROW_ABI, functionName: "tokenAllowed", args: [asset] },
+      { address: extra.escrow, abi: XORV_ESCROW_ABI, functionName: "getJob", args: [extra.jobId] },
     ]);
     if (!allowed) return invalid("asset_not_allowed", `escrow does not accept ${asset}`, payer);
     if (used) return invalid("nonce_already_used", "this job was already funded", payer);

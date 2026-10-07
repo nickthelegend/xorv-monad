@@ -87,7 +87,7 @@ class StubChain implements ChainLike {
   private result(): PublishResult {
     this.tx += 1;
     const txHash = `0x${this.tx.toString(16).padStart(64, "0")}`;
-    return { contract: LEDGER, txHash, explorerUrl: `https://testnet.monadscan.com/tx/${txHash}`, blockNumber: "1" };
+    return { contract: LEDGER, txHash, explorerUrl: `https://testnet.monadvision.com/tx/${txHash}`, blockNumber: "1" };
   }
   async registerProvider() {
     return this.result();

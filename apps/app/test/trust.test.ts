@@ -33,15 +33,15 @@ const brokerTrust = {
     chain: "ethereum",
     txHash: `0x${"f".repeat(64)}`,
     at: "2025-05-04T12:58:54",
-    url: `https://monadscan.com/address/${FUNDER}`,
+    url: `https://monadvision.com/address/${FUNDER}`,
   },
   relatedWalletCount: 1,
   labels: ["funded by Binance 14"],
   riskFlags: [],
   paidTx: [
-    { txHash: `0x${"1".repeat(64)}`, url: `https://monadscan.com/tx/0x${"1".repeat(64)}`, endpoint: "/api/v1/profiler/address/first-funder", amountUsdc: "0.01", at: 1 },
-    { txHash: `0x${"2".repeat(64)}`, url: `https://monadscan.com/tx/0x${"2".repeat(64)}`, endpoint: "/api/v1/profiler/address/related-wallets", amountUsdc: "0.01", at: 1 },
-    { txHash: `0x${"3".repeat(64)}`, url: `https://monadscan.com/tx/0x${"3".repeat(64)}`, endpoint: "/api/v1/profiler/address/transactions", amountUsdc: "0.01", at: 1 },
+    { txHash: `0x${"1".repeat(64)}`, url: `https://monadvision.com/tx/0x${"1".repeat(64)}`, endpoint: "/api/v1/profiler/address/first-funder", amountUsdc: "0.01", at: 1 },
+    { txHash: `0x${"2".repeat(64)}`, url: `https://monadvision.com/tx/0x${"2".repeat(64)}`, endpoint: "/api/v1/profiler/address/related-wallets", amountUsdc: "0.01", at: 1 },
+    { txHash: `0x${"3".repeat(64)}`, url: `https://monadvision.com/tx/0x${"3".repeat(64)}`, endpoint: "/api/v1/profiler/address/transactions", amountUsdc: "0.01", at: 1 },
   ],
   paidUsdc: "0.03",
   source: "nansen",
@@ -121,7 +121,7 @@ describe("readNansenStatus", () => {
         mode: "live",
         auth: "x402",
         network: "eip155:143",
-        payer: { address: WALLET, url: `https://monadscan.com/address/${WALLET}` },
+        payer: { address: WALLET, url: `https://monadvision.com/address/${WALLET}` },
         callsToday: 7,
         paidCallsToday: 5,
         spentTodayUsdc: "0.05",
@@ -137,7 +137,7 @@ describe("readNansenStatus", () => {
       },
     })!;
     expect(status).toMatchObject({ mode: "live", auth: "x402", callsToday: 7, spentTodayUsdc: "0.05", ratingsRefused: 1 });
-    expect(status.lastPaidTx?.url).toMatch(/^https:\/\/monadscan\.com\/tx\//);
+    expect(status.lastPaidTx?.url).toMatch(/^https:\/\/monadvision\.com\/tx\//);
     expect(status.recentPaidTx).toHaveLength(3);
   });
 
