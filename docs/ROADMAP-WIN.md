@@ -156,8 +156,8 @@ and transient-guard changes: 31/31.
 | # | Feature | Status | Commit | Screens |
 |---|---|---|---|---|
 | 1 | ~~Deploy~~ | skipped: needs the testnet go and MON | | |
-| 2 | Passkeys verified on Monad's P256 precompile, from the app | done | this commit | `wave2/w2-passkey-*.png` |
-| 3 | In-app viewer for fork transactions | | | |
+| 2 | Passkeys verified on Monad's P256 precompile, from the app | done | 42695b7 | `wave2/w2-passkey-*.png` |
+| 3 | In-app viewer for fork transactions | done: `/chain`, `/chain/tx/:hash`, `/chain/address/:address`, `/chain/block/:n` read the app's own RPC and decode USDC, XorvEscrow, XorvLedger and ERC-8004 events with named addresses. On a fork every explorer link opens here instead of turning into text (11 viewer links, 0 dead ones on a job page). The fee row says what anvil charged and what Monad would charge (the limit) | this commit | `wave2/w2-chain-*.png` |
 | 4 | CRE refund replay on the job page | | | |
 | 5 | Agent-buyer session page | | | |
 | + | Next-best: | | | |

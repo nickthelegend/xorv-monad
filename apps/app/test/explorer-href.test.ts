@@ -13,11 +13,12 @@ afterEach(() => vi.unstubAllEnvs());
 // few seconds to transform on a loaded machine, so these get a longer timeout than the default 5 s.
 
 describe("explorer links on a local fork", () => {
-  it("drops links to the fork's own state, which no public explorer has, but keeps real-network links", async () => {
+  it("sends links to the fork's own state to the app's viewer, and keeps real-network links", async () => {
     const { explorerHref, IS_LOCAL_CHAIN, CHAIN_CONFIG } = await load("http://127.0.0.1:8650");
     expect(IS_LOCAL_CHAIN).toBe(true);
     const tx = `${CHAIN_CONFIG.explorerUrl}/tx/0xabc`;
-    expect(explorerHref(tx)).toBeNull();
+    expect(explorerHref(tx)).toBe("/chain/tx/0xabc");
+    expect(explorerHref(`${CHAIN_CONFIG.explorerUrl}/nft/0x8004/1`)).toBeNull();
     expect(explorerHref(tx, true)).toBe(tx);
     expect(explorerHref("https://faucet.circle.com")).toBe("https://faucet.circle.com");
   }, 30_000);

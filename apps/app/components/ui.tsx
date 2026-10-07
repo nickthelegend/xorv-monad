@@ -47,11 +47,20 @@ export function Button({
   external?: boolean;
 } & Omit<ComponentProps<"button">, "ref">) {
   const cls = cn(base, variants[variant], className);
-  if (href && external && explorerHref(href) === null) {
+  const target = href && external ? explorerHref(href) : href;
+  if (href && external && target === null) {
     return (
       <span className={cn(cls, "pointer-events-none opacity-50")} title={LOCAL_ONLY}>
         {children} · local fork
       </span>
+    );
+  }
+  if (target && target.startsWith("/")) {
+    // A fork's transaction, opened in the app's own chain viewer.
+    return (
+      <Link href={target} className={cls}>
+        {children}
+      </Link>
     );
   }
   if (href) {
@@ -161,7 +170,15 @@ export function Skeleton({ rows = 3, className }: { rows?: number; className?: s
 
 /** An outside link. An explorer link to a local fork's state renders as text; `live` marks a real-network link. */
 export function Ext({ href, children, live }: { href: string; children: ReactNode; live?: boolean }) {
-  if (explorerHref(href, live) === null) {
+  const target = explorerHref(href, live);
+  if (target !== null && target.startsWith("/")) {
+    return (
+      <Link href={target} className="underline-offset-4 transition-colors hover:text-fg hover:underline" title="On the local fork: opens the app's chain viewer">
+        {withoutArrow(children)}
+      </Link>
+    );
+  }
+  if (target === null) {
     return (
       <span title={LOCAL_ONLY} className="cursor-default">
         {withoutArrow(children)}

@@ -14,6 +14,7 @@
  */
 
 import { defineChain, type Chain } from "viem";
+import { viewerPath } from "@/lib/chain-viewer";
 import {
   DEFAULT_NETWORK,
   isLocalRpc,
@@ -72,12 +73,15 @@ export const NETWORK_LABEL = `Monad ${CHAIN_CONFIG.label}`;
 export const IS_LOCAL_CHAIN = isLocalRpc(PUBLIC_RPC_URL);
 
 /**
- * An explorer link, or null when it would be dead: on a local fork, no public
- * explorer has ever seen the fork's transactions, so they show as plain text.
- * Links to the real network (the live pipeline) pass `live`.
+ * An explorer link, rewritten for where it can actually be seen: on a local
+ * fork no public explorer has the fork's transactions, so they open in the
+ * app's own viewer (/chain/…), and anything it has no page for (null) shows as
+ * text. Links to the real network (the live pipeline) pass `live`.
  */
 export function explorerHref(href: string, live = false): string | null {
-  return !live && IS_LOCAL_CHAIN && href.startsWith(CHAIN_CONFIG.explorerUrl) ? null : href;
+  if (live || !IS_LOCAL_CHAIN || !href.startsWith(CHAIN_CONFIG.explorerUrl)) return href;
+  // On a fork the app's own viewer (/chain/…) reads the fork; anything it has no page for is text.
+  return viewerPath(CHAIN_CONFIG.explorerUrl, href);
 }
 
 /**
