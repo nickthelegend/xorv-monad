@@ -19,6 +19,7 @@ import {
   type PublicJob,
   type PublicProvider,
   type QuoteResponse,
+  type TxStatus,
 } from "@xorv/protocol/web";
 import { normalizeLeaderboard, normalizeLedgerFeed, type Leaderboard, type LedgerFeed } from "@/lib/wire";
 
@@ -38,6 +39,7 @@ export const BROKER_URL = (process.env.NEXT_PUBLIC_XORV_BROKER_URL?.trim() || "h
 export type Job = PublicJob & { trustCheck?: unknown };
 export type Provider = PublicProvider & { trust?: unknown };
 export type Quote = QuoteResponse;
+export type TxStatusResponse = TxStatus & { chain: "monad" | "local" };
 export type { JobEvent, JobRouting, JobScreening, JobVerification, JobRating, PaymentRecord } from "@xorv/protocol/web";
 export type { LedgerEvent, LedgerEventKind, NetworkInfo, Leaderboard, LedgerFeed };
 
@@ -62,6 +64,8 @@ export const api = {
   jobs: (limit = 25, providerId?: string) =>
     get<{ jobs: Job[] }>(`/api/jobs?limit=${limit}${providerId ? `&providerId=${encodeURIComponent(providerId)}` : ""}`).then((r) => r.jobs),
   job: (id: string) => get<{ job: Job }>(`/api/jobs/${encodeURIComponent(id)}`).then((r) => r.job),
+  /** Where a transaction stands: Monad's txpool, or Proposed / Voted / Finalized from the block tags. */
+  tx: (hash: string) => get<TxStatusResponse>(`/api/tx/${encodeURIComponent(hash)}`),
   /** XorvLedger events — from the Envio indexer when the broker has one, else an RPC log scan. */
   ledger: <K extends LedgerEventKind>(kind: K, limit = 20) =>
     get<unknown>(`/api/ledger?kind=${kind}&limit=${limit}`).then((r) => normalizeLedgerFeed(r, kind)),

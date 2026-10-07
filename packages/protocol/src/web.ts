@@ -27,3 +27,4 @@ export * from "./erc8004.js";
 export * from "./x402-client.js";
 export * from "./sealed.js";
 export * from "./vault.js";
+export type { TxState, TxStatus } from "./tx-status.js";

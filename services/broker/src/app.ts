@@ -66,6 +66,7 @@ import {
   isLocalRpc,
   networkConfig,
   sendModeOf,
+  readTxStatus,
   normalizeAddress,
   parseSealedResult,
   publicClientFor,
@@ -88,6 +89,7 @@ import {
   type LedgerEventKind,
   type NetworkInfo,
   type ChainTiming,
+  type TxStatus,
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
@@ -203,6 +205,8 @@ export interface AppDeps {
    * polling the RPC's `finalized` tag; tests stub it.
    */
   finalizedAt?: (blockNumber: number, blockHash: string) => Promise<number | null>;
+  /** Where a transaction stands (txpool, or its consensus state from the block tags). Defaults to the RPC; tests stub it. */
+  txStatus?: (txHash: string) => Promise<TxStatus>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
   /**
@@ -1485,6 +1489,34 @@ export function createApp(deps: AppDeps) {
     const limit = clampInt(c.req.query("limit"), 1, 500, 50);
     const providerId = c.req.query("providerId") ?? undefined;
     return c.json({ jobs: jobs.list({ limit, providerId }).map((job) => publicJob(job)) });
+  });
+
+  /**
+   * Where one transaction stands on this broker's chain: pending in Monad's
+   * txpool, or mined and Proposed, Voted or Finalized (from the latest, safe
+   * and finalized heads). Read-only; cached for half a second per hash so a
+   * page polling it can't multiply RPC load. `chain` says whether the answer
+   * is Monad's or a local fork's.
+   */
+  const txStatusCache = new Map<string, { at: number; value: Promise<TxStatus> }>();
+  app.get("/api/tx/:hash", async (c) => {
+    const hash = c.req.param("hash").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(hash)) return c.json({ error: "not a transaction hash" }, 400);
+    const cached = txStatusCache.get(hash);
+    let value: Promise<TxStatus>;
+    if (cached && Date.now() - cached.at < 500) {
+      value = cached.value;
+    } else {
+      value = (deps.txStatus ?? ((h: string) => readTxStatus(publicClientFor(config.network), h as Hex)))(hash);
+      txStatusCache.set(hash, { at: Date.now(), value });
+      if (txStatusCache.size > 1000) txStatusCache.delete(txStatusCache.keys().next().value!);
+    }
+    try {
+      return c.json({ ...(await value), chain: chainKind });
+    } catch (err) {
+      txStatusCache.delete(hash);
+      return c.json({ error: `could not read the chain: ${err instanceof Error ? err.message.split("\n")[0] : err}` }, 502);
+    }
   });
 
   app.get("/api/jobs/:id", (c) => {

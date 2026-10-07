@@ -351,6 +351,7 @@ async function boot(
     txFacts: async () => ({ blockNumber: 4242, blockHash: "0xb10c", gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
     // The finalized head reaches the block 600 ms after the receipt (two Monad slots).
     finalizedAt: async () => Date.now() + 600,
+    txStatus: async (hash) => ({ hash, state: "voted", blockNumber: 4242, pool: null, heads: { latest: 4243, safe: 4242, finalized: 4241 } }),
     ai: opts.ai,
     trust: opts.trust,
     escrow: opts.escrow ?? null,
@@ -2511,6 +2512,16 @@ describe("Nansen trust", () => {
   }, 20_000);
 });
 
+
+describe("transaction status", () => {
+  it("reports where a transaction stands in Monad's consensus, and refuses anything that isn't a hash", async () => {
+    h = await boot();
+    const hash = `0x${"ab".repeat(32)}`;
+    const ok = (await (await fetch(`${h.base}/api/tx/${hash}`)).json()) as Json;
+    expect(ok).toMatchObject({ hash, state: "voted", blockNumber: 4242, chain: "monad" });
+    expect((await fetch(`${h.base}/api/tx/0x1234`)).status).toBe(400);
+  });
+});
 
 describe("XorvEscrow: the money waits until the job delivers", () => {
   const GATE: GateInfo = {

@@ -7,6 +7,7 @@ import { NETWORK } from "@/lib/network";
 import { EASE, useEntrance } from "@/lib/motion";
 import { offsetLabel, paymentTimeline, type StepState } from "@/lib/payment-timeline";
 import { Ext, Panel } from "@/components/ui";
+import { TxBadge } from "@/components/tx-badge";
 import { cn } from "@/lib/utils";
 
 /**
@@ -80,6 +81,7 @@ export function PaymentTimeline({ job }: { job: Job }) {
                   {step.tx ? (
                     <p className="mono mt-0.5 text-[11px] text-fg-4">
                       <Ext href={explorerTx(NETWORK, step.tx)}>{shortHex(step.tx)} ↗</Ext>
+                      <TxBadge hash={step.tx} />
                     </p>
                   ) : null}
                 </div>
