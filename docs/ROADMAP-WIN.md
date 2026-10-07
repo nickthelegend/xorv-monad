@@ -139,7 +139,7 @@ the deployment runs), or **awaiting testnet go** (needs MON).
 | # | Item | Status | Where in the code | Screens |
 |---|---|---|---|---|
 | 1 | Live commit-state strip (`monadNewHeads`, `monadLogs`) | **live-read**: every Monad testnet block goes Proposed → Voted → Finalized → Verified with measured ms, and XorvLedger and ERC-8004 events stream with their commit state. Works while payments run on a fork, and is labelled as the real network | `apps/app/lib/{commit-states,use-monad-live}.ts`, `components/monad-live.tsx` | `m1-commit-*.png` |
-| 2 | Two-timer receipts (executed, final) | | | |
+| 2 | Two-timer receipts (executed, final) | **built; fork-timed now, Monad-timed at testnet go**. Escrow writes (fund, release, refund, cancel) go out with `eth_sendRawTransactionSync`: the receipt comes back in the send itself, with a plain send if the node lacks the method. The broker times executed (submit → receipt) and final (submit → the `finalized` head holds the block, hash checked). On a local chain finality is n/a and every figure is labelled "local fork, not Monad's timing" | `packages/protocol/src/sync-send.ts`, `services/broker/src/app.ts` (`chainTiming`), `apps/app/components/speed-receipt.tsx` | `m2-timers-*.png` |
 | 3 | Transaction status (`txpool_statusByHash`) | | | |
 | 4 | Passkeys on chain (P256 `0x0100`) | | | |
 | 5 | Native staking (`0x1000`) | | | |

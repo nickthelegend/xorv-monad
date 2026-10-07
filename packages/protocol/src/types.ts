@@ -175,8 +175,22 @@ export interface PaymentRecord {
  * broker's clock, and the block, gas and gas payer read from that receipt.
  */
 export interface ChainTiming {
-  /** Milliseconds from submission to the confirmed receipt; null when it wasn't measured. */
+  /**
+   * Milliseconds from submission to holding the receipt: the transaction has
+   * executed in a proposed block (speculatively final on Monad). Null when it
+   * wasn't measured.
+   */
   confirmMs: number | null;
+  /**
+   * Milliseconds from submission until the RPC's `finalized` head reached the
+   * transaction's block with the same hash (irreversible on Monad, about two
+   * slots after proposal). Null when it wasn't observed.
+   */
+  finalMs?: number | null;
+  /** "sync": the receipt came back in the send's own response (eth_sendRawTransactionSync); "async": it was polled. */
+  sendMode?: "sync" | "async" | null;
+  /** Where it was measured: a Monad network, or a local chain (a fork), whose timings are not Monad's. */
+  chain?: "monad" | "local";
   blockNumber: number;
   /** Gas used, as an integer string. */
   gasUsed: string;
@@ -612,6 +626,8 @@ export interface NetworkInfo {
     releaseMedianMs?: number | null;
     /** How many recent settlements the medians are over. */
     timingSamples?: number;
+    /** Where those timings were measured: a Monad network, or a local chain whose timings are not Monad's. */
+    timingChain?: "monad" | "local";
   };
   heartbeatIntervalMs: number;
   /** XorvEscrow, when jobs are paid into escrow; null pays providers directly. */

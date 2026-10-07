@@ -16,6 +16,7 @@
 import { defineChain, type Chain } from "viem";
 import {
   DEFAULT_NETWORK,
+  isLocalRpc,
   isSupportedNetwork,
   networkConfig,
   viemChain,
@@ -67,20 +68,7 @@ export const APP_CHAIN: Chain = defineChain({
 /** "Monad testnet" / "Monad mainnet" — for chrome, never for logic. */
 export const NETWORK_LABEL = `Monad ${CHAIN_CONFIG.label}`;
 
-/**
- * Whether this app's contracts and payments run on a local chain (a fork, a
- * dev node) rather than on Monad itself. Timings measured there are the local
- * chain's, never Monad's, so every speed figure says which one it is.
- */
-export function isLocalRpc(url: string): boolean {
-  try {
-    const host = new URL(url).hostname;
-    return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1" || host.endsWith(".localhost");
-  } catch {
-    return false;
-  }
-}
-
+/** Whether this app's contracts and payments run on a local chain; its timings are never Monad's. */
 export const IS_LOCAL_CHAIN = isLocalRpc(PUBLIC_RPC_URL);
 
 /**

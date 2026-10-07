@@ -30,6 +30,7 @@ import { getAddress, type Account, type PublicClient, type Transport, type Walle
 import { EscrowFacilitatorScheme } from "./escrow.js";
 import { networkConfig } from "./chains.js";
 import { walletClientFor, withGasHeadroom, withSignerLock } from "./evm.js";
+import { writeContractSync, type SyncWrite } from "./sync-send.js";
 
 /** Where log lines go; the broker passes its own, tests pass a spy. */
 export type X402Logger = (line: string) => void;
@@ -210,11 +211,12 @@ export function escrowWriter(wallet: ReturnType<typeof walletClientFor>, account
   return {
     account,
     chain: wallet.chain,
+    // Receipt-in-response on Monad (eth_sendRawTransactionSync), with a plain send as the fallback.
     writeContract: (args: Record<string, unknown>) =>
       withSignerLock(account.address, async () => {
         const request = { ...args, account };
         const gas = (args.gas as bigint | undefined) ?? withGasHeadroom(await wallet.estimateContractGas(request as never));
-        return wallet.writeContract({ ...request, gas } as never);
+        return writeContractSync(wallet, account, { ...(args as unknown as SyncWrite), gas });
       }),
   } as unknown as WalletClient;
 }

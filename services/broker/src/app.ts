@@ -63,7 +63,9 @@ import {
   isVaultId,
   jobIdHash,
   logPaymentRejections,
+  isLocalRpc,
   networkConfig,
+  sendModeOf,
   normalizeAddress,
   parseSealedResult,
   publicClientFor,
@@ -194,7 +196,13 @@ export interface AppDeps {
    * A confirmed transaction's block, gas used, gas paid and gas payer, for the
    * job's speed receipt. Defaults to reading the receipt over RPC; tests stub it.
    */
-  txFacts?: (txHash: string) => Promise<Omit<ChainTiming, "confirmMs"> | null>;
+  txFacts?: (txHash: string) => Promise<TxFacts | null>;
+  /**
+   * When the chain's `finalized` head reached `blockNumber` with `blockHash`
+   * (ms since epoch), or null if it didn't within the wait. Defaults to
+   * polling the RPC's `finalized` tag; tests stub it.
+   */
+  finalizedAt?: (blockNumber: number, blockHash: string) => Promise<number | null>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
   /**
@@ -248,6 +256,8 @@ export function createApp(deps: AppDeps) {
    * "completed" one: its result and errors are ignored until the cancel lands.
    */
   const cancelling = new Set<string>();
+  /** Whether this broker's chain is a Monad network or a local one (a fork), for every timing it reports. */
+  const chainKind: "monad" | "local" = isLocalRpc(networkConfig(config.network).rpcUrl) ? "local" : "monad";
   /** When each quote's settlement was submitted, for its speed receipt. */
   const settleStarted = new Map<string, number>();
   /**
@@ -498,8 +508,7 @@ export function createApp(deps: AppDeps) {
       }
       // The speed receipt: how long the settlement took on this broker's clock, then its
       // block and gas from the receipt. Off the request path; a failed read just leaves it out.
-      const confirmMs = started === undefined ? null : Date.now() - started;
-      void chainTiming(record.txHash, confirmMs).then((timing) => {
+      void chainTiming(record.txHash, started ?? null, Date.now()).then((timing) => {
         if (!timing) return;
         record.timing = timing;
         const jobId = jobs.getQuote(quoteId)?.jobId;
@@ -742,6 +751,7 @@ export function createApp(deps: AppDeps) {
         heldUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "funded")),
         refundedUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "refunded")),
         ...speedStats(settled),
+        timingChain: chainKind,
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     };
@@ -1531,7 +1541,7 @@ export function createApp(deps: AppDeps) {
         const started = Date.now();
         refundTx = await escrow.cancel(held.jobId as Hex);
         refunded = true;
-        timeEscrowSettlement(job.id, refundTx, Date.now() - started);
+        timeEscrowSettlement(job.id, refundTx, started, Date.now());
         jobs.patch(job.id, {
           payment: { ...job.payment, escrow: { ...held, state: "refunded", refundTx, settledAt: Date.now(), lastError: undefined } },
         });
@@ -2533,32 +2543,67 @@ export function createApp(deps: AppDeps) {
     jobs.patch(jobId, { payment: { ...job.payment, escrow: { ...job.payment.escrow, ...update } } });
   }
 
-  /** Read a release's or refund's block and gas, and attach them with its measured time. */
-  function timeEscrowSettlement(jobId: string, tx: string, confirmMs: number): void {
-    void chainTiming(tx, confirmMs).then((settleTiming) => {
+  /** Read a release's or refund's block and gas, and attach them with its measured times. */
+  function timeEscrowSettlement(jobId: string, tx: string, startedAt: number, receiptAt: number): void {
+    void chainTiming(tx, startedAt, receiptAt).then((settleTiming) => {
       if (settleTiming) patchEscrow(jobId, { settleTiming });
     });
   }
 
-  /** A transaction's speed receipt: `confirmMs` as measured, plus what its receipt says. */
-  async function chainTiming(txHash: string, confirmMs: number | null): Promise<ChainTiming | null> {
+  /**
+   * A transaction's speed receipt, with two honest timers: executed (submission
+   * to receipt) and final (submission until the `finalized` head holds its
+   * block). Both on this broker's clock, both labelled with the chain they were
+   * measured on: a local fork's timings are never Monad's.
+   */
+  async function chainTiming(txHash: string, startedAt: number | null, receiptAt: number): Promise<ChainTiming | null> {
     try {
       const facts = await (deps.txFacts ?? readTxFacts)(txHash);
-      return facts ? { confirmMs, ...facts } : null;
+      if (!facts) return null;
+      // A local chain has no consensus: its `finalized` tag means nothing (anvil's trails by dozens
+      // of blocks), so finality is reported as not applicable rather than timed.
+      const finalAt =
+        chainKind === "local" ? null : await (deps.finalizedAt ?? readFinalizedAt)(facts.blockNumber, facts.blockHash).catch(() => null);
+      const { blockHash: _blockHash, ...rest } = facts;
+      return {
+        ...rest,
+        confirmMs: startedAt === null ? null : receiptAt - startedAt,
+        finalMs: startedAt === null || finalAt === null ? null : Math.max(finalAt, receiptAt) - startedAt,
+        sendMode: sendModeOf(txHash) ?? "async",
+        chain: chainKind,
+      };
     } catch (err) {
       console.warn(`[broker] speed receipt for ${txHash}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
       return null;
     }
   }
 
-  async function readTxFacts(txHash: string): Promise<Omit<ChainTiming, "confirmMs"> | null> {
+  async function readTxFacts(txHash: string): Promise<TxFacts | null> {
     const receipt = await publicClientFor(config.network).getTransactionReceipt({ hash: txHash as Hex });
     return {
       blockNumber: Number(receipt.blockNumber),
+      blockHash: receipt.blockHash,
       gasUsed: receipt.gasUsed.toString(),
       gasPaidWei: (receipt.gasUsed * receipt.effectiveGasPrice).toString(),
       gasPayer: normalizeAddress(receipt.from),
     };
+  }
+
+  /** Poll the `finalized` tag until it reaches `blockNumber`, then check that block's hash is ours. */
+  async function readFinalizedAt(blockNumber: number, blockHash: string): Promise<number | null> {
+    const client = publicClientFor(config.network);
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const head = await client.getBlock({ blockTag: "finalized" }).catch(() => null);
+      if (head && Number(head.number) >= blockNumber) {
+        const at = Date.now();
+        const block = Number(head.number) === blockNumber ? head : await client.getBlock({ blockNumber: BigInt(blockNumber) }).catch(() => null);
+        // A different hash at that height: the transaction landed in another proposal; don't time this one.
+        return block && sameHash(block.hash ?? "", blockHash) ? at : null;
+      }
+      await sleep(100);
+    }
+    return null;
   }
 
   /** Point a funded escrow at the provider now running the job. */
@@ -2596,12 +2641,12 @@ export function createApp(deps: AppDeps) {
         const started = Date.now();
         const tx = await escrow.release(held.jobId as Hex, job.resultHash);
         patchEscrow(jobId, { state: "released", releaseTx: tx, resultHash: job.resultHash, settledAt: Date.now(), lastError: undefined });
-        timeEscrowSettlement(jobId, tx, Date.now() - started);
+        timeEscrowSettlement(jobId, tx, started, Date.now());
       } else {
         const started = Date.now();
         const tx = await escrow.refund(held.jobId as Hex);
         patchEscrow(jobId, { state: "refunded", refundTx: tx, settledAt: Date.now(), lastError: undefined });
-        timeEscrowSettlement(jobId, tx, Date.now() - started);
+        timeEscrowSettlement(jobId, tx, started, Date.now());
       }
     } catch (err) {
       const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
@@ -2846,6 +2891,9 @@ function quoteIdFromTransport(transport: unknown): string | undefined {
   const path = (transport as HTTPTransportContext | undefined)?.request?.path;
   return path ? lastSegment(path) : undefined;
 }
+
+/** What the broker reads back from a confirmed transaction's receipt. */
+type TxFacts = Omit<ChainTiming, "confirmMs" | "finalMs" | "sendMode" | "chain"> & { blockHash: string };
 
 /** Medians of the measured settlement and release times, over the 50 most recent paid jobs. */
 function speedStats(jobs: readonly { createdAt: number; payment?: PaymentRecord | null }[]): {

@@ -253,3 +253,17 @@ export function chainIdOf(network: string): number {
   if (!match) throw new Error(`not an EIP-155 network id: "${network}"`);
   return Number(match[1]);
 }
+
+/**
+ * Whether an RPC URL is a local chain (a fork or a dev node) rather than a
+ * Monad network. Anything timed against one is the local chain's timing,
+ * never Monad's, and is labelled that way.
+ */
+export function isLocalRpc(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1" || host.endsWith(".localhost");
+  } catch {
+    return false;
+  }
+}

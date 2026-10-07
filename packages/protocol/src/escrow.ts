@@ -51,6 +51,7 @@ import {
   type WalletClient,
 } from "viem";
 import { XORV_ESCROW_ABI } from "./xorv-escrow.abi.js";
+import { syncReceipt } from "./sync-send.js";
 
 // Re-exported so browser code on the ./escrow subpath can decode escrow events.
 export { XORV_ESCROW_ABI };
@@ -522,7 +523,7 @@ export class EscrowFacilitatorScheme implements SchemeNetworkFacilitator {
           },
         ],
       });
-      const receipt = await this.clients.public.waitForTransactionReceipt({ hash });
+      const receipt = syncReceipt(hash) ?? (await this.clients.public.waitForTransactionReceipt({ hash }));
       if (receipt.status !== "success") {
         return {
           success: false,
@@ -602,7 +603,7 @@ async function send(
     functionName,
     args,
   } as never);
-  const receipt = await clients.public.waitForTransactionReceipt({ hash });
+  const receipt = syncReceipt(hash) ?? (await clients.public.waitForTransactionReceipt({ hash }));
   if (receipt.status !== "success") throw new Error(`escrow ${functionName} reverted: ${hash}`);
   return hash;
 }

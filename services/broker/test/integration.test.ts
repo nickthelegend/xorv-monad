@@ -348,7 +348,9 @@ async function boot(
     },
     agentAuthorizes: async (agentId, spender) => authorized.has(`${agentId}:${spender.toLowerCase()}`),
     settlementStatus: async () => settle.status,
-    txFacts: async () => ({ blockNumber: 4242, gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
+    txFacts: async () => ({ blockNumber: 4242, blockHash: "0xb10c", gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
+    // The finalized head reaches the block 600 ms after the receipt (two Monad slots).
+    finalizedAt: async () => Date.now() + 600,
     ai: opts.ai,
     trust: opts.trust,
     escrow: opts.escrow ?? null,
@@ -2575,6 +2577,11 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
       expect(timing).toMatchObject({ blockNumber: 4242, gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS });
       expect(timing.confirmMs).toEqual(expect.any(Number));
       expect(timing.confirmMs as number).toBeGreaterThanOrEqual(0);
+      // Two timers: executed (receipt) and final (the finalized head holds the block).
+      expect(timing.finalMs as number).toBeGreaterThanOrEqual((timing.confirmMs as number) + 600);
+      // Where it was measured, and how it was sent (the in-memory escrow polls nothing, so "async").
+      expect(timing).toMatchObject({ chain: "monad", sendMode: "async" });
+      expect(timing).not.toHaveProperty("blockHash");
     }
     const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
     expect(stats).toMatchObject({ timingSamples: 1, settleMedianMs: (timed.timing as Json).confirmMs, releaseMedianMs: ((timed.escrow as Json).settleTiming as Json).confirmMs });
@@ -2583,6 +2590,27 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     const receipt = await waitFor(() => h.chain.receipts.find((r) => r.jobId === job.id));
     expect(receipt).toMatchObject({ payTo: provider.address, paymentTx: held.releaseTx, ok: true });
     provider.close();
+  });
+
+  it("labels timings measured on a local chain as local, and never times a fork's 'finality'", async () => {
+    const previous = process.env.XORV_RPC_URL;
+    process.env.XORV_RPC_URL = "http://127.0.0.1:8650";
+    try {
+      const escrow = new MemoryEscrow();
+      h = await boot({ escrow });
+      const provider = await connectProvider(h);
+      const { body: q } = await quote(h);
+      const { body: paid } = await pay(h, q.quoteId as string);
+      await provider.completeNextJob("local answer");
+      const timing = await waitFor(async () => ((await getJob(h, paid.jobId as string)).payment as Json).timing as Json | undefined);
+      expect(timing).toMatchObject({ chain: "local", finalMs: null });
+      const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
+      expect(stats.timingChain).toBe("local");
+      provider.close();
+    } finally {
+      if (previous === undefined) delete process.env.XORV_RPC_URL;
+      else process.env.XORV_RPC_URL = previous;
+    }
   });
 
   it("refunds the buyer when the job fails and nobody else can take it", async () => {

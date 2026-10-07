@@ -79,18 +79,22 @@ export function NetworkView() {
           <Row label="usdc">
             {info ? <Ext href={explorerToken(NETWORK, info.usdc.address)}>{shortHex(info.usdc.address)} ↗</Ext> : "—"}
           </Row>
-          <Row label="payment final in">
+          <Row label="payment executed in">
             {info?.stats.settleMedianMs != null ? (
               <span className="tnum">
                 {formatMs(info.stats.settleMedianMs)} median
-                <span className="text-fg-4"> · {info.stats.timingSamples} recent jobs · an Ethereum block is 12 s</span>
+                <span className="text-fg-4">
+                  {" "}
+                  · {info.stats.timingSamples} recent jobs
+                  {info.stats.timingChain === "local" ? " · measured on a local fork, not Monad" : " · an Ethereum block is 12 s"}
+                </span>
               </span>
             ) : (
               "—"
             )}
           </Row>
           {info?.stats.releaseMedianMs != null ? (
-            <Row label="escrow release final in">
+            <Row label="escrow release executed in">
               <span className="tnum">{formatMs(info.stats.releaseMedianMs)} median</span>
             </Row>
           ) : null}

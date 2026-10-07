@@ -34,6 +34,9 @@ import {
   refundEscrow,
   releaseEscrow,
 } from "../src/escrow.js";
+import { escrowWriter } from "../src/x402.js";
+import { walletClientFor } from "../src/evm.js";
+import { sendModeOf, syncReceipt } from "../src/sync-send.js";
 
 const OUT = new URL("../../../contracts/out/", import.meta.url);
 const artifact = (name: string, file = name) =>
@@ -204,5 +207,16 @@ describe.skipIf(!hasAnvil || !hasBuild)("escrow scheme on anvil", () => {
     await refundEscrow({ public: pub, wallet }, escrow, escrowJobId("q_refund"));
     expect((await readEscrowJob(pub, escrow, escrowJobId("q_refund"))).status).toBe("refunded");
     expect(await balanceOf(buyer.address)).toBe(before);
+  });
+
+  it("releases through the broker's writer with the receipt in the send's own response (eth_sendRawTransactionSync)", async () => {
+    const { req, p, facilitator } = await pay("q_sync");
+    expect((await facilitator.settle(p, req)).success).toBe(true);
+    const writer = escrowWriter(walletClientFor("eip155:10143", operator, { rpcUrl: `http://127.0.0.1:${PORT}` }), operator);
+    const resultHash = keccak256(stringToHex("synced")).slice(2);
+    const tx = await releaseEscrow({ public: pub, wallet: writer }, escrow, escrowJobId("q_sync"), resultHash);
+    expect(sendModeOf(tx)).toBe("sync");
+    expect(syncReceipt(tx)).toMatchObject({ transactionHash: tx, status: "success" });
+    expect((await readEscrowJob(pub, escrow, escrowJobId("q_sync"))).status).toBe("released");
   });
 });

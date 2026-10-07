@@ -19,6 +19,7 @@ import {
   networkLabel,
   usdcAddress,
   viemChain,
+  isLocalRpc,
 } from "../src/chains.js";
 import {
   explorerAddress,
@@ -227,6 +228,14 @@ describe("explorer links", () => {
     expect(explorerToken(MONAD_MAINNET, "0x754704bc059f8c67012fed69bc8a327a5aafb603")).toBe(
       "https://monadscan.com/token/0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
     );
+  });
+
+  it("tells a local chain from a Monad network by its RPC host", () => {
+    expect(isLocalRpc("http://127.0.0.1:8650")).toBe(true);
+    expect(isLocalRpc("http://localhost:8545")).toBe(true);
+    expect(isLocalRpc("http://anvil.localhost:8545")).toBe(true);
+    expect(isLocalRpc("https://testnet-rpc.monad.xyz")).toBe(false);
+    expect(isLocalRpc("not a url")).toBe(false);
   });
 
   it("links a block by number", () => {
