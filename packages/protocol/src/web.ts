@@ -30,3 +30,4 @@ export * from "./vault.js";
 export type { TxState, TxStatus } from "./tx-status.js";
 export * from "./reserve.js";
 export * from "./staking.js";
+export * from "./p256.js";
