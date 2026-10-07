@@ -12,6 +12,7 @@ export default defineConfig({
     // as trusted feedback clients even before any XorvLedger event is indexed.
     env: {
       ENVIO_XORV_LEDGER_ADDRESS: "0x1ed9e7c0a5f4c3b2a19d8e7f6a5b4c3d2e1f0a9b",
+      ENVIO_XORV_ESCROW_ADDRESS: "0xe5c0000000000000000000000000000000000e5c",
       ENVIO_XORV_VERIFIER_ADDRESSES: "0x00000000000000000000000000000000000000ee",
       ENVIO_TUI: "false",
     },

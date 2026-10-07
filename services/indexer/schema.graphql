@@ -335,3 +335,30 @@ type BuyerDay {
   jobs: Int!
   spentUsdc: BigInt!
 }
+
+# A payment held in XorvEscrow (contracts/src/XorvEscrow.sol), from funding to release or
+# refund. The Chainlink CRE refund keeper (cre/refund-keeper) asks for the Funded ones past
+# their deadline (EXPIRED_ESCROW_JOBS_QUERY in src/queries.ts).
+type EscrowJob {
+  # The escrow's job id (bytes32, lowercase): keccak256 of the broker's quote id.
+  id: ID!
+  escrow: String!
+  # Funded | Released | Refunded
+  status: String! @index
+  buyer: String! @index
+  # The provider the escrow pays on release (moves on JobReassigned).
+  provider: String! @index
+  token: String!
+  amount: BigInt!
+  # Unix seconds; after this anyone may refund the buyer.
+  deadline: BigInt! @index
+  fundedAt: Int!
+  fundTx: String!
+  settledAt: Int
+  settleTx: String
+  # Released only: SHA-256 of the delivered result.
+  resultHash: String
+  # Refunded only: true when the attester refunded (the provider failed).
+  providerAtFault: Boolean
+  reassignments: Int!
+}

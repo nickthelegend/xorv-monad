@@ -34,7 +34,7 @@ export type SimItem = NonNullable<ChainConfig["simulate"]>[number];
 
 /** An event without its block/transaction placement; `tx()` adds those. */
 export interface SimEvent {
-  contract: "XorvLedger" | "IdentityRegistry" | "ReputationRegistry";
+  contract: "XorvLedger" | "IdentityRegistry" | "ReputationRegistry" | "XorvEscrow";
   event: string;
   params: Record<string, unknown>;
   srcAddress?: string;
@@ -227,5 +227,41 @@ export const reputation = {
       responseURI: "ipfs://response",
       responseHash: hash32(0xabc),
     },
+  }),
+};
+
+export const ESCROW = "0xe5c0000000000000000000000000000000000e5c";
+
+export const escrow = {
+  funded: (p: { jobId: string; buyer: string; provider: string; token?: string; amount?: bigint; deadline: number }): SimEvent => ({
+    contract: "XorvEscrow",
+    event: "JobFunded",
+    srcAddress: ESCROW,
+    params: {
+      jobId: p.jobId,
+      buyer: p.buyer,
+      provider: p.provider,
+      token: p.token ?? addr(0x05dc),
+      amount: p.amount ?? 250_000n,
+      deadline: BigInt(p.deadline),
+    },
+  }),
+  released: (jobId: string, provider: string, resultHash: string, releasedBy = addr(0xa7)): SimEvent => ({
+    contract: "XorvEscrow",
+    event: "JobReleased",
+    srcAddress: ESCROW,
+    params: { jobId, provider, providerAmount: 250_000n, fee: 0n, resultHash, releasedBy },
+  }),
+  refunded: (jobId: string, buyer: string, providerAtFault: boolean): SimEvent => ({
+    contract: "XorvEscrow",
+    event: "JobRefunded",
+    srcAddress: ESCROW,
+    params: { jobId, buyer, amount: 250_000n, providerAtFault },
+  }),
+  reassigned: (jobId: string, previousProvider: string, newProvider: string): SimEvent => ({
+    contract: "XorvEscrow",
+    event: "JobReassigned",
+    srcAddress: ESCROW,
+    params: { jobId, previousProvider, newProvider },
   }),
 };

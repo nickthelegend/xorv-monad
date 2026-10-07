@@ -23,6 +23,13 @@ contracts:
       - event: JobRated
       - event: BrokerSet
       - event: OwnershipTransferred
+  - name: XorvEscrow
+    abi_file_path: ./abis/XorvEscrow.json
+    events:
+      - event: JobFunded
+      - event: JobReleased
+      - event: JobRefunded
+      - event: JobReassigned
   - name: IdentityRegistry
     abi_file_path: ./abis/IdentityRegistry.json
     events:
@@ -48,6 +55,10 @@ chains:
         # From packages/contracts/deployments/monad.json (address, blockNumber).
         address: "${ENVIO_XORV_LEDGER_ADDRESS:-0x0000000000000000000000000000000000000000}"
         start_block: ${ENVIO_XORV_LEDGER_START_BLOCK:-null}
+      - name: XorvEscrow
+        # From contracts/ (forge script script/Deploy.s.sol); zero indexes nothing.
+        address: "${ENVIO_XORV_ESCROW_ADDRESS:-0x0000000000000000000000000000000000000000}"
+        start_block: ${ENVIO_XORV_ESCROW_START_BLOCK:-null}
       - name: IdentityRegistry
         address: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
         start_block: ${ENVIO_ERC8004_START_BLOCK:-null}

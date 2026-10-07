@@ -4,13 +4,15 @@
 # `envio codegen` and Envio Cloud all read config.yaml unless told otherwise.
 # config.mainnet.yaml is the same indexer pointed at Monad mainnet (chain 143).
 #
-# Three contracts feed one schema:
+# Four contracts feed one schema:
 #   XorvLedger          our receipts contract: provider registry, heartbeats, x402 job
 #                       receipts and buyer ratings (packages/contracts, SPEC §4)
 #   IdentityRegistry    ERC-8004 v2.0.0 singleton: every agent on Monad, its owner,
 #                       agentURI and agentWallet (the address XorvLedger checks payTo against)
 #   ReputationRegistry  ERC-8004 v2.0.0 singleton: every feedback entry, including the
 #                       buyer ratings XorvLedger relays and the Kimi verifier's scores
+#   XorvEscrow          escrowed payments: funded, released, refunded, reassigned; the
+#                       Chainlink CRE refund keeper queries the expired ones (cre/)
 #
 # The env placeholders below are interpolated at codegen/start time (even inside
 # comments, so never write the dollar-brace syntax in a comment here). Envio Cloud only
@@ -33,6 +35,13 @@ contracts:
       - event: JobRated
       - event: BrokerSet
       - event: OwnershipTransferred
+  - name: XorvEscrow
+    abi_file_path: ./abis/XorvEscrow.json
+    events:
+      - event: JobFunded
+      - event: JobReleased
+      - event: JobRefunded
+      - event: JobReassigned
   - name: IdentityRegistry
     abi_file_path: ./abis/IdentityRegistry.json
     events:
@@ -65,6 +74,10 @@ chains:
         # trusted verifier (ENVIO_XORV_VERIFIER_ADDRESSES covers a later start).
         address: "${ENVIO_XORV_LEDGER_ADDRESS:-0x0000000000000000000000000000000000000000}"
         start_block: ${ENVIO_XORV_LEDGER_START_BLOCK:-null}
+      - name: XorvEscrow
+        # From contracts/ (forge script script/Deploy.s.sol); zero indexes nothing.
+        address: "${ENVIO_XORV_ESCROW_ADDRESS:-0x0000000000000000000000000000000000000000}"
+        start_block: ${ENVIO_XORV_ESCROW_START_BLOCK:-null}
       - name: IdentityRegistry
         address: "0x8004A818BFB912233c491871b3d84c89A494BD9e"
         start_block: ${ENVIO_ERC8004_START_BLOCK:-null}

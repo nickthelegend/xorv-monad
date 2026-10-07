@@ -122,10 +122,21 @@ describe("configs", () => {
   const eventNames = (yaml: string) => [...yaml.matchAll(/^\s+- event: (\w+)/gm)].map((m) => m[1]);
   const contracts = (yaml: string) => [...yaml.matchAll(/^\s+- name: (\w+)/gm)].map((m) => m[1]);
 
+  it("decode XorvEscrow's events as contracts/src/XorvEscrow.sol emits them", () => {
+    const spec = [
+      "event JobFunded(bytes32 indexed jobId, address indexed buyer, address indexed provider, address token, uint256 amount, uint40 deadline)",
+      "event JobReleased(bytes32 indexed jobId, address indexed provider, uint256 providerAmount, uint256 fee, bytes32 resultHash, address releasedBy)",
+      "event JobRefunded(bytes32 indexed jobId, address indexed buyer, uint256 amount, bool providerAtFault)",
+      "event JobReassigned(bytes32 indexed jobId, address indexed previousProvider, address indexed newProvider)",
+    ].map((s) => parseAbiItem(s) as AbiEvent);
+    const ours = abi("XorvEscrow");
+    for (const e of spec) expect(ours.map(shape)).toContainEqual(shape(e));
+  });
+
   it("index the same contracts and events on both chains", () => {
     expect(eventNames(mainnet)).toEqual(eventNames(testnet));
     expect(contracts(mainnet)).toEqual(contracts(testnet));
-    expect(eventNames(testnet)).toHaveLength(13);
+    expect(eventNames(testnet)).toHaveLength(17);
   });
 
   it("point at the SPEC §2 chain ids and ERC-8004 singletons", () => {

@@ -645,3 +645,16 @@ export async function queryIndexer<T>(
     clearTimeout(timer);
   }
 }
+
+/**
+ * Escrowed payments still held past their refund deadline: what the Chainlink CRE refund
+ * keeper (cre/refund-keeper/workflow.ts) refunds. Variables: `{ now, limit }` (now in unix
+ * seconds). The keeper re-checks each one on chain (`isRefundable`) before refunding.
+ */
+export const EXPIRED_ESCROW_JOBS_QUERY = /* GraphQL */ `
+  query ExpiredEscrowJobs($now: numeric!, $limit: Int!) {
+    EscrowJob(where: { status: { _eq: "Funded" }, deadline: { _lt: $now } }, order_by: { deadline: asc }, limit: $limit) {
+      id
+    }
+  }
+`;
