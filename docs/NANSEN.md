@@ -151,7 +151,7 @@ API terms forbid keeping copies longer than its documentation allows.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `XORV_NANSEN_MODE` | `off` | `off`; `fixture` = deterministic recorded-shape data, no network, no money (dev, CI, a demo without funds); `live` = real calls |
+| `XORV_NANSEN_MODE` | `off` | `off` (not configured: no signals shown) or `live` (real calls). `fixture` is refused at boot; recorded-shape answers exist only in the tests |
 | `XORV_NANSEN_PAYER_KEY` | — | Monad **mainnet** key with a few USDC; pays over x402. Keep it separate from every other key |
 | `NANSEN_API_KEY` | — | Takes precedence over x402 when set (credits instead of payments) |
 | `XORV_NANSEN_PER_CALL_CAP` | `50000` | Largest single payment, USDC units ($0.05) |
@@ -160,7 +160,6 @@ API terms forbid keeping copies longer than its documentation allows.
 | `XORV_NANSEN_SMART_MONEY` | `on` | Fetch the daily smart-money list for the internal matching nudge |
 | `XORV_NANSEN_RATING_GUARD` | `on` | Refuse ratings between related wallets |
 | `XORV_NANSEN_REFRESH_MINUTES` | `360` | Rebuild provider signals this often |
-| `XORV_NANSEN_FIXTURE_CLUSTER` | — | Fixture mode only: comma-separated addresses given one shared, unlabelled first funder (a deliberate sybil ring for the demo) |
 
 `live` without a payer key or an API key fails at boot with a message naming both.
 
@@ -168,9 +167,8 @@ API terms forbid keeping copies longer than its documentation allows.
 
 ```bash
 # One lookup, printed for a human; a second address also runs the related-wallet check.
-pnpm nansen:probe 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045                 # fixture data by default
 pnpm nansen:probe --mode live 0x<provider payout> 0x<buyer>                   # pays ≤ $0.05 on Monad mainnet
-pnpm nansen:probe --json --mode fixture 0x<address>                            # the public view as JSON
+pnpm nansen:probe --json --mode live 0x<address>                               # the public view as JSON
 
 curl -s $BROKER/api/network | jq .nansen                 # mode, calls, spend, budget, last paid tx
 curl -s $BROKER/api/providers | jq '.providers[].trust'  # the public view per provider
@@ -185,9 +183,9 @@ from the provider's payout address, send a little MON on **Monad mainnet** to a 
 wallet's first funder is now the provider, on the chain Nansen indexes, so related-wallets on `monad`
 should list the provider as its "First Funder" (check with `pnpm nansen:probe --mode live` first;
 Nansen's indexing lag is not documented). Use the same key as the testnet buyer, pay for one job,
-and rate it: the rating is refused because Nansen links the two wallets. Without mainnet funds, run the broker
-with `XORV_NANSEN_MODE=fixture` and `XORV_NANSEN_FIXTURE_CLUSTER=<buyer>,<provider payout>`, and say
-on camera that the refusal shot uses fixture data.
+and rate it: the rating is refused because Nansen links the two wallets. Without mainnet funds or a
+`NANSEN_API_KEY` there is no live refusal to film; the product has no fixture mode to fall back on
+(the recorded-shape answers live in `services/broker/test/nansen-fixtures.ts`, for the tests).
 
 ## 8. Tests
 

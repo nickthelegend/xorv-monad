@@ -8,12 +8,12 @@
  * check between the two, which is what the broker does before relaying a
  * rating.
  *
- *   XORV_NANSEN_MODE=fixture   deterministic data, no network, no money (default here)
  *   XORV_NANSEN_MODE=live      real calls: pays ~$0.01 per call (≤ $0.03 per wallet)
  *                              in USDC on Monad mainnet from XORV_NANSEN_PAYER_KEY,
  *                              or bills NANSEN_API_KEY credits when that is set
  *
- * `--mode fixture|live` overrides the environment; `--json` prints the raw
+ * Off (the default) means not configured, and the probe says so rather than
+ * printing made-up data. `--mode live` overrides the environment; `--json` prints the raw
  * public view instead. The smart-money list is not fetched: it is internal
  * matching data and would cost $0.05 for nothing shown here.
  */
@@ -26,6 +26,7 @@ import {
   NANSEN_PRICE_UNITS,
   NANSEN_PATHS,
   createNansenTrust,
+  type NansenFixtureSource,
   publicRelatedCheck,
   publicTrustView,
   usdcString,
@@ -45,12 +46,14 @@ export async function probe(opts: {
   addresses: string[];
   config: NansenConfig;
   fetch?: typeof fetch;
+  /** Tests only: fixture answers for `mode: "fixture"`. */
+  fixtures?: NansenFixtureSource;
   print?: (line: string) => void;
 }): Promise<ProbeResult> {
   const print = opts.print ?? ((line: string) => console.log(line));
   const [address, other] = opts.addresses;
   if (!address) throw new Error("usage: nansen:probe <address> [<other address>]");
-  const trust = createNansenTrust({ ...opts.config, smartMoney: false }, { fetch: opts.fetch });
+  const trust = createNansenTrust({ ...opts.config, smartMoney: false }, { fetch: opts.fetch, fixtures: opts.fixtures });
 
   const signal = publicTrustView(await trust.signal(address));
   const check = other ? publicRelatedCheck(await trust.checkRelated(other, address)) : null;
@@ -101,8 +104,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (modeArg) process.env.XORV_NANSEN_MODE = modeArg;
   const config = loadNansenConfig();
   if (config.mode === "off") {
-    console.error("  XORV_NANSEN_MODE is off — probing with fixture data (use --mode live to pay Nansen for real).");
-    config.mode = "fixture";
+    console.error(
+      "  Nansen is not configured. Set XORV_NANSEN_MODE=live with NANSEN_API_KEY, or XORV_NANSEN_PAYER_KEY " +
+        "(a Monad MAINNET key holding a few USDC), or pass --mode live.",
+    );
+    process.exitCode = 2;
+    return;
   }
   if (config.mode === "live" && !config.apiKey) {
     const most = [NANSEN_PATHS.firstFunder, NANSEN_PATHS.relatedWallets, NANSEN_PATHS.transactions]

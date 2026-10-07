@@ -223,7 +223,6 @@ describe("loadNansenConfig", () => {
       smartMoney: true,
       ratingGuard: true,
       refreshMs: 360 * 60_000,
-      fixtureCluster: [],
     });
   });
 
@@ -237,28 +236,30 @@ describe("loadNansenConfig", () => {
     expect(loadNansenConfig().payer?.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
   });
 
-  it("parses caps, the payTo pin and the fixture cluster, and rejects nonsense", () => {
-    process.env.XORV_NANSEN_MODE = "fixture";
+  it("parses caps and the payTo pin, and rejects nonsense", () => {
+    process.env.XORV_NANSEN_MODE = "live";
+    process.env.NANSEN_API_KEY = "test-key";
     process.env.XORV_NANSEN_PER_CALL_CAP = "10000";
     process.env.XORV_NANSEN_DAILY_CAP = "250000";
     process.env.XORV_NANSEN_PIN_PAYTO = "observed";
     process.env.XORV_NANSEN_SMART_MONEY = "off";
-    process.env.XORV_NANSEN_FIXTURE_CLUSTER = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045, 0x1111111111111111111111111111111111111111";
     expect(loadNansenConfig()).toMatchObject({
-      mode: "fixture",
+      mode: "live",
       perCallCapUnits: 10_000n,
       dailyCapUnits: 250_000n,
       pinPayTo: "0x93053f1e7A5eFEDa532Fe69CbbE43cBEc3A0F13f",
       smartMoney: false,
-      fixtureCluster: ["0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "0x1111111111111111111111111111111111111111"],
     });
     process.env.XORV_NANSEN_DAILY_CAP = "$1";
     expect(() => loadNansenConfig()).toThrow(/XORV_NANSEN_DAILY_CAP.*USDC units/);
     delete process.env.XORV_NANSEN_DAILY_CAP;
     process.env.XORV_NANSEN_MODE = "testnet";
-    expect(() => loadNansenConfig()).toThrow(/"off", "fixture" or "live"/);
+    expect(() => loadNansenConfig()).toThrow(/"off" or "live"/);
+    delete process.env.NANSEN_API_KEY;
+  });
+
+  it("refuses fixture data in a running broker: it is for tests only", () => {
     process.env.XORV_NANSEN_MODE = "fixture";
-    process.env.XORV_NANSEN_FIXTURE_CLUSTER = "0.0.1234";
-    expect(() => loadNansenConfig()).toThrow(/XORV_NANSEN_FIXTURE_CLUSTER/);
+    expect(() => loadNansenConfig()).toThrow(/for tests only/);
   });
 });

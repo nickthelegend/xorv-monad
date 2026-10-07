@@ -186,8 +186,13 @@ const NANSEN_OBSERVED_PAY_TO = "0x93053f1e7A5eFEDa532Fe69CbbE43cBEc3A0F13f";
  */
 export function loadNansenConfig(): NansenConfig {
   const mode = (optional("XORV_NANSEN_MODE") ?? "off").toLowerCase();
-  if (mode !== "off" && mode !== "fixture" && mode !== "live") {
-    throw new Error(`XORV_NANSEN_MODE must be "off", "fixture" or "live", got "${mode}"`);
+  if (mode === "fixture") {
+    // Fixture data lives in the tests, never in a running broker: without a key
+    // the product says Nansen is not configured instead of showing made-up signals.
+    throw new Error('XORV_NANSEN_MODE=fixture is for tests only; use "off" or "live"');
+  }
+  if (mode !== "off" && mode !== "live") {
+    throw new Error(`XORV_NANSEN_MODE must be "off" or "live", got "${mode}"`);
   }
   const payer = key("XORV_NANSEN_PAYER_KEY");
   const apiKey = optional("NANSEN_API_KEY");
@@ -205,17 +210,6 @@ export function loadNansenConfig(): NansenConfig {
       throw new Error(`XORV_NANSEN_PIN_PAYTO: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  const cluster = (optional("XORV_NANSEN_FIXTURE_CLUSTER") ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  for (const address of cluster) {
-    try {
-      normalizeAddress(address);
-    } catch (err) {
-      throw new Error(`XORV_NANSEN_FIXTURE_CLUSTER: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
   return {
     mode,
     payer,
@@ -226,7 +220,6 @@ export function loadNansenConfig(): NansenConfig {
     smartMoney: onOff("XORV_NANSEN_SMART_MONEY", true),
     ratingGuard: onOff("XORV_NANSEN_RATING_GUARD", true),
     refreshMs: Math.max(5, nonNegativeInt("XORV_NANSEN_REFRESH_MINUTES", 360)) * 60_000,
-    fixtureCluster: cluster,
   };
 }
 

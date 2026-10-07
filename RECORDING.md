@@ -53,9 +53,8 @@ curl -s $BROKER/api/providers | jq '.providers[0].trust | {score, band, firstFun
 The payer is a separate Monad **mainnet** key with about $2 of USDC (`XORV_NANSEN_PAYER_KEY`). For
 the refused-rating shot, stage a buyer wallet that the provider funded **on Monad mainnet** (send it
 a little MON from the payout address) and pay one testnet job from it before recording; confirm
-the link with `pnpm nansen:probe --mode live <payout> <buyer>` ("related? YES"). If you have no
-mainnet funds, run that shot with `XORV_NANSEN_MODE=fixture` and
-`XORV_NANSEN_FIXTURE_CLUSTER=<buyer>,<payout>`, and say it is fixture data.
+the link with `pnpm nansen:probe --mode live <payout> <buyer>` ("related? YES"). Without mainnet
+funds or a `NANSEN_API_KEY`, skip that shot: the product has no fixture data to show instead.
 
 `xorv` means `node packages/cli/dist/index.js` unless you ran `pnpm link --global` in
 `packages/cli`. The provider should sell at least two adapters under the demo ceiling, for example

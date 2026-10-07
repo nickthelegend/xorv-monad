@@ -195,7 +195,7 @@ Prometheus: `xorv_rating_refusals_total{reason="related_wallets"}`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `XORV_NANSEN_MODE` | `off` | `off`, `fixture` (no network, no money) or `live` |
+| `XORV_NANSEN_MODE` | `off` | `off` (not configured) or `live`; `fixture` is test-only and refused at boot |
 | `XORV_NANSEN_PAYER_KEY` | — | Monad **mainnet** key with a few USDC; required for `live` unless `NANSEN_API_KEY` is set |
 | `NANSEN_API_KEY` | — | takes precedence over x402 (credits, no payments) |
 | `XORV_NANSEN_PER_CALL_CAP` / `XORV_NANSEN_DAILY_CAP` | `50000` / `1000000` | USDC units ($0.05 / $1.00) |
@@ -203,7 +203,6 @@ Prometheus: `xorv_rating_refusals_total{reason="related_wallets"}`.
 | `XORV_NANSEN_SMART_MONEY` | `on` | fetch the daily smart-money list for the internal nudge |
 | `XORV_NANSEN_RATING_GUARD` | `on` | refuse ratings between related wallets |
 | `XORV_NANSEN_REFRESH_MINUTES` | `360` | provider signal refresh |
-| `XORV_NANSEN_FIXTURE_CLUSTER` | — | fixture mode: addresses given one shared first funder (demo sybil ring) |
 
 ## Tests
 

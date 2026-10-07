@@ -74,7 +74,6 @@ services:
       XORV_NANSEN_SMART_MONEY: ${XORV_NANSEN_SMART_MONEY:-on}
       XORV_NANSEN_RATING_GUARD: ${XORV_NANSEN_RATING_GUARD:-on}
       XORV_NANSEN_REFRESH_MINUTES: ${XORV_NANSEN_REFRESH_MINUTES:-360}
-      XORV_NANSEN_FIXTURE_CLUSTER: ${XORV_NANSEN_FIXTURE_CLUSTER:-}
       # XORV_DB and XORV_BROKER_PORT are fixed by the image (/data, 8402).
     volumes:
       # Jobs, lifetime earnings and private-job vaults. Without this they go

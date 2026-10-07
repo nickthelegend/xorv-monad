@@ -115,7 +115,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
   line(
     "nansen",
     nansen.mode === "off"
-      ? "off (XORV_NANSEN_MODE=fixture|live for provider trust + the wash-rating guard)"
+      ? "not configured (XORV_NANSEN_MODE=live with NANSEN_API_KEY or XORV_NANSEN_PAYER_KEY for provider trust + the wash-rating guard)"
       : nansen.mode === "fixture"
         ? "fixture data — deterministic, no network, no payments"
         : nansen.auth === "api-key"

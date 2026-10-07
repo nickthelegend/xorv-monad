@@ -15,6 +15,7 @@
  * one does. Ratings are signed with real viem signatures too.
  */
 
+import { createNansenFixtures } from "./nansen-fixtures.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
@@ -2223,8 +2224,9 @@ describe("AI roles", () => {
 });
 
 describe("Nansen trust", () => {
+  // Fixture data is injected here; a running broker can't select it (loadNansenConfig refuses "fixture").
   const fixtureTrust = (cluster: string[] = []) =>
-    createNansenTrust({ ...NANSEN_OFF, mode: "fixture", fixtureCluster: cluster, smartMoney: true });
+    createNansenTrust({ ...NANSEN_OFF, mode: "fixture", smartMoney: true }, { fixtures: createNansenFixtures({ cluster }) });
 
   /** A job paid by `h.buyer` on a provider with a verified agent, receipt landed. */
   async function paidJob() {

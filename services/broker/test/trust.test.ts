@@ -8,6 +8,7 @@
  * ones, so what is asserted is exactly what would be sent to Nansen.
  */
 
+import { createNansenFixtures } from "./nansen-fixtures.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,7 +27,6 @@ import {
   SpendBudget,
   TRUST_RULES,
   buildTrustSignal,
-  createNansenFixtures,
   createNansenTrust,
   matchScore,
   publicTrustView,
@@ -733,7 +733,7 @@ describe("relatedParties", () => {
 
 describe("NansenTrust", () => {
   const fixture = (cluster: string[] = []) =>
-    createNansenTrust({ ...NANSEN_OFF, mode: "fixture", fixtureCluster: cluster }, { now: () => NOW });
+    createNansenTrust({ ...NANSEN_OFF, mode: "fixture" }, { now: () => NOW, fixtures: createNansenFixtures({ now: () => NOW, cluster }) });
 
   it("is deterministic in fixture mode, pays nothing and claims no payment", async () => {
     const a = await fixture().signal(WALLET);
@@ -903,6 +903,7 @@ describe("nansen:probe", () => {
     const result = await probe({
       addresses: [WALLET],
       config: { ...NANSEN_OFF, mode: "fixture" },
+      fixtures: createNansenFixtures(),
       print: (line) => lines.push(line),
     });
     const out = lines.join("\n");

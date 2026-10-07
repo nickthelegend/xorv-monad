@@ -1,5 +1,5 @@
 /**
- * `XORV_NANSEN_MODE=fixture`: Nansen-shaped answers with no network and no
+ * Tests only. Nansen-shaped answers with no network and no
  * money, for development, the test suite and a demo without mainnet funds.
  *
  * Every answer has the shape of the real response (see openapi.json and the
@@ -27,7 +27,7 @@ import {
   type SmartMoneyResponse,
   type TransactionRow,
   type TransactionsResponse,
-} from "./nansen.js";
+} from "../src/trust/nansen.js";
 
 /** The exchange hot wallet Nansen's own documentation uses as its example address. */
 const EXCHANGE_FUNDER = { address: "0x28C6c06298d514Db089934071355E5743bf21d60", name: "Binance 14" };

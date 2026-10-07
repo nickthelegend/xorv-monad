@@ -355,10 +355,9 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
   (released if signing or settlement fails) and keeps the settlement transaction with the cached
   answer. A few dollars of mainnet USDC on a separate key (`XORV_NANSEN_PAYER_KEY`) covers weeks;
   `NANSEN_API_KEY` takes precedence when set.
-- **Modes.** `XORV_NANSEN_MODE=off` (the default), `fixture` (deterministic recorded-shape data, no
-  network and no money, for development, CI and judges; it never claims a paid transaction, and
-  `XORV_NANSEN_FIXTURE_CLUSTER` stages a related-wallet ring for the refused-rating demo) or `live`
-  (`XORV_NANSEN_PAYER_KEY` or `NANSEN_API_KEY`).
+- **Modes.** `XORV_NANSEN_MODE=off` (the default: the app says Nansen is not configured) or `live`
+  (`XORV_NANSEN_PAYER_KEY` or `NANSEN_API_KEY`). Recorded-shape Nansen answers exist only in the
+  broker's tests (`services/broker/test/nansen-fixtures.ts`); a running broker refuses `fixture`.
 - **What stays internal.** Nansen's redistribution guide keeps labels, smart-money data and
   leaderboards internal. Smart-money membership only nudges matching and never leaves the broker;
   related-wallet addresses are used for the sybil check and not published. Answers are cached
@@ -589,8 +588,8 @@ With **no keys at all**, the broker boots on Monad testnet. It matches and dispa
 payments through Monad's hosted facilitator, and serves the ledger read-only. Each key adds a
 capability: `XORV_OPERATOR_KEY` enables ledger writes, rating relays and verifier feedback;
 `XORV_FACILITATOR_KEY` self-hosts settlement; `DASHSCOPE_API_KEY`, `MOONSHOT_API_KEY` and
-`TOKENHUB_API_KEY` turn on the AI roles; `XORV_NANSEN_MODE=fixture` (or `live` with
-`XORV_NANSEN_PAYER_KEY`) turns on Nansen wallet trust ([docs/NANSEN.md](docs/NANSEN.md)).
+`TOKENHUB_API_KEY` turn on the AI roles; `XORV_NANSEN_MODE=live` (with `XORV_NANSEN_PAYER_KEY`
+or `NANSEN_API_KEY`) turns on Nansen wallet trust ([docs/NANSEN.md](docs/NANSEN.md)).
 
 Then in three terminals:
 
