@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IERC3009} from "./interfaces/IERC3009.sol";
 import {IXorvRegistry} from "./interfaces/IXorvRegistry.sol";
 import {IIdentityGate} from "./interfaces/IIdentityGate.sol";
@@ -62,7 +62,7 @@ import {IIdentityGate} from "./interfaces/IIdentityGate.sol";
  * that reverts or runs out of gas is caught and logged; it can never hold a
  * payment hostage.
  */
-contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuard {
+contract XorvEscrow is Ownable2Step, Pausable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
     // ---------------------------------------------------------------------

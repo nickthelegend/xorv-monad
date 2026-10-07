@@ -307,6 +307,9 @@ interface Harness {
   stop(): Promise<void>;
 }
 
+/** What the stubbed RPC says every gas payer holds; tests change it. */
+let stubMonBalance = 25n * 10n ** 18n;
+
 /** The gas payer the stubbed receipts name (the facilitator's EOA in a real run). */
 const FACILITATOR_ADDRESS = "0xfac1f4c1fac1f4c1fac1f4c1fac1f4c1fac1f4c1";
 
@@ -351,6 +354,7 @@ async function boot(
     txFacts: async () => ({ blockNumber: 4242, blockHash: "0xb10c", gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
     // The finalized head reaches the block 600 ms after the receipt (two Monad slots).
     finalizedAt: async () => Date.now() + 600,
+    monBalance: async () => stubMonBalance,
     txStatus: async (hash) => ({ hash, state: "voted", blockNumber: 4242, pool: null, heads: { latest: 4243, safe: 4242, finalized: 4241 } }),
     ai: opts.ai,
     trust: opts.trust,
@@ -2512,6 +2516,40 @@ describe("Nansen trust", () => {
   }, 20_000);
 });
 
+
+describe("Monad's 10 MON reserve on the broker's gas payers", () => {
+  afterEach(() => {
+    stubMonBalance = 25n * 10n ** 18n;
+  });
+
+  it("reports each gas payer's standing against the reserve, and flags one below it", async () => {
+    stubMonBalance = 3n * 10n ** 18n;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    h = await boot();
+    const gas = await waitFor(async () => {
+      const g = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).gas as Json;
+      return (g.payers as Json[]).length ? g : undefined;
+    });
+    expect(gas).toMatchObject({ reserveWei: (10n * 10n ** 18n).toString(), chain: "monad" });
+    expect((gas.payers as Json[])[0]).toMatchObject({
+      roles: expect.arrayContaining(["operator"]),
+      balanceWei: (3n * 10n ** 18n).toString(),
+      aboveReserve: false,
+      shortfallWei: (7n * 10n ** 18n).toString(),
+    });
+    expect(warn.mock.calls.some(([m]) => String(m).includes("below Monad's 10 MON reserve"))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it("is quiet about a payer comfortably above it", async () => {
+    h = await boot();
+    const payer = await waitFor(async () => {
+      const g = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).gas as Json;
+      return (g.payers as Json[])[0];
+    });
+    expect(payer).toMatchObject({ aboveReserve: true, shortfallWei: "0" });
+  });
+});
 
 describe("transaction status", () => {
   it("reports where a transaction stands in Monad's consensus, and refuses anything that isn't a hash", async () => {

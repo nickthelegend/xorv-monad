@@ -630,6 +630,19 @@ export interface NetworkInfo {
     timingChain?: "monad" | "local";
   };
   heartbeatIntervalMs: number;
+  /** Monad's 10 MON reserve, against the accounts that pay this broker's gas. */
+  gas?: {
+    reserveWei: string;
+    chain: "monad" | "local";
+    payers: {
+      address: string;
+      roles: string[];
+      url: string;
+      balanceWei: string | null;
+      aboveReserve: boolean | null;
+      shortfallWei?: string;
+    }[];
+  };
   /** XorvEscrow, when jobs are paid into escrow; null pays providers directly. */
   escrow?: {
     address: string;

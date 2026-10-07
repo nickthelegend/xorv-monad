@@ -28,3 +28,4 @@ export * from "./x402-client.js";
 export * from "./sealed.js";
 export * from "./vault.js";
 export type { TxState, TxStatus } from "./tx-status.js";
+export * from "./reserve.js";

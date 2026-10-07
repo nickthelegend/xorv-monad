@@ -67,6 +67,9 @@ import {
   networkConfig,
   sendModeOf,
   readTxStatus,
+  reserveStanding,
+  MONAD_RESERVE_WEI,
+  formatMon,
   normalizeAddress,
   parseSealedResult,
   publicClientFor,
@@ -90,6 +93,7 @@ import {
   type NetworkInfo,
   type ChainTiming,
   type TxStatus,
+  type ReserveStanding,
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
@@ -205,6 +209,8 @@ export interface AppDeps {
    * polling the RPC's `finalized` tag; tests stub it.
    */
   finalizedAt?: (blockNumber: number, blockHash: string) => Promise<number | null>;
+  /** An account's MON balance, for the reserve check on the broker's gas payers. Defaults to the RPC; tests stub it. */
+  monBalance?: (address: string) => Promise<bigint>;
   /** Where a transaction stands (txpool, or its consensus state from the block tags). Defaults to the RPC; tests stub it. */
   txStatus?: (txHash: string) => Promise<TxStatus>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
@@ -260,6 +266,42 @@ export function createApp(deps: AppDeps) {
    * "completed" one: its result and errors are ignored until the cancel lands.
    */
   const cancelling = new Set<string>();
+  /**
+   * The broker's gas payers against Monad's 10 MON reserve: the facilitator
+   * (settlements, escrow writes) and the operator (receipts, rating relays).
+   * Refreshed at most once a minute; a payer below the reserve is logged
+   * loudly, because its in-flight gas is then no longer covered.
+   */
+  const gasPayers = new Map<string, { roles: string[]; standing: ReserveStanding | null; checkedAt: number }>();
+  let gasCheckedAt = 0;
+  async function refreshGasPayers(): Promise<void> {
+    if (Date.now() - gasCheckedAt < 60_000) return;
+    gasCheckedAt = Date.now();
+    const wanted = new Map<string, string[]>();
+    const add = (address: string | null | undefined, role: string) => {
+      if (!address) return;
+      const key = normalizeAddress(address);
+      wanted.set(key, [...(wanted.get(key) ?? []), role]);
+    };
+    add(settlement.address, escrow ? "facilitator · escrow attester" : "facilitator");
+    add(config.operator?.address, "operator");
+    for (const [address, roles] of wanted) {
+      try {
+        const balance = await (deps.monBalance ?? ((a: string) => publicClientFor(config.network).getBalance({ address: a as Hex })))(address);
+        const standing = reserveStanding(balance);
+        const was = gasPayers.get(address)?.standing;
+        if (!standing.aboveReserve && (was === undefined || was === null || was.aboveReserve)) {
+          console.warn(
+            `[broker] ⚠ ${roles.join(", ")} ${address} holds ${formatMon(balance)}, below Monad's 10 MON reserve: its in-flight gas is no longer covered. Top it up.`,
+          );
+        }
+        gasPayers.set(address, { roles, standing, checkedAt: Date.now() });
+      } catch {
+        gasPayers.set(address, { roles, standing: gasPayers.get(address)?.standing ?? null, checkedAt: Date.now() });
+      }
+    }
+  }
+
   /** Whether this broker's chain is a Monad network or a local one (a fork), for every timing it reports. */
   const chainKind: "monad" | "local" = isLocalRpc(networkConfig(config.network).rpcUrl) ? "local" : "monad";
   /** When each quote's settlement was submitted, for its speed receipt. */
@@ -395,6 +437,8 @@ export function createApp(deps: AppDeps) {
     );
   }
   const escrowDeadlineSeconds = config.escrowDeadlineSeconds ?? 1_800;
+  // The gas payers are known now; check them against Monad's reserve once at boot (then from the sweep).
+  void refreshGasPayers();
 
   /** Cleanverse CVI standing, when the escrow has an identity gate. */
   const identitySource: IdentitySource | null =
@@ -727,6 +771,17 @@ export function createApp(deps: AppDeps) {
             identityGate: identity?.gate() ?? null,
           }
         : null,
+      // Monad's reserve rule, for the accounts that pay this broker's gas.
+      gas: {
+        reserveWei: MONAD_RESERVE_WEI.toString(),
+        chain: chainKind,
+        payers: [...gasPayers.entries()].map(([address, p]) => ({
+          address,
+          roles: p.roles,
+          url: explorerAddress(config.network, address),
+          ...(p.standing ?? { balanceWei: null, aboveReserve: null }),
+        })),
+      },
       published: chain.counts(),
       pendingReceipts: chain.pendingReceipts(),
       lastPublishError: chain.lastPublishError(),
@@ -2761,6 +2816,7 @@ export function createApp(deps: AppDeps) {
     },
     /** Timers' work: fail overdue jobs, reap silent providers, retry receipts. */
     sweep(): void {
+      void refreshGasPayers();
       for (const job of jobs.overdue()) {
         const providerId = job.providerId ?? "";
         // Tell the node to stop: its result would be ignored now anyway.

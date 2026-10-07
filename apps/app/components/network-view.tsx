@@ -17,7 +17,7 @@ import { aiRoles, describeLatency, type AiRoleName } from "@/lib/ai";
 import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import { valueToStars } from "@/lib/rating";
-import { formatMs } from "@/lib/speed";
+import { formatMon, formatMs } from "@/lib/speed";
 import { CommitPipeline } from "@/components/monad-live";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
 import { NansenPanel } from "@/components/trust";
@@ -76,6 +76,20 @@ export function NetworkView() {
               "—"
             )}
           </Row>
+          {(info?.gas?.payers ?? []).map((payer) => (
+            <Row key={payer.address} label={`gas: ${payer.roles.join(", ")}`}>
+              <span className="tnum">
+                <Ext href={payer.url}>{shortHex(payer.address)}</Ext>
+                {payer.balanceWei !== null ? ` · ${formatMon(payer.balanceWei)}` : ""}
+                {payer.aboveReserve === null ? null : payer.aboveReserve ? (
+                  <span className="text-live"> · above the 10 MON reserve</span>
+                ) : (
+                  <span className="text-fail"> · below the 10 MON reserve</span>
+                )}
+                {info?.gas?.chain === "local" ? <span className="text-fg-4"> (a fork doesn&rsquo;t enforce it)</span> : null}
+              </span>
+            </Row>
+          ))}
           <Row label="usdc">
             {info ? <Ext href={explorerToken(NETWORK, info.usdc.address)}>{shortHex(info.usdc.address)} ↗</Ext> : "—"}
           </Row>
