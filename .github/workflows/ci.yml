@@ -169,6 +169,39 @@ jobs:
         if: always()
         run: docker logs broker || true
 
+  contracts:
+    name: Solidity — XorvEscrow, refund keeper, Cleanverse gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge build --sizes
+      - run: forge test -vv
+      # Against Monad testnet's real AUSD, USDC and Cleanverse A-Pass, on a fork. Needs the
+      # public RPC, so a flaky endpoint doesn't block the suite above.
+      - run: FORK_TESTS=1 forge test --match-contract Fork -vv
+        continue-on-error: true
+
+  cre:
+    name: Chainlink CRE refund keeper
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cre/refund-keeper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bunx tsc --noEmit
+      - run: bun test
+      - name: Compile to WASM
+        run: ./node_modules/.bin/cre-compile main.ts dist/refund-keeper.wasm
+
   secrets:
     name: No keys in the tree
     runs-on: ubuntu-latest
