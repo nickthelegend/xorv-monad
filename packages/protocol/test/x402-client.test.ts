@@ -270,4 +270,34 @@ describe("policies", () => {
     expect(policy(2, [requirement({ amount: "010000" })])).toHaveLength(1);
     expect(() => policy(2, [requirement({ amount: "abc" })])).toThrow(/does not match/);
   });
+
+  describe("escrow options", () => {
+    const ESCROW = "0x00000000000000000000000000000000000e5c20";
+    const escrowRow = (over: { payTo?: string; provider?: string; escrow?: string } = {}) =>
+      requirement({
+        scheme: "escrow",
+        payTo: over.payTo ?? ESCROW,
+        extra: { name: "USDC", version: "2", escrow: over.escrow ?? ESCROW, provider: over.provider ?? PROVIDER },
+      } as Partial<PaymentRequirements>);
+
+    it("signs escrow only into the contract the quote named, for the quoted provider", () => {
+      const policy = quoteMatchPolicy({ payTo: PROVIDER, amount: "10000", escrow: ESCROW }, MONAD_TESTNET);
+      const good = escrowRow();
+      expect(policy(2, [good, requirement()])).toEqual([good, requirement()]);
+      expect(() => policy(2, [escrowRow({ provider: BROKER })])).toThrow(/does not match/);
+      expect(() => policy(2, [escrowRow({ payTo: BROKER, escrow: BROKER })])).toThrow(/does not match/);
+      // payTo and extra.escrow must agree: a payment to one contract naming another is refused.
+      expect(() => policy(2, [escrowRow({ escrow: BROKER })])).toThrow(/does not match/);
+    });
+
+    it("refuses escrow a quote didn't announce, and still pays exact", () => {
+      const policy = quoteMatchPolicy({ payTo: PROVIDER, amount: "10000" }, MONAD_TESTNET);
+      expect(policy(2, [escrowRow(), requirement()])).toEqual([requirement()]);
+      expect(() => policy(2, [escrowRow()])).toThrow(/does not match/);
+    });
+
+    it("usdcOnlyPolicy keeps escrow USDC rows alongside exact", () => {
+      expect(usdcOnlyPolicy(MONAD_TESTNET)(2, [escrowRow(), requirement()])).toHaveLength(2);
+    });
+  });
 });

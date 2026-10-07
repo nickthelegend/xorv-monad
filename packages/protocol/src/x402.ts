@@ -26,7 +26,8 @@ import type {
 } from "@x402/core/types";
 import { toFacilitatorEvmSigner } from "@x402/evm";
 import { ExactEvmScheme as ExactEvmFacilitatorScheme } from "@x402/evm/exact/facilitator";
-import type { Account, Transport } from "viem";
+import { getAddress, type Account, type PublicClient, type Transport, type WalletClient } from "viem";
+import { EscrowFacilitatorScheme } from "./escrow.js";
 import { networkConfig } from "./chains.js";
 import { walletClientFor, withGasHeadroom, withSignerLock } from "./evm.js";
 
@@ -118,6 +119,13 @@ export function buildLocalFacilitator(opts: {
   transport?: Transport;
   confirmationTimeoutMs?: number;
   log?: X402Logger;
+  /**
+   * XorvEscrow address. When set, the `escrow` scheme is served too, and the
+   * account must be the escrow's attester (only the attester may fund a job).
+   */
+  escrow?: string | null;
+  /** Called around each escrow write, so background RPC readers can back off. */
+  onEscrowWrite?: (phase: "start" | "end") => void;
 }): FacilitatorClient {
   const log = opts.log ?? console.error;
   const cfg = networkConfig(opts.network);
@@ -151,6 +159,15 @@ export function buildLocalFacilitator(opts: {
     cfg.caip2 as Network,
     new ExactEvmFacilitatorScheme(signer),
   );
+  if (opts.escrow) {
+    facilitator.register(
+      cfg.caip2 as Network,
+      new EscrowFacilitatorScheme(
+        { public: wallet as unknown as PublicClient, wallet: escrowWriter(wallet, account) },
+        { escrow: getAddress(opts.escrow), onWrite: opts.onEscrowWrite },
+      ),
+    );
+  }
 
   // Adapt x402Facilitator to the FacilitatorClient shape the resource server
   // expects. Everything is local, so there is no network hop and no retry.
@@ -182,6 +199,24 @@ export function buildLocalFacilitator(opts: {
       return facilitator.getSupported() as SupportedResponse;
     },
   };
+}
+
+/**
+ * The wallet the escrow scheme writes through: the same per-signer lock and
+ * gas headroom as the exact scheme above, so an escrow funding and any other
+ * write from this key (a ledger receipt, a release) can't race on a nonce.
+ */
+export function escrowWriter(wallet: ReturnType<typeof walletClientFor>, account: Account): WalletClient {
+  return {
+    account,
+    chain: wallet.chain,
+    writeContract: (args: Record<string, unknown>) =>
+      withSignerLock(account.address, async () => {
+        const request = { ...args, account };
+        const gas = (args.gas as bigint | undefined) ?? withGasHeadroom(await wallet.estimateContractGas(request as never));
+        return wallet.writeContract({ ...request, gas } as never);
+      }),
+  } as unknown as WalletClient;
 }
 
 /** A facilitator that talks HTTP to a hosted one. */
@@ -217,6 +252,9 @@ export function buildFacilitator(opts: {
   rpcUrl?: string;
   transport?: Transport;
   log?: X402Logger;
+  /** XorvEscrow address; self-hosted only (the account must be its attester). */
+  escrow?: string | null;
+  onEscrowWrite?: (phase: "start" | "end") => void;
 }): FacilitatorChoice {
   const mode = (opts.mode ?? "").trim() || "self";
   const cfg = networkConfig(opts.network);
@@ -235,6 +273,8 @@ export function buildFacilitator(opts: {
         rpcUrl: opts.rpcUrl,
         transport: opts.transport,
         log: opts.log,
+        escrow: opts.escrow,
+        onEscrowWrite: opts.onEscrowWrite,
       }),
       mode: "self",
       description: "self-hosted (in-process)",

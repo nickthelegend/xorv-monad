@@ -57,3 +57,5 @@ export function providerIdFor(nodeId: string): string {
 export function newId(prefix: string): string {
   return `${prefix}_${randomBytes(9).toString("base64url")}`;
 }
+
+export * from "./escrow.js";

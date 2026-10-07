@@ -12,6 +12,7 @@
  * lives in `x402.ts`, which the web entry does not export).
  */
 
+import { ESCROW_SCHEME, EscrowClientScheme, type EscrowClientSigner } from "./escrow.js";
 import { x402Client, type PaymentPolicy } from "@x402/core/client";
 import type { DynamicPayTo, HTTPRequestContext, PaymentOption } from "@x402/core/http";
 import type { AssetAmount, Network, PaymentRequirements } from "@x402/core/types";
@@ -97,6 +98,13 @@ export interface QuoteExpectation {
   network?: string;
   /** Defaults to the network's USDC. */
   asset?: string;
+  /**
+   * The XorvEscrow contract the quote named, when the broker escrows payments.
+   * An `escrow` option is signed only if it pays exactly this contract and its
+   * `extra.provider` is `payTo`; without it, escrow options are refused and the
+   * client pays `exact` as before.
+   */
+  escrow?: string | null;
 }
 
 function describeRequirements(reqs: PaymentRequirements[]): string {
@@ -115,7 +123,10 @@ export function usdcOnlyPolicy(network: string): PaymentPolicy {
   const cfg: NetworkConfig = networkConfig(network);
   return (_version, reqs) => {
     const kept = reqs.filter(
-      (r) => r.scheme === XORV_SCHEME && r.network === cfg.caip2 && sameAddress(r.asset, cfg.usdc.address),
+      (r) =>
+        (r.scheme === XORV_SCHEME || r.scheme === ESCROW_SCHEME) &&
+        r.network === cfg.caip2 &&
+        sameAddress(r.asset, cfg.usdc.address),
     );
     if (kept.length === 0) {
       throw new Error(
@@ -142,12 +153,27 @@ export function quoteMatchPolicy(expect: QuoteExpectation, network: string): Pay
   const wantAsset = expect.asset ?? cfg.usdc.address;
   const wantAmount = unitsString(expect.amount, "expected amount");
   const wantPayTo = normalizeAddress(expect.payTo);
+  const wantEscrow = expect.escrow ? normalizeAddress(expect.escrow) : null;
+  // Exact pays the provider directly; escrow pays the quoted contract, naming
+  // the provider it will release to. Anything else differs from the quote.
+  const payeeMatches = (r: PaymentRequirements): boolean => {
+    if (r.scheme !== ESCROW_SCHEME) return sameAddress(r.payTo, wantPayTo);
+    const extra = (r.extra ?? {}) as { escrow?: unknown; provider?: unknown };
+    return (
+      wantEscrow !== null &&
+      sameAddress(r.payTo, wantEscrow) &&
+      typeof extra.escrow === "string" &&
+      sameAddress(extra.escrow, wantEscrow) &&
+      typeof extra.provider === "string" &&
+      sameAddress(extra.provider, wantPayTo)
+    );
+  };
   return (_version, reqs) => {
     const kept = reqs.filter(
       (r) =>
         r.network === wantNetwork &&
         sameAddress(r.asset, wantAsset) &&
-        sameAddress(r.payTo, wantPayTo) &&
+        payeeMatches(r) &&
         /^\d+$/.test(r.amount) &&
         BigInt(r.amount) === BigInt(wantAmount),
     );
@@ -190,6 +216,9 @@ export function buyerX402Client(opts: {
 
   const client = new x402Client()
     .register(cfg.caip2 as Network, new ExactEvmScheme(opts.signer))
+    // Escrow first when the broker offers it (it lists it first): the money
+    // waits in XorvEscrow until the job delivers, refundable if it doesn't.
+    .register(cfg.caip2 as Network, new EscrowClientScheme(opts.signer as EscrowClientSigner))
     .setSpendControls({
       allowedAssets: [{ network: cfg.caip2 as Network, asset: cfg.usdc.address, maxAmountPerPayment: cap }],
     })
