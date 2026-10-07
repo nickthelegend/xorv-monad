@@ -118,10 +118,12 @@ job does not exist yet, so the payment record waits in a map keyed by quote id u
 picks it up. The Hedera prototype matched a settlement to "the most recent unpaid job for this
 payTo", which could swap the records of two buyers who paid the same provider at the same moment.
 
-### Pay first means cancel is not a refund
+### Pay first means cancel is not a refund, unless the job is escrowed
 
-`POST /api/jobs/:id/cancel` stops the work and frees the provider's slot. It does not refund,
-because the money has already moved and the provider may already have used real quota. Only the
+`POST /api/jobs/:id/cancel` stops the work and frees the provider's slot. On an `exact` payment it
+does not refund, because the money has already moved and the provider may already have used real
+quota. On an escrowed payment the money has not moved yet, so cancel refunds it in full
+(`XorvEscrow.cancel`, no fault on the provider), and the response carries the refund tx. Only the
 buyer who paid can cancel: the payment response carries a one-time `cancelToken`, and the broker
 stores only its hash. Job ids are listed publicly on `/api/jobs`, so knowing one proves nothing.
 
@@ -386,6 +388,38 @@ things:
 
 ---
 
+## XorvEscrow: money that waits for the work
+
+`contracts/` (Foundry) holds three contracts that were not in the first line of this repo:
+`XorvEscrow`, `XorvRefundKeeper` and `CleanverseGate`. The escrow is opt-in: the broker offers it
+only with `XORV_ESCROW_ADDRESS` and a self-hosted facilitator, whose key is the escrow's
+**attester**.
+
+- **Funding is the payment.** The x402 `escrow` scheme (`packages/protocol/src/escrow.ts`) is EIP-3009
+  `ReceiveWithAuthorization` to the escrow. Only the escrow can redeem it, so a leaked authorization
+  can't be front-run into a plain transfer. The nonce is a hash of the chain, the escrow, the job id
+  and the deadline. The contract derives it the same way, so one authorization funds exactly one job
+  with one deadline. The 402's `payTo` is the escrow, and
+  `extra.provider` names the payee. Buyers accept the row only when both match the frozen quote.
+- **Release carries the result.** `release(jobId, resultHash)` pays the provider and puts
+  `keccak256(result)` on-chain. The XorvLedger receipt is written **after** the release, with the
+  release as its `paymentTx`, so ERC-8004 crediting (`payTo == agentWallet`) still applies to the
+  provider who was paid.
+- **Reassignment is on-chain.** A failed job's escrow is re-pointed to the new provider before the
+  new provider is paid. The escrow never pays an address that isn't its current provider.
+- **Refunds need nobody's permission after the deadline.** `refund` is open to anyone once
+  `deadline` has passed. The Chainlink CRE workflow (`cre/refund-keeper`) is the "anyone" when the
+  broker is gone: Envio finds the expired funded jobs, the workflow checks `isRefundable` on Monad,
+  and `XorvRefundKeeper` refunds them from one DON-signed report.
+- **Identity gates the value, never the refund.** With `CleanverseGate` set, `fund` requires a valid
+  Cleanverse A-Pass on buyer and provider, and `release`/`reassign` on the payee. A frozen,
+  revoked or expired credential stops the money, but a buyer can always be refunded. The broker
+  mirrors the gate off-chain (`services/broker/src/identity.ts`): the facilitator refuses before
+  signing, and unverified providers are never quoted.
+- **Settlement is retried.** If a release or refund fails, the broker reads the job's state back
+  from the chain, records who settled it (`settledBy`) and retries in its sweep. The 100-block log
+  limit is respected (99-block windows).
+
 ## Reading the record back: indexer first, RPC second
 
 The public Monad RPC caps `eth_getLogs` at **100 blocks** (about 30 seconds at 300 ms blocks).
@@ -480,21 +514,25 @@ reassignment means someone else finished the job. The verifier runs, and the rec
 
 ## Testing
 
-The root `pnpm test` runs every workspace suite: **1,184 tests**, counted on 2026-09-27 by running
-each suite once, one after another, on Windows. A further 14 POSIX-only CLI cases are skipped there.
+The root `pnpm test` runs every workspace suite: **1,234 tests**, counted on 2026-10-07 by running
+each suite once, one after another, on macOS. On Windows, 14 POSIX-only CLI cases are skipped.
 None of them needs a key, an RPC or testnet funds.
 
 | Suite | Files | Tests | What it leans on |
 |---|---:|---:|---|
-| `packages/protocol` | 11 | 242 | viem over a fake JSON-RPC, a real x402 facilitator over a stub transport, known-answer crypto vectors |
-| `packages/contracts` | 4 | 60 | Hardhat's in-process chain (EDR), the vendored ERC-8004 registries, `node:test` |
-| `packages/cli` | 18 | 253 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
-| `packages/mcp` | 7 | 83 | the real server over stdio, a mock broker that verifies signatures, a fake Privy client |
+| `packages/protocol` | 14 | 267 | viem over a fake JSON-RPC, a real x402 facilitator over a stub transport, known-answer crypto vectors |
+| `packages/contracts` | 5 | 59 | Hardhat's in-process chain (EDR), the vendored ERC-8004 registries, `node:test` |
+| `packages/cli` | 18 | 267 (+14 skipped on Windows) | fake agent binaries, a fake RPC, scripted model endpoints |
+| `packages/mcp` | 8 | 83 | the real server over stdio, a mock broker that verifies signatures, a fake Privy client |
 | `packages/mm-plugin` | 9 | 74 | the real `PluginCommand` base, a fake executor that signs the way MetaMask's JSON-RPC signer does |
-| `services/broker` | 11 | 343 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
-| `apps/app` | 7 | 114 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
-| `apps/landing` | 1 | 15 | hand-built broker payloads, including malformed ones |
-| **Total** | **68** | **1,184** | |
+| `services/broker` | 14 | 353 | the real Hono app, x402 resource server and WebSocket hub, with the chain stubbed |
+| `apps/app` | 14 | 116 | real Mera against a fake synced authenticator, a mocked broker `fetch` |
+| `apps/landing` | 2 | 15 | hand-built broker payloads, including malformed ones |
+| **Total** | **84** | **1,234** | |
+
+Outside the workspace: Foundry (`contracts/`, 76 tests, plus opt-in fork tests against Monad
+testnet), the Envio indexer (66), the CRE workflow (4), and the two end-to-end runs on a Monad
+testnet fork (`pnpm e2e`, `pnpm e2e:escrow`).
 
 What makes that possible:
 

@@ -201,7 +201,7 @@ function stubFacilitator(control: FacilitatorControl): FacilitatorClient {
         nonce: authorization.nonce,
       },
       signature,
-    });
+    } as Parameters<typeof verifyTypedData>[0]);
     return ok ? null : "invalid signature";
   }
 

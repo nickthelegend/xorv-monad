@@ -169,6 +169,40 @@ exist.
   and the adapter list are rewritten for Monad, and a "Built with" section says where each sponsor
   sits in the loop.
 
+### Escrow, Chainlink CRE and Cleanverse (new `contracts/`, `cre/`)
+
+Ported from the `metropolis-escrow` line (built 4–7 Oct) and adapted to XorvLedger and ERC-8004.
+Not deployed: testnet deploys are on hold ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)).
+
+- **`XorvEscrow`** (Foundry). The buyer signs EIP-3009 `ReceiveWithAuthorization` into the escrow,
+  with the nonce bound to the job id and deadline. The attester releases to the provider with the
+  result's hash, re-points a reassigned job, or refunds; anyone may refund after the deadline. 76
+  Foundry tests (including invariants), plus fork tests against Monad testnet's USDC and AUSD.
+- **x402 `escrow` scheme** in `@xorv/protocol`: server, client and facilitator, registered next to
+  `exact`. With `XORV_ESCROW_ADDRESS` and a self-hosted facilitator, the broker offers it first and
+  freezes the escrow terms in the quote. Buyers (`xorv run`, MCP, app) accept an escrow row only for
+  the quoted escrow and provider. The broker releases on delivery, refunds on failure and cancel,
+  retries settlement in its sweep, and writes the XorvLedger receipt with the **release** as the
+  payment tx. A cancel returns the refund tx.
+- **Chainlink CRE refund keeper** (`cre/refund-keeper`, `XorvRefundKeeper.sol`): cron → the Envio
+  index's expired `EscrowJob`s → `isRefundable` reads on Monad → one signed report → refunds through
+  the KeystoneForwarder. Tested on the CRE SDK's test runtime; compiles to WASM.
+- **Cleanverse CVI gate** (`CleanverseGate.sol`): Cleanverse's A-Pass validity and validator gate
+  escrow funding (buyer and provider) and payouts (the payee); refunds are never gated. The
+  facilitator refuses an unverified party before signing, and the broker never quotes or reassigns
+  to a provider without an A-Pass. Fork tests run against the real A-Pass and validator.
+- **Indexer:** XorvEscrow's four events and the `EscrowJob` entity (66 tests).
+- **App:** the job page shows the escrow state with the release or refund tx; the network page shows
+  the escrow and the gate. `payableQuote` now checks each 402 row by scheme instead of only the first.
+- **e2e:** `pnpm e2e:escrow`, 31 checks on a Monad testnet fork (`e2e/last-run-escrow.md`).
+- **CI:** new `contracts` (forge build, sizes, tests) and `cre` (typecheck, tests, WASM compile) jobs.
+
+### Compliance
+
+- **Nansen fixture mode is out of the product.** `XORV_NANSEN_MODE` accepts `off` or `live`;
+  `fixture` is refused at boot. The fixture data lives in `services/broker/test/`, and
+  `nansen:probe` without a mode says Nansen is not configured.
+
 ### Fixed
 
 - **Settlement ran after dispatch**, so a provider could work on a payment that then failed to

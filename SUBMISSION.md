@@ -59,11 +59,16 @@ Xorv connects the two sides with an open protocol:
 2. A buyer asks for a quote. Hunyuan screens the prompt; when the buyer chose "Auto", Qwen 3.8 Max
    runs a tool loop that reads ERC-8004 reputation, XorvLedger receipts, Envio aggregates and Nansen
    trust on Monad and picks the provider; the quote freezes that provider, a price and a USDC amount.
-3. The buyer signs **one EIP-3009 USDC authorization** to the provider's own address. The x402
-   facilitator settles it on Monad **before** the job runs and pays the gas. The broker is never the
-   payee.
+3. The buyer signs **one EIP-3009 USDC authorization**. With a self-hosted facilitator it goes into
+   **XorvEscrow** (the `escrow` scheme, offered first): the money waits there until the job
+   delivers, then is released to the provider with the result's hash, or refunded in full if the job
+   fails, is cancelled or passes its deadline. Without it, the authorization pays the provider's own
+   address directly (`exact`). Either way the facilitator settles on Monad **before** the job runs
+   and pays the gas, and the broker is never the payee.
 4. The job runs in the provider's sandbox and streams back live. A failed job moves to another
-   provider at no extra charge.
+   provider at no extra charge (an escrowed job is re-pointed on-chain). If the broker disappears,
+   a **Chainlink CRE** workflow refunds every escrowed job past its deadline. With the
+   **Cleanverse** gate set, only parties holding a valid A-Pass can fund or be paid.
 5. The job is receipted on `XorvLedger`, Kimi scores the result and writes the score to ERC-8004, and
    the buyer rates it with a free EIP-712 signature that the broker relays into ERC-8004, unless
    Nansen shows the buyer's and the provider's wallets are one party.
@@ -79,10 +84,11 @@ derived from the buyer's passkey (Mera), and it decrypts on any device that has 
 | What runs on Monad | Where |
 |---|---|
 | Every job payment: x402 `exact`, EIP-3009 `transferWithAuthorization` on Circle USDC (`0x534b…43A3` testnet), buyer → provider, gas paid by the facilitator | `packages/protocol/src/x402.ts`, `services/broker/src/app.ts` |
+| `XorvEscrow`: x402 `escrow` scheme (EIP-3009 `receiveWithAuthorization` into the escrow), release with the result hash, refund (by anyone after the deadline), on-chain re-pointing; Cleanverse A-Pass gate on fund and payout; refunds by the CRE keeper | `contracts/src/`, `packages/protocol/src/escrow.ts`, `services/broker/src/escrow.ts`, `cre/refund-keeper` |
 | `XorvLedger`: provider registrations, sampled heartbeats, batched job receipts, payer-signed ratings | `packages/contracts/contracts/XorvLedger.sol` |
 | ERC-8004 identity (canonical v2.0.0 registries): `xorv identity register`, `payTo == agentWallet` enforced on every receipt | `packages/cli/src/commands/identity.ts`, `XorvLedger._checkAgentWallet` |
 | ERC-8004 reputation: buyer ratings through the ledger (`starred`), Kimi verifications from the verifier EOA (`xorv-verified`) | `XorvLedger.rateJob`, `services/broker/src/ai/feedback.ts` |
-| Envio HyperIndex over XorvLedger and both ERC-8004 registries, via HyperSync | `services/indexer/` |
+| Envio HyperIndex over XorvLedger, XorvEscrow and both ERC-8004 registries, via HyperSync | `services/indexer/` |
 | The broker buying Nansen wallet data: x402 `exact` USDC on Monad **mainnet** (`eip155:143`), one EIP-3009 authorization per $0.01 call, settlement tx kept with each answer | `services/broker/src/trust/nansen.ts` |
 
 **Why Monad.** 300 ms blocks and about 600 ms finality mean a payment settles before the job
@@ -103,6 +109,7 @@ deployed app.
 
 | | Monad testnet (`eip155:10143`) | Where the value comes from |
 |---|---|---|
+| `XorvEscrow`, `XorvRefundKeeper`, `CleanverseGate` | **TODO(deploy)**: built and tested on local chains and Monad forks only; testnet deploy is on hold ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)) | `contracts/script/Deploy.s.sol` output |
 | `XorvLedger` | [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) — source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) | `packages/contracts/deployments/monadTestnet.json` |
 | Deploy transaction | [`0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) (block 66379818) | same file |
 | x402 settlement (buyer → provider USDC) | [`0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7): 0.01 USDC, submitted and gas-paid by Monad's public facilitator | a live `xorv run` job |

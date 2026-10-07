@@ -35,6 +35,12 @@ provider for an "Auto" job, and Kimi verifies results and writes its score on-ch
 itself is a paying agent too: it buys Nansen wallet data per call, over x402 on Monad, to score
 every provider's payout wallet.
 
+When the broker runs its own facilitator, the buyer can pay into **XorvEscrow** instead: the USDC
+waits in the contract until the job delivers, is released to the provider with the result's hash,
+and is refunded in full if the job fails, is cancelled or misses its deadline. A **Chainlink CRE**
+workflow refunds expired jobs even if the broker is gone, and an optional **Cleanverse** gate lets
+only parties holding a valid A-Pass fund or be paid.
+
 ## Track 04: Trust, Identity & AI Infrastructure
 
 The track asks for "protocols, primitives, or infrastructure layers that other applications build
@@ -54,6 +60,13 @@ layer, not a consumer app:
   relay a rating when Nansen links the buyer's wallet to the provider's (one funded the other, a
   shared non-exchange funder, related wallets). `getSummary(agentId, [ledger], "starred", "")` is
   therefore a score built from paid jobs by independent buyers, and any other marketplace can read it.
+- **Money that waits for the work.** `XorvEscrow` holds an escrowed job's USDC until delivery. The
+  release carries the result's hash, and a refund needs no one's permission once the deadline has
+  passed: the Chainlink CRE refund keeper sends it with no broker involved. `XorvLedger`'s receipt
+  points at the release, so ERC-8004 reputation is still credited only for delivered, paid work.
+- **Identity-gated value (Cleanverse CVI).** With `CleanverseGate` set on the escrow, funding needs
+  a valid Cleanverse A-Pass on both buyer and provider, and payouts need one on the payee. A frozen,
+  revoked or expired credential stops the money, but refunds are never gated.
 - **AI trust services in the loop.** A safety screen protects provider machines, and a verifier
   publishes an independent quality score to the same registry under a separate tag.
 - **Wallet trust, bought agent to agent.** The broker pays Nansen a cent per call in USDC over x402
@@ -66,9 +79,9 @@ layer, not a consumer app:
 pnpm install && pnpm build && pnpm test
 ```
 
-**1,184 tests pass** (counted on 2026-09-27 by running every workspace suite once, one after another,
-on Windows 11 with Node 22.21). A further 14 POSIX-only CLI cases (sandbox tiers and file modes) are
-skipped on Windows. They need **no keys, no RPC and no testnet funds**: the x402 facilitator and the
+**1,234 tests pass** (counted on 2026-10-07 by running every workspace suite once, one after another,
+on macOS with Node 26). On Windows, 14 POSIX-only CLI cases (sandbox tiers and file modes) are
+skipped. The Foundry contracts, the indexer and the CRE workflow add 146 more (below the table). They need **no keys, no RPC and no testnet funds**: the x402 facilitator and the
 XorvLedger writer are stubbed at the chain boundary, the contracts run on Hardhat's in-process chain
 against the real ERC-8004 v2.0.0 registry code, and the hosted models are scripted `fetch` stubs.
 You need Node 22.18+ (the workspace floor, set by `package.json` engines; the broker alone needs 22.13+
@@ -78,19 +91,23 @@ downloads the Solidity compiler through Hardhat. CI runs the same commands on No
 
 | Package | Tests | What they cover |
 |---|---:|---|
-| `packages/protocol` | 242 | Monad chain table, viem helpers and the signer lock, money math, the x402 facilitator and the quote-bound buyer client, the XorvLedger ABI and 100-block feed reader, ERC-8004 helpers, model presets and the SSE reader, private-job crypto (known-answer vectors, `node:crypto` cross-checks), the tool-calling chat turn |
-| `packages/contracts` | 60 | `XorvLedger` against the real ERC-8004 v2.0.0 registries, self-dealing refusals, EIP-7702 and ERC-1271 rating signatures, the ABI pin, the gas report, the Monad testnet fork config |
-| `packages/cli` | 253 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal; the earnings ledger |
+| `packages/protocol` | 267 | Monad chain table, viem helpers and the signer lock, money math, the x402 facilitator and the quote-bound buyer client, the x402 `escrow` scheme (server, client, facilitator; two runs against a real escrow on anvil when `forge` is installed), the XorvLedger ABI and 100-block feed reader, ERC-8004 helpers, model presets and the SSE reader, private-job crypto (known-answer vectors, `node:crypto` cross-checks), the tool-calling chat turn |
+| `packages/contracts` | 59 | `XorvLedger` against the real ERC-8004 v2.0.0 registries, self-dealing refusals, EIP-7702 and ERC-1271 rating signatures, the ABI pin, the gas report, the Monad testnet fork config |
+| `packages/cli` | 267 | every adapter including `qwen`, `kimi`, `hunyuan` and `qwen-code`; the sandbox; `init`, `wallet` and `identity`; `xorv run`'s checks before signing; private-job sealing; `xorv start`'s log off a terminal; the earnings ledger |
 | `packages/mcp` | 83 | the real server over stdio against a mock broker that verifies signatures, the Privy signer with a fake client, the session budget, the Privy policy |
 | `packages/mm-plugin` | 74 | every `mm xorv` command on a mocked MetaMask context, the signer, the payment policy, the manifest |
-| `services/broker` | 343 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles including the agentic Qwen router's tool loop, private jobs and vaults, Nansen trust signals over x402 and the wash-rating guard, the review's security fixes (session-token re-registration, frame validation, streamed body limits, self-payment refusal) |
-| `apps/app` | 114 | the x402 payment helper, JSON-safe typed data for Privy, ratings, bounded demo routes, the Mera keyring with a synced authenticator, the Nansen trust panels, the router trace |
+| `services/broker` | 353 | the full HTTP lifecycle, receipt batching and retries, indexer-first feeds, the AI roles including the agentic Qwen router's tool loop, private jobs and vaults, Nansen trust signals over x402 and the wash-rating guard, the review's security fixes (session-token re-registration, frame validation, streamed body limits, self-payment refusal), the escrow lifecycle (release with the result hash, refund on failure and cancel, on-chain re-pointing, unverified providers never quoted) |
+| `apps/app` | 116 | the x402 payment helper, JSON-safe typed data for Privy, ratings, bounded demo routes, the Mera keyring with a synced authenticator, the Nansen trust panels, the router trace |
 | `apps/landing` | 15 | the broker feed parsers |
-| **Total** | **1,184** | |
+| **Total** | **1,234** | |
 
-The Envio indexer (`services/indexer`) is outside the pnpm workspace because Envio ships no Windows
-binary. Its 52 tests run in a Linux container with the one command in
-[`services/indexer/README.md`](services/indexer/README.md#tests-in-a-throwaway-container-works-from-windows).
+Outside the pnpm workspace:
+- **`contracts/`** (Foundry): 76 tests for `XorvEscrow`, `XorvRefundKeeper` and `CleanverseGate`,
+  including invariants, via `forge test`. Fork tests against Monad testnet are opt-in.
+- **`services/indexer`**: Envio ships no Windows binary. Its 66 tests run with `pnpm test` there on
+  macOS or Linux, or in a Linux container with the one command in
+  [`services/indexer/README.md`](services/indexer/README.md#tests-in-a-throwaway-container-works-from-windows).
+- **`cre/refund-keeper`**: 4 tests with `bun test`.
 
 ### What is proven, and what isn't yet
 
@@ -98,6 +115,9 @@ binary. Its 52 tests run in a Linux container with the one command in
 |---|---|
 | Quote → 402 → EIP-3009 signature → upfront settlement → dispatch → result → receipt, through the real Hono app, the real x402 resource server and the real WebSocket hub | Integration test, `services/broker/test/integration.test.ts` |
 | **The whole system on a fork of Monad testnet**: Circle's real USDC and the canonical ERC-8004 registries, XorvLedger deployed by its own script, the built broker, a real `xorv` provider node, `xorv run --json`, the MCP server over stdio and a private job; 189 checks read back off the chain (USDC transfers with the buyer holding no MON, `ProviderRegistered`/`JobRecorded`/`JobRated`, Kimi's and the buyers' `NewFeedback`, the sealed envelope's receipt hash) | `pnpm e2e` ([`e2e/README.md`](e2e/README.md)); last green run in [`e2e/last-run.md`](e2e/last-run.md). Needs the Monad testnet RPC, no keys or funds |
+| **The escrow on a fork of Monad testnet**: `XorvEscrow` deployed beside XorvLedger; `xorv run` funds it (buyer → escrow, buyer holds no MON), the release pays the provider with the result's hash, `JobRecorded.paymentTx` is the release, a cancel refunds in full with no fault, and a `CleanverseGate` over Cleanverse's **real A-Pass** refuses an unverified buyer with nothing moved, then lets them pay once issued one; 31 checks | `pnpm e2e:escrow`; last green run in [`e2e/last-run-escrow.md`](e2e/last-run-escrow.md) |
+| `XorvEscrow`, `XorvRefundKeeper`, `CleanverseGate`: fund, release, refund, reassign, cancel, deadlines, the attester, the CRE report path, the gate on every payout; invariants (the escrow always holds what it owes); fork tests against Monad testnet's real A-Pass, validator, USDC and AUSD | `cd contracts && forge test` (76 tests), `forge test --match-path 'test/*.fork.t.sol' --fork-url https://testnet-rpc.monad.xyz` |
+| The CRE refund keeper: only refundable jobs reach the report, DON time sets the cut-off, empty, ahead-of-chain and unreachable index | `cd cre/refund-keeper && bun test` on the CRE SDK's test runtime; compiles to WASM |
 | `XorvLedger` receipts, `payTo == agentWallet`, one rating per job, EOA, EIP-7702 and ERC-1271 signatures, `SelfDealing` refusals (self-paid receipts, ratings from the agent's own wallet, owner or operators), the owner named at deploy, forwarding into the real ERC-8004 Reputation Registry | Contract tests, `packages/contracts/test/{XorvLedger,owner}.test.ts`; the `SelfDealing` revert also confirmed against the live registries by `gas:monad` |
 | Gas for every call the broker pays for, measured on **live Monad** with state overrides (nothing deployed) | `pnpm --filter @xorv/contracts gas:monad`, table in [`packages/contracts/README.md`](packages/contracts/README.md#gas) |
 | MetaMask plugin manifest accepted by MetaMask's own `PluginManifestSchema`; `providers` and `quote` run inside Agent Wallet 7.0.0 | `packages/mm-plugin/test/manifest.test.ts`, example session in [`packages/mm-plugin/README.md`](packages/mm-plugin/README.md#example-session) |
@@ -105,6 +125,8 @@ binary. Its 52 tests run in a Linux container with the one command in
 | Nansen x402 payments: only the Monad mainnet USDC row of Nansen's real 402s is paid, at the captured price, under a per-call cap and a daily budget; a related-wallet rating refused with 403 and nothing relayed | `services/broker/test/trust.test.ts` (replays the captured 402s), "Nansen trust" in `services/broker/test/integration.test.ts` |
 | **XorvLedger deployed on Monad testnet** | ✅ [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD), deploy tx [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) in block 66379818, source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD); wired to the canonical ERC-8004 registries (`packages/contracts/deployments/monadTestnet.json`) |
 | **A job paid and receipted on Monad testnet** | ✅ A live `xorv run` job: x402 settlement [`0x579205fe…`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7), where Monad's public facilitator paid the gas and 0.01 USDC moved buyer → provider (the buyer holds no MON); then `JobRecorded` on XorvLedger [`0xbddafbf6…`](https://testnet.monadscan.com/tx/0xbddafbf69499df11f5c0289b4cefb6491cd0b168fd799bae2c77145dd855c6c7), carrying that payment tx and the result hash |
+| **XorvEscrow, the refund keeper and the Cleanverse gate on Monad testnet** | **Not yet. TODO(deploy)**: testnet deploys are on hold; the runbook is [docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md) |
+| **A CRE simulation broadcasting a refund** | **Not yet. TODO(deploy)**: `cre workflow simulate refund-keeper --target staging-settings --broadcast` after `cre login` and the escrow deploy |
 | **Rated and verified on Monad testnet** | **Not yet. TODO(deploy)**: `rating.txHash` and `verification.feedbackTxHash` from `curl -s <broker>/api/jobs/<job>` (needs the provider's ERC-8004 identity and `MOONSHOT_API_KEY`) |
 | **An MCP agent paying from a policy-bounded Privy server wallet on Monad testnet** | **Not yet. TODO(deploy)**: the `Payment:` link `xorv_run_job` prints |
 | **Envio indexer live on Envio Cloud** | **Not yet. TODO(deploy)**: the endpoint from `envio-cloud deployment endpoint <indexer> <commit>`, deployed between Oct 10 and 13 (see [SUBMISSION.md](SUBMISSION.md#before-you-submit)) |
@@ -146,11 +168,14 @@ Service topics. None of that code remains on the payment path.
 | Monad/EVM payment rail | x402 v2 `exact` (EIP-3009) with Circle USDC on Monad. Upfront settlement. An in-process viem facilitator or Monad's hosted one. A buyer client bound to the frozen quote. Gas limits set to estimate + 15%. A per-address signer lock. | `packages/protocol/src/{chains,evm,x402,x402-client,money}.ts`, `services/broker/src/{app,facilitator}.ts` |
 | `XorvLedger` contract | Batched receipts, provider registrations and sampled heartbeats, gasless payer-signed ratings forwarded to ERC-8004. Hardhat 3 tests against the vendored registries. Live-Monad gas measurement. Deploy and verify scripts. | `packages/contracts/` |
 | ERC-8004 identity and payment-backed reputation | `xorv identity register/show`. The broker checks a claimed agent against the Identity Registry. Registration and feedback files are served by the broker. EIP-712 rating relay. | `packages/cli/src/commands/identity.ts`, `packages/protocol/src/erc8004.ts`, `services/broker/src/{app,ratings}.ts` |
-| Envio indexer | HyperIndex v3 over XorvLedger and the ERC-8004 Identity and Reputation registries, with 14 entity types including derived aggregates. The broker reads it first and falls back to RPC. | `services/indexer/`, `services/broker/src/{indexer,ledger-reader}.ts` |
+| Envio indexer | HyperIndex v3 over XorvLedger, XorvEscrow and the ERC-8004 Identity and Reputation registries, with 15 entity types including derived aggregates. The broker reads it first and falls back to RPC. | `services/indexer/`, `services/broker/src/{indexer,ledger-reader}.ts` |
 | Privy | Embedded wallet created at login pays per job and signs gasless ratings. MCP agent buyer on a Privy server wallet bound to a signing policy. | `apps/app/components/{providers,wallet-provider}.tsx`, `packages/mcp/src/{signer,privy-policy}.ts` |
 | Nansen wallet trust | The broker pays Nansen per call over x402 on Monad mainnet; provider trust score, wash-rating guard, matching tie-breaker. | `services/broker/src/trust/`, `apps/app/components/trust.tsx`, [`docs/NANSEN.md`](docs/NANSEN.md) |
 | MetaMask Agent Wallet | `@xorv/mm-plugin`: `mm xorv providers/quote/run/job/rate`, signing only through `ctx.walletExecutor`, plus a companion agent skill. | `packages/mm-plugin/` |
 | Qwen 3.8 Max, Kimi K3, Hunyuan hy4 | Provider adapters (`qwen`, `kimi`, `hunyuan`, `qwen-code`) and the broker's core-loop roles: Hunyuan screens, Qwen runs a tool loop over Monad data and picks the provider, Kimi verifies and writes ERC-8004 feedback. | `packages/cli/src/adapters/{hosted,qwen-code}.ts`, `services/broker/src/ai/`, `packages/protocol/src/llm.ts` |
+| `XorvEscrow` and the x402 `escrow` scheme | Buyer signs EIP-3009 `ReceiveWithAuthorization` into the escrow. Release with the result hash, refund (anyone, after the deadline), on-chain re-pointing on reassignment, cancel. Facilitator, broker, CLI, MCP, app and e2e support. Foundry tests, invariants and fork tests. | `contracts/`, `packages/protocol/src/escrow.ts`, `services/broker/src/escrow.ts`, `e2e/src/escrow.ts` |
+| Chainlink CRE refund keeper | A CRE workflow: cron → Envio query (DON consensus) → `isRefundable` reads on Monad → one signed report → `XorvRefundKeeper.onReport` → refunds. | `cre/refund-keeper/`, `contracts/src/XorvRefundKeeper.sol` |
+| Cleanverse CVI gate | `CleanverseGate` reads Cleanverse's A-Pass validity and validator. It gates escrow funding and payouts (never refunds); the facilitator refuses an unverified party before signing, and the broker never quotes an unverified provider. | `contracts/src/CleanverseGate.sol`, `services/broker/src/identity.ts` |
 | Mera private jobs | Passkey-PRF keys in three namespaces. Results sealed on the provider to the buyer's inbox key. An encrypted history vault that decrypts on a second device. | `packages/protocol/src/{sealed,vault}.ts`, `apps/app/lib/private/`, [`docs/PRIVATE_JOBS.md`](docs/PRIVATE_JOBS.md) |
 | Bug fixes found during the port | Settlement used to run *after* dispatch, so a provider could work on a payment that never settled. A settlement was matched to "the latest unpaid job for this payee" and could swap two buyers' records; it is now matched by quote id. Reassignment kept stale timestamps, credited the wrong provider, and could resurrect a finished job. A double-click could settle one quote twice. Anyone who knew a public job id could cancel it; cancelling now needs a one-time token. Provider ids changed on every broker restart. The sandbox's deny rules missed a relocated `XORV_HOME`. | commits `fb7f041`, `b6e8ba6`, `2b3bdeb` |
 | Fixes from an adversarial review (52 confirmed findings) | Re-registering a live node needs its session token, and node ids stay off-chain (agent URIs use the provider id). The broker refuses self-payment, and `XorvLedger` refuses self-paid receipts and ratings from the agent's own wallets. The ledger owner is named at deploy (`XORV_LEDGER_OWNER`), never the broker key. EIP-7702 buyers can rate. The demo routes (`/api/pay`, `/api/rate`) are rate-limited, capped per day and receipt-gated. Vaults are disk-backed with byte caps. Plus Privy's sign modal, WebSocket frame validation, private-job redaction, the Nansen budget and more, listed in the [CHANGELOG](CHANGELOG.md#fixed-after-an-adversarial-review-52-confirmed-findings). | commits `7b6f014`…`c4f6d14` |
@@ -168,6 +193,8 @@ the bounties and the scope, and reviewed and merged the work.
 |---|---|---|
 | ERC-8004 v2.0.0 `IdentityRegistryUpgradeable`, `ReputationRegistryUpgradeable`, `HardhatMinimalUUPS`, `ERC1967Proxy` re-export. **Vendored verbatim, test-only, never deployed by this repo.** | `packages/contracts/contracts/vendor/erc8004/` | MIT (SPDX headers), © the ERC-8004 authors, from [erc-8004/erc-8004-contracts](https://github.com/erc-8004/erc-8004-contracts) at `b9e466c`. See [its README](packages/contracts/contracts/vendor/erc8004/README.md). |
 | OpenZeppelin Contracts (`EIP712`, `SignatureChecker`) and Contracts Upgradeable (for the vendored registries) | npm deps of `packages/contracts` | MIT |
+| forge-std, OpenZeppelin Contracts (Foundry) | git submodules in `contracts/lib/` | MIT / Apache-2.0 (forge-std), MIT (OpenZeppelin) |
+| Chainlink CRE SDK (`@chainlink/cre-sdk`) | dependency of `cre/refund-keeper` | see the package's licence |
 | x402 (`@x402/core`, `@x402/evm`, `@x402/hono`, `@x402/fetch`, `@x402/extensions`) | npm deps (broker, protocol, app, buyers) | Apache-2.0, [x402](https://github.com/coinbase/x402) |
 | Privy SDKs (`@privy-io/react-auth`, `@privy-io/node`) | npm deps of `apps/app` and `packages/mcp` | Apache-2.0 |
 | Mera (`@category-labs/mera`) | npm dep of `apps/app` | MIT OR Apache-2.0, [Category Labs](https://github.com/category-labs/mera) |
@@ -233,10 +260,19 @@ job. Monad does both, and it is EVM, so the standards already exist.
    registration, the related-wallet check before each rating relay, a tie-breaker in matching
 ```
 
+**With the escrow** (`XORV_ESCROW_ADDRESS` and a self-hosted facilitator), step 2's 402 offers
+`escrow` first: `payTo` is the escrow, and `extra` names the provider, the job id and the deadline
+(buyers accept it only when both match the frozen quote). In step 3 the facilitator calls `XorvEscrow.fund` with a `ReceiveWithAuthorization`, so the
+USDC goes buyer → escrow. After step 4 the broker calls `release(jobId, resultHash)` (escrow →
+provider) or `refund`, and the step-5 receipt's payment tx is the release. A reassigned job is
+re-pointed on-chain first. If the broker is gone, the Chainlink CRE workflow in `cre/` refunds every
+job past its deadline, reading expired jobs from Envio and checking each on Monad.
+
 Three rules hold the design together. They are explained in [ARCHITECTURE.md](ARCHITECTURE.md):
 
 1. **The broker is never the payee.** The 402's `payTo` is the matched provider's own address, so the
-   USDC moves buyer → provider in one transfer. The protocol fee is 0%.
+   USDC moves buyer → provider in one transfer, or, when escrowed, buyer → escrow → provider, where
+   the escrow can only pay the job's current provider or refund its buyer. The protocol fee is 0%.
 2. **A quote is a price commitment.** x402 asks for the payment requirements twice, and both answers
    are read from the frozen quote. Buyers refuse any 402 that differs from it (`quoteMatchPolicy`).
 3. **Pay first, then work, with free reassignment.** Settlement lands before dispatch. If the
@@ -252,7 +288,8 @@ Xorv is entered in Track 04, so it can take the bounties marked **All tracks** a
 the portal card, then says what the integration does in the product, how it meets the card, where the
 code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
 
-**Bounties entered:** Privy, Envio, Nansen, Kimi, Mera (One Passkey, Many Keys), Qwen 3.8 Max.
+**Bounties entered:** Privy, Envio, Nansen, Kimi, Mera (One Passkey, Many Keys), Qwen 3.8 Max,
+Chainlink CRE, Cleanverse CVI/CVA.
 
 ### Privy: the account that pays, rates, and runs agents
 
@@ -293,9 +330,10 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
 > **Bounty card** (Envio · All tracks · $1,000 USD): "Meaningfully use Envio's HyperIndex,
 > HyperSync, or HyperRPC to power real on-chain data driving a core feature in your app."
 
-- **What it does.** A HyperIndex v3 indexer follows **three contracts**: `XorvLedger` (6 events) and
-  the ERC-8004 Identity (4) and Reputation (3) registries. It uses HyperSync, with configs for
-  testnet (`config.yaml`) and mainnet (`config.mainnet.yaml`). It derives **14 entity types**. These
+- **What it does.** A HyperIndex v3 indexer follows **four contracts**: `XorvLedger` (6 events),
+  `XorvEscrow` (4) and the ERC-8004 Identity (4) and Reputation (3) registries. It uses HyperSync, with configs for
+  testnet (`config.yaml`) and mainnet (`config.mainnet.yaml`). It derives **15 entity types**, including each escrowed job's lifecycle (`EscrowJob`: funded,
+  reassigned, released or refunded), which the Chainlink CRE refund keeper queries. The others
   include per-provider earnings, success rate, average duration and average rating; each agent's
   reputation split by who wrote it (`BUYER_RATING` from the ledger, `XORV_VERIFIED` from the broker's
   verifier, `OTHER`); buyers; a global `NetworkStats`; and daily series (`DailyStats`,
@@ -309,7 +347,7 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
   bounded RPC scan and says so (`source: "memory" | "rpc"`).
 - **Bounty fit ("real on-chain data driving a core feature", depth).** Multiple contracts, a
   non-trivial schema, derived and aggregated entities, and a trust classification. The repo includes
-  `config.yaml`, `schema.graphql`, the handlers, and 52 handler/ABI/query tests.
+  `config.yaml`, `schema.graphql`, the handlers, and 66 handler/ABI/query tests.
 - **Code.** `services/indexer/` ([README](services/indexer/README.md)): `config.yaml`,
   `schema.graphql`, `src/handlers/*.ts`, `src/lib/{aggregates,trust,entities}.ts`, `src/queries.ts`.
 - **It drives matching and routing too.** The Qwen router's `indexer_provider_stats` and
@@ -366,7 +404,7 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
 - **Bounty fit ("a product experience … that goes beyond exposing raw data").** Nansen's answers
   become decisions the product acts on (a refused rating, a ranking) and one explained number per
   provider, paid for agent to agent over x402 on Monad.
-- **Code.** `services/broker/src/trust/{nansen,signal,service,fixtures}.ts`,
+- **Code.** `services/broker/src/trust/{nansen,signal,service}.ts`,
   `services/broker/src/app.ts` (registration, `/api/providers/:id`, the rate guard, `/api/network`
   `nansen`), `services/broker/src/registry.ts` (`TRUST_TIEBREAK_WEIGHT`),
   `services/broker/src/scripts/nansen-probe.ts`, `apps/app/lib/trust.ts`,
@@ -459,6 +497,43 @@ code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
 - **In the demo.** An Auto quote shows the trace: Qwen listing candidates, reading ERC-8004
   reputation and XorvLedger receipts on Monad, then picking a provider.
 
+### Chainlink CRE: refunds that don't need the broker
+
+> **Bounty card** (Chainlink · All tracks · $3,000 USD): "Build, simulate, or deploy a Chainlink
+> Runtime Environment (CRE) Workflow used as an orchestration layer within your project."
+
+- **What it does.** An escrowed job promises the buyer a refund if the work is not delivered by the
+  deadline. `cre/refund-keeper` keeps that promise without the broker. On a cron trigger it queries
+  the Envio index for funded jobs past their deadline (HTTP with DON consensus), reads
+  `XorvEscrow.isRefundable` for each on Monad, and writes one DON-signed report. The report goes
+  through the KeystoneForwarder to `XorvRefundKeeper.onReport`, which refunds each job (per-job
+  try/catch, a batch cap).
+- **Bounty fit.** CRE is the orchestration layer between three systems: the indexer, the chain
+  reads and the on-chain receiver. It is tested on the CRE SDK's own test runtime and compiles to
+  WASM; `cre workflow simulate --broadcast` is the live step.
+- **Code.** `cre/refund-keeper/` ([README](cre/README.md)), `contracts/src/XorvRefundKeeper.sol`.
+- **Live.** **TODO(deploy)**: the simulation's refund tx, after `cre login` and the escrow deploy
+  ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)).
+
+### Cleanverse: identity-gated value movement
+
+> **Bounty card** (Cleanverse · Trust, Identity & AI Infrastructure · $2,000 USD): "Build an app that
+> gates CVA asset movement behind on-chain CVI identity verification."
+
+- **What it does.** `CleanverseGate` reads Cleanverse's own A-Pass on Monad (valid means not
+  frozen, revoked or expired) and, once a pool is registered, the compliance validator. Set on the
+  escrow, it blocks funding unless buyer and provider both verify, and blocks release and
+  reassignment unless the payee does. Refunds are never gated. The facilitator refuses an
+  unverified party before signing (`identity_not_verified`), the broker never quotes or reassigns to
+  a provider without an A-Pass, and the network page shows the gate.
+- **Evidence.** Fork tests against the real A-Pass and validator on Monad testnet (issue, freeze,
+  revoke, expiry, an unregistered pool failing closed); the `pnpm e2e:escrow` gate stage.
+- **CVA (blocked).** Moving aUSDC itself needs Cleanverse to onboard the app: every unregistered
+  pool reverts `PoolNotRegistered()`, and every aUSDC transfer on a fork reverts
+  `TransferNotAllowed()`. The gate moves USDC and AUSD today, and aUSDC once the pool is registered.
+- **Code.** `contracts/src/CleanverseGate.sol`, `contracts/test/CleanverseGate*.t.sol`,
+  `services/broker/src/identity.ts`.
+
 ### Also built (not entered: track-locked to other tracks)
 
 The MetaMask plugin and the Hunyuan screen are part of the product and its tests. Their bounties name
@@ -550,6 +625,7 @@ named next to it; do not remove the rows. `<broker>` is the broker's public URL 
 | XorvLedger deploy tx | [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) (block 66379818) | `txHash` in the same file |
 | XorvLedger owner | [`0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49`](https://testnet.monadscan.com/address/0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49) | `owner` in the same file (`XORV_LEDGER_OWNER`, a key the broker's host doesn't hold) |
 | Broker operator EOA (ledger writes, rating relay, verifier) | [`0x45d6510E68308566B7e1d7cA578707a59dC15752`](https://testnet.monadscan.com/address/0x45d6510E68308566B7e1d7cA578707a59dC15752) | `broker` in the same file; `pnpm setup:monad` prints it with its balance |
+| XorvEscrow, XorvRefundKeeper, CleanverseGate | **TODO(deploy)**: on hold; built and tested on local chains and Monad forks | `contracts/script/Deploy.s.sol` ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)) |
 | Facilitator | Monad's public facilitator, `https://x402-facilitator.molandak.org` (the default; it pays settlement gas) | `curl -s <broker>/api/network | jq .facilitator` |
 | Example x402 settlement (buyer → provider USDC) | [`0x579205fe…`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7) (0.01 USDC, gas paid by the public facilitator) | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` |
 | Example `recordJobs` receipt | [`0xbddafbf6…`](https://testnet.monadscan.com/tx/0xbddafbf69499df11f5c0289b4cefb6491cd0b168fd799bae2c77145dd855c6c7) (`JobRecorded`) | `… \| jq -r .job.receiptTxHash` |
@@ -657,6 +733,8 @@ xorv-monad/
 │   │                 rating relay, AI roles (src/ai), Nansen wallet trust (src/trust),
 │   │                 private-job vaults, SQLite/Mongo, metrics
 │   └── indexer/      Envio HyperIndex v3 (own lockfile, outside the pnpm workspace)
+├── contracts/        Foundry: XorvEscrow, XorvRefundKeeper, CleanverseGate, tests, fork tests, Deploy.s.sol
+├── cre/              Chainlink CRE workflow: the escrow refund keeper (bun, compiles to WASM)
 ├── apps/
 │   ├── app/          xorv-app: job board; Privy wallet pays and rates; network, providers and
 │   │                 private-jobs pages
@@ -664,6 +742,7 @@ xorv-monad/
 ├── e2e/                   `pnpm e2e`: the whole system on a Monad testnet fork, checked on-chain
 ├── docs/PRIVATE_JOBS.md   private jobs: derivations, envelope, vault, threat model, demo script
 ├── docs/NANSEN.md         Nansen wallet trust: x402 payments, scoring, the wash-rating guard
+├── docs/DEPLOY-LATER.md   the escrow, keeper and gate deploy, CRE and Cleanverse steps (on hold)
 ├── videos/xorv-launch/    HyperFrames trailer from the Hedera prototype (pre-existing)
 └── brand/                 logo + mark
 ```
@@ -697,6 +776,9 @@ keys. Xorv is infrastructure and does not decide this for you.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup on Monad testnet, tests, the indexer, commit style |
 | [CHANGELOG.md](CHANGELOG.md) | 0.2.0, the Monad port |
 | [docs/PRIVATE_JOBS.md](docs/PRIVATE_JOBS.md) | Mera private jobs |
+| [docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md) | Deploying the escrow, refund keeper and Cleanverse gate; CRE and Cleanverse steps |
+| [PLAN.md](PLAN.md) | What was combined into this branch, the completion checklist and what is blocked |
+| [cre/README.md](cre/README.md) | The Chainlink CRE refund keeper |
 | [docs/NANSEN.md](docs/NANSEN.md) | Nansen wallet trust: how the broker pays per call, the score, the wash-rating guard |
 | [services/broker/README.md](services/broker/README.md) | The AI roles and Nansen trust |
 | [services/indexer/README.md](services/indexer/README.md) | The Envio indexer |
