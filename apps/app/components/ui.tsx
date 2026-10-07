@@ -5,6 +5,12 @@ import { explorerHref } from "@/lib/network";
 
 const LOCAL_ONLY = "On the local fork: no public explorer has this transaction";
 
+/** Drop a trailing "↗" from link text that isn't a link any more. */
+function withoutArrow(children: ReactNode): ReactNode {
+  const strip = (part: ReactNode): ReactNode => (typeof part === "string" ? part.replace(/\s*↗\s*$/, "") : part);
+  return Array.isArray(children) ? children.map(strip) : strip(children);
+}
+
 /* ---------------------------------------------------------------------------
    The app's component vocabulary.
 
@@ -158,7 +164,7 @@ export function Ext({ href, children, live }: { href: string; children: ReactNod
   if (explorerHref(href, live) === null) {
     return (
       <span title={LOCAL_ONLY} className="cursor-default">
-        {children}
+        {withoutArrow(children)}
       </span>
     );
   }
