@@ -73,7 +73,26 @@ layer, not a consumer app:
   on Monad for each provider's payout-wallet history, and turns it into a trust score that breaks
   matching ties and is shown, with attribution, on every provider.
 
-## For judges: verify in three commands
+## For judges: use it in one command
+
+```bash
+pnpm install && pnpm build && (cd contracts && forge build) && pnpm demo
+```
+
+`pnpm demo` runs the whole product on your machine against **real contract code**, with no keys
+and no testnet funds:
+- a local fork of Monad testnet (anvil, 400 ms blocks) with Circle's real USDC and the canonical
+  ERC-8004 registries;
+- XorvLedger and XorvEscrow;
+- the broker, with its self-hosted facilitator;
+- two provider nodes, each registered as an ERC-8004 agent;
+- seeded paid jobs: escrowed and released, one cancelled and refunded, two rated into ERC-8004;
+- the web app at <http://localhost:8652>, with a funded demo account so you can post a job and pay.
+
+Every transaction is real and signed on the fork, and the keys it generates exist only there.
+Ctrl-C stops everything. It needs Node 22.18+, pnpm 10 and Foundry (`anvil`, `forge`).
+
+### Verify: every test suite
 
 ```bash
 pnpm install && pnpm build && pnpm test

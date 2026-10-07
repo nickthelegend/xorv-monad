@@ -11,7 +11,8 @@
   "scripts": {
     "e2e": "tsx src/run.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "e2e:escrow": "tsx src/escrow.ts"
+    "e2e:escrow": "tsx src/escrow.ts",
+    "demo": "tsx src/demo.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

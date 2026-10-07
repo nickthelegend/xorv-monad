@@ -10,6 +10,8 @@ pnpm build          # the harness runs the built broker, CLI and MCP server
 pnpm e2e            # ≈ 2–4 minutes, most of it the fork reading the public RPC; writes e2e/last-run.md
 ```
 
+`pnpm demo` keeps the same kind of stack running for people to use: see the [root README](../README.md#for-judges-use-it-in-one-command).
+
 `pnpm e2e:escrow` (needs `forge build` in `contracts/` first) runs the escrow path on the same fork, and
 writes `e2e/last-run-escrow.md`. It deploys `XorvEscrow` next to the ledger, then checks:
 - `xorv run` funds the escrow and the release pays the provider with the result's hash;

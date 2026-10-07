@@ -116,3 +116,15 @@ Submission (3):
 | An Envio Cloud account (GitHub login) | Envio live (11) |
 | Cleanverse docs access, a registered pool and test A-Passes | the gate on testnet; CVA (19) |
 | MON for the operator and facilitator, and the **testnet go** | the escrow deploy (20), hosting and video (30): [docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md) |
+
+## Development wave (7 Oct)
+
+The judge's-eye review, the 10 weaknesses and the acceptance criteria for the five features of this
+wave are in [docs/ROADMAP-WIN.md](docs/ROADMAP-WIN.md):
+1. `pnpm demo`;
+2. the escrow timeline;
+3. the Monad speed receipt;
+4. the provider earnings dashboard;
+5. the job browse page.
+
+Each feature has its own commit, with before and after screenshots in `docs/screens/wave/`.
