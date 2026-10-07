@@ -1491,8 +1491,10 @@ export function createApp(deps: AppDeps) {
    * an `X-Cancel-Token` header or `{ "cancelToken" }` in the body). Knowing the
    * job id is not enough — every job id is listed publicly on `/api/jobs`.
    *
-   * This does **not** refund. Settlement already happened (see the note at the
-   * top of this file), and the provider may have already burned real quota. It
+   * A direct (`exact`) payment is **not** refunded: it settled before the job
+   * ran (see the note at the top of this file), and the provider may have
+   * already burned real quota. An escrowed payment never left XorvEscrow, so
+   * cancelling refunds it in full, with no mark on the provider. Either way it
    * stops the work and frees their slot.
    */
   app.post("/api/jobs/:id/cancel", async (c) => {

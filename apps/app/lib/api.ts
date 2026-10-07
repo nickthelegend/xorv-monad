@@ -59,7 +59,8 @@ export const api = {
   providers: () => get<{ providers: Provider[] }>("/api/providers").then((r) => r.providers),
   provider: (id: string) =>
     get<{ provider: Provider }>(`/api/providers/${encodeURIComponent(id)}`).then((r) => r.provider),
-  jobs: (limit = 25) => get<{ jobs: Job[] }>(`/api/jobs?limit=${limit}`).then((r) => r.jobs),
+  jobs: (limit = 25, providerId?: string) =>
+    get<{ jobs: Job[] }>(`/api/jobs?limit=${limit}${providerId ? `&providerId=${encodeURIComponent(providerId)}` : ""}`).then((r) => r.jobs),
   job: (id: string) => get<{ job: Job }>(`/api/jobs/${encodeURIComponent(id)}`).then((r) => r.job),
   /** XorvLedger events — from the Envio indexer when the broker has one, else an RPC log scan. */
   ledger: <K extends LedgerEventKind>(kind: K, limit = 20) =>

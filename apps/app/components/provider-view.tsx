@@ -9,6 +9,7 @@ import { readTrust } from "@/lib/trust";
 import { Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { TrustPanel } from "@/components/trust";
 import { Ago } from "@/components/ago";
+import { EarningsPanel } from "@/components/earnings";
 
 /**
  * One provider: what it sells, what it has done, and how much its payout
@@ -75,6 +76,8 @@ export function ProviderView({ id, initial }: { id: string; initial: Provider | 
           <Row label="version">{provider.version}</Row>
         </div>
       </Panel>
+
+      <EarningsPanel provider={provider} />
 
       <TrustPanel trust={trust} />
 
