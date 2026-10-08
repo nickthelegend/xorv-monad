@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { RoutingTrace } from "@/components/routing-trace";
 import { PaymentTimeline } from "@/components/payment-timeline";
 import { SpeedReceipt } from "@/components/speed-receipt";
+import { IdentityBadge } from "./identity-badge";
 import { CreReplay } from "@/components/cre-replay";
 import { jobOutcome } from "@/lib/payment-timeline";
 
@@ -304,6 +305,7 @@ export function JobView({
                 <Row label="payer">
                   <Ext href={explorerAddress(NETWORK, job.payment.payer)}>{shortHex(job.payment.payer)}</Ext>
                 </Row>
+                <Row label="buyer identity now"><IdentityBadge key={job.payment.payer} address={job.payment.payer} /></Row>
                 <Row label="paid to">
                   <Ext href={explorerAddress(NETWORK, job.payment.payTo)}>{shortHex(job.payment.payTo)}</Ext>
                 </Row>

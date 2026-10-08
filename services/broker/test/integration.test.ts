@@ -2607,6 +2607,26 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     }
   }
 
+  it("reads current Cleanverse standing for buyers as well as providers without making payments", async () => {
+    const apass = new MemoryAPass();
+    apass.valid.add(PAYEE_B.toLowerCase());
+    h = await boot({ escrow: new MemoryEscrow(), identity: apass });
+    const checked = async (address: string) => (await (await fetch(`${h.base}/api/identity/${address}`)).json()) as Json;
+    expect(await checked(PAYEE_B)).toMatchObject({ gate: GATE, verified: true, checkedAt: expect.any(Number) });
+    expect(await checked(PAYEE_A)).toMatchObject({ gate: GATE, verified: false });
+    apass.valid.delete(PAYEE_B.toLowerCase());
+    expect(await checked(PAYEE_B)).toMatchObject({ verified: false });
+    expect((await fetch(`${h.base}/api/identity/not-an-address`)).status).toBe(400);
+  });
+
+  it("does not invent Cleanverse verification without a gate or when the gate cannot be read", async () => {
+    h = await boot();
+    expect(await (await fetch(`${h.base}/api/identity/${PAYEE_B}`)).json()).toEqual({ gate: null, verified: null, checkedAt: null });
+    await h.stop();
+    h = await boot({ identity: { gate: async () => { throw new Error("unavailable"); }, verified: async () => [true] } });
+    expect((await fetch(`${h.base}/api/identity/${PAYEE_B}`)).status).toBe(503);
+  });
+
   it("quotes escrow first, with the terms frozen on the quote", async () => {
     const escrow = new MemoryEscrow();
     h = await boot({ escrow });

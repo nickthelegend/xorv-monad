@@ -41,7 +41,7 @@ import type {
 } from "@x402/core/server";
 import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { erc20Abi, isHex, parseEventLogs, verifyTypedData, type Hex } from "viem";
+import { erc20Abi, isAddress, isHex, parseEventLogs, verifyTypedData, type Hex } from "viem";
 import {
   HEARTBEAT_INTERVAL_MS,
   JOB_TIMEOUT_MS,
@@ -817,6 +817,23 @@ export function createApp(deps: AppDeps) {
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
     };
     return c.json(body);
+  });
+
+  // Read-only gate standing for provider and buyer badges. No absent gate
+  // or failed read may be presented as identity verification.
+  app.get("/api/identity/:address", async (c) => {
+    const address = c.req.param("address");
+    if (!isAddress(address)) return c.json({ error: "invalid_address" }, 400);
+    if (!identitySource) return c.json({ gate: null, verified: null, checkedAt: null });
+    try {
+      const gate = await identitySource.gate();
+      if (!gate) return c.json({ gate: null, verified: null, checkedAt: null });
+      const [verified] = await identitySource.verified([address]);
+      if (typeof verified !== "boolean") return c.json({ error: "identity_unavailable" }, 503);
+      return c.json({ gate, verified, checkedAt: Date.now() });
+    } catch {
+      return c.json({ error: "identity_unavailable" }, 503);
+    }
   });
 
   app.get("/api/providers", (c) => {

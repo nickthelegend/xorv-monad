@@ -9,6 +9,7 @@ import { readTrust } from "@/lib/trust";
 import { Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { TrustPanel } from "@/components/trust";
 import { Ago } from "@/components/ago";
+import { IdentityBadge } from "./identity-badge";
 import { EarningsPanel } from "@/components/earnings";
 
 /**
@@ -43,6 +44,7 @@ export function ProviderView({ id, initial }: { id: string; initial: Provider | 
           <Row label="payout wallet">
             <Ext href={provider.addressUrl || explorerAddress(NETWORK, provider.address)}>{shortHex(provider.address)} ↗</Ext>
           </Row>
+          <Row label="Cleanverse standing"><IdentityBadge key={provider.address} address={provider.address} /></Row>
           <Row label="ERC-8004 identity">
             {provider.agentId ? (
               <Ext href={provider.agentUrl || explorerAgent(NETWORK, provider.agentId)}>agent #{provider.agentId} ↗</Ext>

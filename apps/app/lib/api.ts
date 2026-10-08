@@ -73,7 +73,14 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
+export type IdentityStatus = {
+  gate: { address: string; kind: "cleanverse" } | null;
+  verified: boolean | null;
+  checkedAt: number | null;
+};
+
 export const api = {
+  identity: (address: string) => get<IdentityStatus>(`/api/identity/${encodeURIComponent(address)}`),
   network: () => get<NetworkInfo>("/api/network"),
   providers: () => get<{ providers: Provider[] }>("/api/providers").then((r) => r.providers),
   provider: (id: string) =>

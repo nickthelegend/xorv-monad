@@ -161,3 +161,20 @@ and transient-guard changes: 31/31.
 | 4 | CRE refund replay on the job page | done. `pnpm demo` deploys XorvRefundKeeper and runs a provider whose model stalls. Two minutes in (the escrow deadline), it replays the CRE workflow: isRefundable, then the report `abi.encode(bytes32[] jobIds)` delivered to `XorvRefundKeeper.onReport` by a local key standing in for the KeystoneForwarder. The broker now watches running escrowed jobs on chain, notices the refund, stops the job and names the keeper (`settledVia`). The job page shows the keeper's five steps with the real refund tx, and for a job still held, the keeper as the buyer's backstop with the deadline | fe15a51 | `wave2/w2-cre-*.png` |
 | 5 | Agent-buyer session page | done. The MCP server tags its quotes with a per-process session (random id, `XORV_AGENT_NAME`, its session budget). The broker groups those jobs (`GET /api/agents`, `/api/agents/:session`). `/agents` shows each agent's spend, escrow held and refunds against its budget, who paid and what it bought; job pages link to their agent. `pnpm demo` runs a real MCP agent over stdio with a $0.003 budget: three jobs bought, the fourth refused by its own budget check before signing | this commit | `wave2/w2-agents-*.png` |
 | + | Next-best: | | | |
+
+
+## Codex continuation · 8 Oct: Cleanverse badges
+
+The remaining next-five identity badge is built for provider detail pages and
+buyers on job receipts. `GET /api/identity/:address` reads the configured gate
+and its current A-Pass standing without submitting a transaction. The badge
+links to the gate and distinguishes verified, no active pass, no configured
+gate, checking, stale and unavailable. It describes identity **now**, not at
+the historical payment. Failed or absent gate reads never create a verified
+claim.
+
+Validation: two broker HTTP integration regressions and two badge-state tests
+pass; broker and app typechecks pass. Single-worker production app build passes. Production browser/live gate verification
+is UNTESTED pending a configured real Cleanverse gate, registered validator pool
+and A-Passes. Existing deployment/testnet holds remain in effect. No new chain
+transaction or hosting action was performed.

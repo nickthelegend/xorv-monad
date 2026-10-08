@@ -128,3 +128,12 @@ wave are in [docs/ROADMAP-WIN.md](docs/ROADMAP-WIN.md):
 5. the job browse page.
 
 Each feature has its own commit, with before and after screenshots in `docs/screens/wave/`.
+
+
+### 8 Oct continuation: next-five identity badges
+
+**BUILT / live verification BLOCKED:** provider detail and buyer receipt
+Cleanverse badges use read-only gate state; unknown, absent, failed and stale
+reads never claim verified. Four focused regressions, app/broker typechecks and the single-worker
+production app build pass. Live positive/negative A-Pass cases need the actual Cleanverse gate/pool
+and A-Passes listed in USER_ACTION_REQUIRED. No change to testnet/hosting holds.
