@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { RoutingTrace } from "@/components/routing-trace";
 import { PaymentTimeline } from "@/components/payment-timeline";
 import { SpeedReceipt } from "@/components/speed-receipt";
+import { CreReplay } from "@/components/cre-replay";
 import { jobOutcome } from "@/lib/payment-timeline";
 
 /**
@@ -217,7 +218,9 @@ export function JobView({
           </section>
         ) : null}
 
-        {job.payment || !TERMINAL.has(job.status) ? <PaymentTimeline job={job} /> : null}
+        {job.payment || !TERMINAL.has(job.status) ? <PaymentTimeline job={job} keeper={info?.escrow?.keeper} /> : null}
+
+        <CreReplay job={job} keeper={info?.escrow?.keeper} />
 
         <AiChecks job={job} />
 

@@ -81,6 +81,19 @@ describe("paymentTimeline", () => {
     expect(steps[3]!.detail).toContain("not this broker");
   });
 
+  it("names the Chainlink CRE keeper when the refund went through XorvRefundKeeper", () => {
+    const KEEPER = "0x00000000000000000000000000000000000c4e00";
+    const refunded = withEscrow(job({ status: "failed", error: "refunded on chain by the Chainlink CRE refund keeper after the escrow's deadline" }), {
+      state: "refunded",
+      refundTx: "0xkeeper",
+      settledBy: "0x00000000000000000000000000000000000f0f00",
+      settledVia: KEEPER,
+    });
+    expect(paymentTimeline(refunded, { keeper: KEEPER })[3]).toMatchObject({ title: "Refunded by the Chainlink CRE keeper", tx: "0xkeeper" });
+    // Without knowing the keeper, it is still a refund by someone other than the broker.
+    expect(paymentTimeline(refunded)[3]!.title).toBe("Refunded to the buyer");
+  });
+
   it("is live while the money is held: running is active, settlement and receipt are still to come", () => {
     const running = withEscrow(job({ status: "running", completedAt: null, receiptTxHash: null }), { state: "funded", releaseTx: undefined, settledAt: undefined });
     const states = Object.fromEntries(paymentTimeline(running).map((s) => [s.key, s.state]));

@@ -43,7 +43,13 @@ export function offsetLabel(at: number | null, from: number | null): string | nu
   return ms < 10_000 ? `+${(ms / 1000).toFixed(1)} s` : ms < 120_000 ? `+${Math.round(ms / 1000)} s` : `+${Math.round(ms / 60_000)} min`;
 }
 
-export function paymentTimeline(job: Job): TimelineStep[] {
+/** Whether the escrow was settled through XorvRefundKeeper, the Chainlink CRE workflow's receiver. */
+export function refundedByKeeper(job: Job, keeper: string | null | undefined): boolean {
+  const via = job.payment?.escrow?.settledVia;
+  return Boolean(keeper && via && via.toLowerCase() === keeper.toLowerCase());
+}
+
+export function paymentTimeline(job: Job, opts: { keeper?: string | null } = {}): TimelineStep[] {
   const payment = job.payment;
   const held = payment?.escrow ?? null;
   const terminal = TERMINAL.has(job.status);
@@ -108,6 +114,15 @@ export function paymentTimeline(job: Job): TimelineStep[] {
         detail: `XorvEscrow paid ${amount} USDC to the provider, with the result hash on-chain${by}.`,
         at: held.settledAt ?? null,
         tx: held.releaseTx ?? null,
+        state: "done",
+      });
+    } else if (held.state === "refunded" && refundedByKeeper(job, opts.keeper)) {
+      steps.push({
+        key: "settled",
+        title: "Refunded by the Chainlink CRE keeper",
+        detail: `The deadline passed with no delivery, so the CRE workflow's report reached XorvRefundKeeper and XorvEscrow returned the full ${amount} USDC. The broker sent nothing.`,
+        at: held.settledAt ?? null,
+        tx: held.refundTx ?? null,
         state: "done",
       });
     } else if (held.state === "refunded") {

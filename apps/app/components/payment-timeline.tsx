@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
  * one for what is happening now, a hollow one for what is still to come. Green
  * is kept for the one step that means the provider got paid.
  */
-export function PaymentTimeline({ job }: { job: Job }) {
+export function PaymentTimeline({ job, keeper }: { job: Job; keeper?: string | null }) {
   const animate = useEntrance();
-  const steps = paymentTimeline(job);
+  const steps = paymentTimeline(job, { keeper });
   const start = job.payment?.settledAt ?? null;
   const escrow = job.payment?.escrow ?? null;
 

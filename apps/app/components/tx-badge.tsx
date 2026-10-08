@@ -50,10 +50,13 @@ export function TxBadge({ hash }: { hash: string }) {
   }, [hash]);
 
   if (!state) return null;
-  const label = state.local && state.state === "finalized" ? "mined · local fork" : state.state;
+  // A fork has no consensus (anvil's safe/finalized tags just trail latest), so any mined
+  // transaction there is simply mined.
+  const mined = state.state === "proposed" || state.state === "voted" || state.state === "finalized";
+  const label = state.local && mined ? "mined · local fork" : state.state;
   return (
     <span
-      className={cn("ml-1.5 inline-block rounded border px-1 align-middle text-[10px] leading-[14px]", STYLE[state.state])}
+      className={cn("ml-1.5 inline-block rounded border px-1 align-middle text-[10px] leading-[14px]", STYLE[state.local && mined ? "finalized" : state.state])}
       title={state.local ? "A local fork has no consensus: mined means done" : "From Monad's txpool and its latest / safe / finalized heads"}
       data-tx-state={state.state}
     >

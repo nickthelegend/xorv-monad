@@ -768,6 +768,7 @@ export function createApp(deps: AppDeps) {
             address: escrow.address,
             url: explorerAddress(config.network, escrow.address),
             deadlineSeconds: escrowDeadlineSeconds,
+            keeper: config.refundKeeperAddress ?? null,
             identityGate: identity?.gate() ?? null,
           }
         : null,
@@ -2630,6 +2631,49 @@ export function createApp(deps: AppDeps) {
     jobs.patch(jobId, { payment: { ...job.payment, escrow: { ...job.payment.escrow, ...update } } });
   }
 
+  /**
+   * Escrowed jobs still running whose money someone else settled: after the
+   * deadline anyone may refund the buyer, and the Chainlink CRE refund keeper
+   * does exactly that when the broker didn't. The job can't be paid any more,
+   * so it stops: the provider is told, and the job fails with the reason and
+   * the refund recorded as the keeper's. Each job is read at most every 15 s.
+   */
+  const escrowWatchedAt = new Map<string, number>();
+  async function watchHeldEscrows(): Promise<void> {
+    if (!escrow) return;
+    for (const job of jobs.list({ limit: 1_000 })) {
+      const held = job.payment?.escrow;
+      if (!held || held.state !== "funded" || isTerminal(job.status) || cancelling.has(job.id) || settling.has(job.id)) continue;
+      if (Date.now() - (escrowWatchedAt.get(job.id) ?? 0) < 15_000) continue;
+      escrowWatchedAt.set(job.id, Date.now());
+      const onChain = await escrow.read(held.jobId as Hex).catch(() => null);
+      if (!onChain || onChain.status === "funded" || onChain.status === "none") continue;
+      const settled = await escrow.settlement(held.jobId as Hex, job.payment?.txHash).catch(() => null);
+      const byKeeper = Boolean(settled?.via && config.refundKeeperAddress && sameAddress(settled.via, config.refundKeeperAddress));
+      patchEscrow(job.id, {
+        state: onChain.status,
+        ...(onChain.status === "released" ? { releaseTx: settled?.tx } : { refundTx: settled?.tx }),
+        settledBy: settled?.by,
+        settledVia: settled?.via ?? undefined,
+        settledAt: Date.now(),
+        lastError: undefined,
+      });
+      escrowWatchedAt.delete(job.id);
+      if (onChain.status === "refunded") {
+        const reason = byKeeper
+          ? "refunded on chain by the Chainlink CRE refund keeper after the escrow's deadline"
+          : "refunded on chain after the escrow's deadline";
+        if (job.providerId) {
+          deps.getHub()?.send(job.providerId, { type: "job.cancel", jobId: job.id, reason });
+          registry.jobReleased(job.providerId);
+        }
+        jobs.addEvent(job.id, { at: Date.now(), kind: "status", text: reason });
+        jobs.fail(job.id, reason);
+        console.log(`[broker] job ${job.id}: ${reason} (${settled?.tx ?? "tx unknown"})`);
+      }
+    }
+  }
+
   /** Read a release's or refund's block and gas, and attach them with its measured times. */
   function timeEscrowSettlement(jobId: string, tx: string, startedAt: number, receiptAt: number): void {
     void chainTiming(tx, startedAt, receiptAt).then((settleTiming) => {
@@ -2746,6 +2790,7 @@ export function createApp(deps: AppDeps) {
           settledAt: Date.now(),
           ...(onChain.status === "released" ? { releaseTx: settled?.tx } : { refundTx: settled?.tx }),
           settledBy: settled?.by,
+          settledVia: settled?.via ?? undefined,
           lastError: undefined,
         });
       } else {
@@ -2817,6 +2862,7 @@ export function createApp(deps: AppDeps) {
     /** Timers' work: fail overdue jobs, reap silent providers, retry receipts. */
     sweep(): void {
       void refreshGasPayers();
+      void watchHeldEscrows();
       for (const job of jobs.overdue()) {
         const providerId = job.providerId ?? "";
         // Tell the node to stop: its result would be ignored now anyway.

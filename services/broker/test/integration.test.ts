@@ -2750,6 +2750,32 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     provider.close();
   });
 
+  it("stops a running job whose escrow the Chainlink CRE keeper refunded, and names the keeper", async () => {
+    const KEEPER = "0x00000000000000000000000000000000000c4e00";
+    const FORWARDER = "0x00000000000000000000000000000000000f0f00";
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow, config: { refundKeeperAddress: KEEPER } });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    await waitFor(() => provider.dispatched[0], 4_000);
+    const held = ((await getJob(h, paid.jobId as string)).payment as Json).escrow as Json;
+    expect(((await (await fetch(`${h.base}/api/network`)).json()) as Json).escrow).toMatchObject({ keeper: KEEPER });
+    // The provider never answers; past the deadline the keeper's report refunds the buyer.
+    const tx = escrow.refundExternally(held.jobId as string, FORWARDER, KEEPER);
+    h.sweep();
+    const job = await waitFor(async () => {
+      const j = await getJob(h, paid.jobId as string);
+      return j.status === "failed" ? j : undefined;
+    });
+    expect(job.error).toMatch(/Chainlink CRE refund keeper/);
+    expect((job.payment as Json).escrow).toMatchObject({ state: "refunded", refundTx: tx, settledBy: FORWARDER, settledVia: KEEPER });
+    // The provider is told to stop; the broker sent nothing itself.
+    expect(provider.cancelled).toContain(paid.jobId);
+    expect(escrow.calls).toEqual([]);
+    provider.close();
+  });
+
   it("records a refund someone else made (a CRE keeper after the deadline) instead of retrying", async () => {
     const escrow = new MemoryEscrow();
     h = await boot({ escrow });

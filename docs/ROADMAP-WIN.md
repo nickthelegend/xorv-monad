@@ -157,7 +157,7 @@ and transient-guard changes: 31/31.
 |---|---|---|---|---|
 | 1 | ~~Deploy~~ | skipped: needs the testnet go and MON | | |
 | 2 | Passkeys verified on Monad's P256 precompile, from the app | done | 42695b7 | `wave2/w2-passkey-*.png` |
-| 3 | In-app viewer for fork transactions | done: `/chain`, `/chain/tx/:hash`, `/chain/address/:address`, `/chain/block/:n` read the app's own RPC and decode USDC, XorvEscrow, XorvLedger and ERC-8004 events with named addresses. On a fork every explorer link opens here instead of turning into text (11 viewer links, 0 dead ones on a job page). The fee row says what anvil charged and what Monad would charge (the limit) | this commit | `wave2/w2-chain-*.png` |
-| 4 | CRE refund replay on the job page | | | |
+| 3 | In-app viewer for fork transactions | done: `/chain`, `/chain/tx/:hash`, `/chain/address/:address`, `/chain/block/:n` read the app's own RPC and decode USDC, XorvEscrow, XorvLedger and ERC-8004 events with named addresses. On a fork every explorer link opens here instead of turning into text (11 viewer links, 0 dead ones on a job page). The fee row says what anvil charged and what Monad would charge (the limit) | 0621846 | `wave2/w2-chain-*.png` |
+| 4 | CRE refund replay on the job page | done. `pnpm demo` deploys XorvRefundKeeper and runs a provider whose model stalls. Two minutes in (the escrow deadline), it replays the CRE workflow: isRefundable, then the report `abi.encode(bytes32[] jobIds)` delivered to `XorvRefundKeeper.onReport` by a local key standing in for the KeystoneForwarder. The broker now watches running escrowed jobs on chain, notices the refund, stops the job and names the keeper (`settledVia`). The job page shows the keeper's five steps with the real refund tx, and for a job still held, the keeper as the buyer's backstop with the deadline | this commit | `wave2/w2-cre-*.png` |
 | 5 | Agent-buyer session page | | | |
 | + | Next-best: | | | |

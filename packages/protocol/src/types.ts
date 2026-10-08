@@ -223,6 +223,8 @@ export interface EscrowRecord {
   settledAt?: number;
   /** The release's or refund's speed and cost. */
   settleTiming?: ChainTiming;
+  /** The contract the settling transaction called, e.g. XorvRefundKeeper when the Chainlink CRE keeper refunded it. */
+  settledVia?: string;
   /** Who settled it, when it wasn't this broker (a keeper's refund, a buyer's own release). */
   settledBy?: string;
   /** The last settlement attempt's error, while it is still being retried. */
@@ -649,6 +651,8 @@ export interface NetworkInfo {
     url: string;
     /** Seconds from quote until anyone (a keeper) may refund the buyer. */
     deadlineSeconds: number;
+    /** XorvRefundKeeper, which the Chainlink CRE workflow reports to; null when this broker doesn't know it. */
+    keeper?: string | null;
     /** Cleanverse CVI: when set, only active A-Pass holders can fund the escrow or be paid by it. */
     identityGate: { address: string; kind: "cleanverse"; apass: string | null; validator: string | null; pool: string | null } | null;
   } | null;

@@ -90,6 +90,8 @@ export interface BrokerConfig {
   escrowAddress?: Address | null;
   /** Seconds from quote to the point anyone (a keeper) may refund the buyer. */
   escrowDeadlineSeconds?: number;
+  /** XorvRefundKeeper, the Chainlink CRE workflow's receiver: lets the broker name a keeper refund as such. */
+  refundKeeperAddress?: Address | null;
   /** The ledger's deploy block — the floor for RPC log scans. */
   ledgerFromBlock: bigint | null;
   /** Publish one heartbeat in this many per provider (0 = never). */
@@ -260,6 +262,15 @@ export function loadConfig(): BrokerConfig {
       throw new Error(`XORV_ESCROW_ADDRESS: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  const keeperRaw = optional("XORV_REFUND_KEEPER_ADDRESS");
+  let refundKeeperAddress: Address | null = null;
+  if (keeperRaw) {
+    try {
+      refundKeeperAddress = normalizeAddress(keeperRaw);
+    } catch (err) {
+      throw new Error(`XORV_REFUND_KEEPER_ADDRESS: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const escrowDeadlineSeconds = nonNegativeInt("XORV_ESCROW_DEADLINE_S", 1_800);
   if (escrowDeadlineSeconds < 120) {
     // The contract refuses deadlines under a minute; under two leaves no room for a job.
@@ -285,6 +296,7 @@ export function loadConfig(): BrokerConfig {
     facilitatorMode: optional("XORV_FACILITATOR"),
     ledgerAddress,
     escrowAddress,
+    refundKeeperAddress,
     escrowDeadlineSeconds,
     ledgerFromBlock: fromBlockRaw === null ? null : BigInt(fromBlockRaw),
     heartbeatPublishEvery: nonNegativeInt("XORV_HEARTBEAT_PUBLISH_EVERY", 20),

@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPublicClient, createWalletClient, getAddress, http, type Abi, type Address, type Hex } from "viem";
+import { createPublicClient, createWalletClient, encodeAbiParameters, getAddress, http, parseAbi, type Abi, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   MONAD_TESTNET,
@@ -52,7 +52,7 @@ const PORTS = { chain: BASE, broker: BASE + 1, app: BASE + 2 };
 const WITH_APP = process.env.XORV_DEMO_APP !== "0";
 const SEED = process.env.XORV_DEMO_SEED !== "0";
 
-const PROVIDERS: { label: string; capabilities: Capability[] }[] = [
+const PROVIDERS: { label: string; capabilities: Capability[]; stalls?: boolean }[] = [
   {
     label: "atlas",
     capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo (test)", model: null, priceUsdMicros: 1_000, maxConcurrency: 4 }],
@@ -61,7 +61,19 @@ const PROVIDERS: { label: string; capabilities: Capability[] }[] = [
     label: "borealis",
     capabilities: [{ id: "echo", adapter: "echo", displayName: "Echo (test)", model: null, priceUsdMicros: 2_000, maxConcurrency: 4 }],
   },
+  {
+    // Sells a model endpoint that accepts the request and never answers: the job that only the
+    // Chainlink CRE refund keeper can end (see replayCreRefund).
+    label: "cirrus",
+    stalls: true,
+    capabilities: [
+      { id: "stall", adapter: "openai-compatible", displayName: "Stalls on purpose (CRE refund demo)", model: "stall", priceUsdMicros: 3_000, maxConcurrency: 4 },
+    ],
+  },
 ];
+
+/** The demo's escrow deadline: the broker's minimum, so the keeper replay runs two minutes in. */
+const DEADLINE_S = 120;
 
 const SEED_PROMPTS = [
   "Summarise what an x402 payment is in two sentences.",
@@ -137,8 +149,8 @@ async function main(): Promise<void> {
   const fork = await startChain(forkUrl);
   log(`  chain ${fork.url} (chain id ${fork.chainId}, from block ${fork.forkBlock})`);
 
-  const parties = { operator: party(), facilitator: party(), buyer: party(), demo: party(), providers: PROVIDERS.map(party) };
-  for (const p of [parties.operator, parties.facilitator, ...parties.providers]) await setMon(fork, p.address, 100n * 10n ** 18n);
+  const parties = { operator: party(), facilitator: party(), buyer: party(), demo: party(), forwarder: party(), providers: PROVIDERS.map(party) };
+  for (const p of [parties.operator, parties.facilitator, parties.forwarder, ...parties.providers]) await setMon(fork, p.address, 100n * 10n ** 18n);
   await fundUsdc(fork, USDC, parties.buyer.address, 20_000_000n);
   await fundUsdc(fork, USDC, parties.demo.address, 20_000_000n);
   log("▸ funded: operator, facilitator and providers with MON; buyer and demo account with USDC only");
@@ -152,6 +164,16 @@ async function main(): Promise<void> {
   const escrow = getAddress((await fork.client.waitForTransactionReceipt({ hash: deployTx })).contractAddress!);
   log(`▸ XorvEscrow ${escrow} (attester = the facilitator)`);
 
+  // The Chainlink CRE workflow's on-chain receiver. On testnet it trusts Chainlink's
+  // KeystoneForwarder; on this fork a local key stands in for the forwarder.
+  const keeperArtifact = artifact("XorvRefundKeeper");
+  const keeperTx = await wallet.deployContract({ abi: keeperArtifact.abi, bytecode: keeperArtifact.bytecode, args: [escrow, parties.forwarder.address, parties.operator.address] });
+  const keeper = getAddress((await fork.client.waitForTransactionReceipt({ hash: keeperTx })).contractAddress!);
+  log(`▸ XorvRefundKeeper ${keeper} (forwarder: a local key standing in for Chainlink's KeystoneForwarder)`);
+
+  const stall = await startStallServer();
+  log(`▸ stalling model endpoint ${stall.url} (accepts requests, never answers)`);
+
   const brokerUrl = `http://127.0.0.1:${PORTS.broker}`;
   const api = brokerApi(brokerUrl);
   const broker = group.start("broker", process.execPath, [BROKER_ENTRY], {
@@ -163,6 +185,8 @@ async function main(): Promise<void> {
       XORV_FACILITATOR_KEY: parties.facilitator.key,
       XORV_FACILITATOR: "self",
       XORV_ESCROW_ADDRESS: escrow,
+      XORV_ESCROW_DEADLINE_S: String(DEADLINE_S),
+      XORV_REFUND_KEEPER_ADDRESS: keeper,
       XORV_LEDGER_ADDRESS: ledger.address,
       XORV_LEDGER_FROM_BLOCK: ledger.fromBlock.toString(),
       XORV_RECEIPT_BATCH_MS: "1000",
@@ -201,7 +225,14 @@ async function main(): Promise<void> {
         token: null,
       }),
     );
-    const providerEnv = { ...cleanEnv(), XORV_HOME: home, XORV_NETWORK: NETWORK, XORV_RPC_URL: fork.url, XORV_BROKER_URL: brokerUrl };
+    const providerEnv: NodeJS.ProcessEnv = {
+      ...cleanEnv(),
+      XORV_HOME: home,
+      XORV_NETWORK: NETWORK,
+      XORV_RPC_URL: fork.url,
+      XORV_BROKER_URL: brokerUrl,
+      ...(spec.stalls ? { XORV_OPENAI_BASE_URL: `${stall.url}/v1`, XORV_OPENAI_MODEL: "stall" } : {}),
+    };
     // A real ERC-8004 identity in the canonical registry, so buyers can rate the provider's jobs.
     const registered = await group.run(`identity-${spec.label}`, process.execPath, [CLI_ENTRY, "identity", "register", "--yes"], {
       cwd: home,
@@ -285,8 +316,74 @@ async function main(): Promise<void> {
   log(`  escrow   ${escrow}`);
   log(`  logs     ${path.relative(REPO, path.join(RUN_DIR, "logs"))}`);
   log("Ctrl-C stops everything.");
-  fs.writeFileSync(path.join(RUN_DIR, "ready"), JSON.stringify({ appUrl, brokerUrl, chain: fork.url, ledger: ledger.address, escrow, pid: process.pid }, null, 2));
+  fs.writeFileSync(path.join(RUN_DIR, "ready"), JSON.stringify({ appUrl, brokerUrl, chain: fork.url, ledger: ledger.address, escrow, keeper, pid: process.pid }, null, 2));
+  if (SEED) {
+    void replayCreRefund({ fork, api, escrow, keeper, buyerKey: parties.buyer.key, forwarderKey: parties.forwarder.key }).catch((err) =>
+      log(`  CRE keeper replay failed: ${err instanceof Error ? err.message : String(err)}`),
+    );
+  }
   await new Promise(() => {});
+}
+
+/** A model endpoint that lists one model and then never answers a completion: the stalled provider. */
+async function startStallServer(): Promise<{ url: string }> {
+  const { createServer } = await import("node:http");
+  const server = createServer((req, res) => {
+    if (req.method === "GET" && req.url?.endsWith("/models")) {
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ data: [{ id: "stall", object: "model" }] }));
+      return;
+    }
+    // Hold the request open: the provider waits, and the job never delivers.
+  });
+  await new Promise<void>((resolve) => server.listen(PORTS.app + 1, "127.0.0.1", resolve));
+  process.on("exit", () => server.close());
+  return { url: `http://127.0.0.1:${PORTS.app + 1}` };
+}
+
+const KEEPER_ABI = parseAbi([
+  "function onReport(bytes metadata, bytes report)",
+  "function escrow() view returns (address)",
+]);
+const ESCROW_READ_ABI = parseAbi(["function isRefundable(bytes32 jobId) view returns (bool)"]);
+
+/**
+ * Replay the Chainlink CRE refund keeper on this fork, step for step:
+ * a job whose provider never answers sits funded in XorvEscrow; once its
+ * deadline passes it is refundable; the workflow's report is
+ * abi.encode(bytes32[] jobIds) (cre/refund-keeper/workflow.ts), delivered by
+ * the forwarder to XorvRefundKeeper.onReport, which refunds it. On testnet the
+ * same report comes from `cre workflow simulate --broadcast`, through
+ * Chainlink's MockKeystoneForwarder.
+ */
+async function replayCreRefund(opts: { fork: Fork; api: ReturnType<typeof brokerApi>; escrow: Address; keeper: Address; buyerKey: Hex; forwarderKey: Hex }): Promise<void> {
+  const { fork, api } = opts;
+  const quote = await api.post<QuoteResponse>("/api/quotes", {
+    prompt: "A job whose provider never answers: after the escrow deadline, the Chainlink CRE keeper refunds it",
+    adapter: "openai-compatible",
+    maxPriceUsdMicros: 10_000,
+  });
+  const paid = await payQuote({ quote, buyer: privateKeyToAccount(opts.buyerKey), network: NETWORK });
+  const job = await waitUntil("the stalled job to be funded", 60_000, async () => {
+    const j: PublicJob = await getJob(api, paid.jobId);
+    return j.payment?.escrow ? j : null;
+  });
+  const held = job.payment!.escrow!;
+  log(`  CRE replay: ${job.id} is funded and stalled; refundable after ${new Date(held.deadline * 1000).toLocaleTimeString()}`);
+  await waitUntil("the escrow deadline on the fork's clock", (DEADLINE_S + 120) * 1000, async () => {
+    const block = await fork.client.getBlock();
+    return block.timestamp > BigInt(held.deadline) &&
+      (await fork.client.readContract({ address: opts.escrow, abi: ESCROW_READ_ABI, functionName: "isRefundable", args: [held.jobId as Hex] }));
+  }, 2_000);
+  const report = encodeAbiParameters([{ type: "bytes32[]" }], [[held.jobId as Hex]]);
+  const forwarder = createWalletClient({ chain: viemChain(NETWORK), transport: http(fork.url), account: privateKeyToAccount(opts.forwarderKey) });
+  const tx = await forwarder.writeContract({ address: opts.keeper, abi: KEEPER_ABI, functionName: "onReport", args: ["0x", report] });
+  await fork.client.waitForTransactionReceipt({ hash: tx });
+  log(`  CRE replay: report delivered to XorvRefundKeeper (${tx.slice(0, 12)}…); waiting for the broker to notice`);
+  await waitUntil("the broker to record the keeper's refund", 60_000, async () => {
+    const j: PublicJob = await getJob(api, job.id);
+    return j.payment?.escrow?.state === "refunded" ? j : null;
+  }, 2_000);
+  log(`  CRE replay: ${job.id} refunded by the keeper; the broker never sent a transaction for it`);
 }
 
 main().catch((err) => {
