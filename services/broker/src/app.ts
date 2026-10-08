@@ -94,6 +94,7 @@ import {
   type ChainTiming,
   type TxStatus,
   type ReserveStanding,
+  type AgentSessionTag,
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
@@ -1042,6 +1043,7 @@ export function createApp(deps: AppDeps) {
     // else the caller sent (up to the body limit) in every quote and job.
     const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 200) : null;
     const deadlineAt = typeof body.deadlineAt === "number" && Number.isFinite(body.deadlineAt) ? body.deadlineAt : null;
+    const agent = agentTag(body.agent);
     const request: JobRequest = {
       prompt: body.prompt,
       // "auto" (or nothing) is how a buyer says "you choose" — the router's cue.
@@ -1050,6 +1052,7 @@ export function createApp(deps: AppDeps) {
       ...(title ? { title } : {}),
       ...(deadlineAt !== null ? { deadlineAt } : {}),
       ...(encryptTo ? { encryptTo } : {}),
+      ...(agent ? { agent } : {}),
     };
 
     // 1. The safety screen, before any provider could see the prompt and
@@ -1573,6 +1576,51 @@ export function createApp(deps: AppDeps) {
       txStatusCache.delete(hash);
       return c.json({ error: `could not read the chain: ${err instanceof Error ? err.message.split("\n")[0] : err}` }, 502);
     }
+  });
+
+  /**
+   * Agent sessions: the jobs one buying agent (an MCP server process) bought,
+   * grouped by the session tag it sent with its quotes, with its spend against
+   * the budget it declared. The tag is self-reported; the money is not: every
+   * figure is a sum of payment records that hold their on-chain transactions.
+   */
+  const sessionsOf = () => {
+    const sessions = new Map<string, StoredJob[]>();
+    for (const job of jobs.list({ limit: 1_000 })) {
+      const tag = job.request.agent;
+      if (!tag) continue;
+      sessions.set(tag.session, [...(sessions.get(tag.session) ?? []), job]);
+    }
+    return sessions;
+  };
+  const summarizeSession = (session: string, list: StoredJob[]) => {
+    const tag = list[0]!.request.agent!;
+    const paid = list.filter((j) => j.payment);
+    const sum = (f: (j: StoredJob) => boolean) => sumPrice(paid.filter(f));
+    const payers = [...new Set(paid.map((j) => j.payment!.payer))];
+    return {
+      session,
+      name: tag.name,
+      client: tag.client,
+      budgetUsdMicros: tag.budgetUsdMicros,
+      payers,
+      jobs: list.length,
+      completed: list.filter((j) => j.status === "completed").length,
+      spentUsdMicros: sum((j) => !j.payment!.escrow || j.payment!.escrow.state === "released"),
+      heldUsdMicros: sum((j) => j.payment!.escrow?.state === "funded"),
+      refundedUsdMicros: sum((j) => j.payment!.escrow?.state === "refunded"),
+      firstAt: Math.min(...list.map((j) => j.createdAt)),
+      lastAt: Math.max(...list.map((j) => j.createdAt)),
+    };
+  };
+  app.get("/api/agents", (c) => {
+    const sessions = [...sessionsOf()].map(([id, list]) => summarizeSession(id, list)).sort((a, b) => b.lastAt - a.lastAt);
+    return c.json({ sessions: sessions.slice(0, 50) });
+  });
+  app.get("/api/agents/:session", (c) => {
+    const list = sessionsOf().get(c.req.param("session"));
+    if (!list) return c.json({ error: "no jobs from this agent session" }, 404);
+    return c.json({ ...summarizeSession(c.req.param("session"), list), jobList: list.sort((a, b) => b.createdAt - a.createdAt).map((j) => publicJob(j)) });
   });
 
   app.get("/api/jobs/:id", (c) => {
@@ -3024,6 +3072,17 @@ function lastSegment(path: string): string | undefined {
 function quoteIdFromTransport(transport: unknown): string | undefined {
   const path = (transport as HTTPTransportContext | undefined)?.request?.path;
   return path ? lastSegment(path) : undefined;
+}
+
+/** An agent's self-declared session tag, validated, or null for anything malformed. */
+function agentTag(raw: unknown): AgentSessionTag | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.session !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(r.session)) return null;
+  const name = typeof r.name === "string" && r.name.trim() ? r.name.trim().slice(0, 60) : "agent";
+  const budget = r.budgetUsdMicros === null ? null : Number(r.budgetUsdMicros);
+  if (budget !== null && (!Number.isSafeInteger(budget) || budget <= 0)) return null;
+  return { session: r.session, name, budgetUsdMicros: budget, client: "mcp" };
 }
 
 /** What the broker reads back from a confirmed transaction's receipt. */

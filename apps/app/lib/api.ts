@@ -40,6 +40,23 @@ export type Job = PublicJob & { trustCheck?: unknown };
 export type Provider = PublicProvider & { trust?: unknown };
 export type Quote = QuoteResponse;
 export type TxStatusResponse = TxStatus & { chain: "monad" | "local" };
+
+/** One buying agent's session, as the broker summarizes it from the jobs it bought. */
+export interface AgentSession {
+  session: string;
+  name: string;
+  client: "mcp";
+  /** The agent's own declared budget (self-reported), or null when it runs without one. */
+  budgetUsdMicros: number | null;
+  payers: string[];
+  jobs: number;
+  completed: number;
+  spentUsdMicros: number;
+  heldUsdMicros: number;
+  refundedUsdMicros: number;
+  firstAt: number;
+  lastAt: number;
+}
 export type { JobEvent, JobRouting, JobScreening, JobVerification, JobRating, PaymentRecord } from "@xorv/protocol/web";
 export type { LedgerEvent, LedgerEventKind, NetworkInfo, Leaderboard, LedgerFeed };
 
@@ -64,6 +81,9 @@ export const api = {
   jobs: (limit = 25, providerId?: string) =>
     get<{ jobs: Job[] }>(`/api/jobs?limit=${limit}${providerId ? `&providerId=${encodeURIComponent(providerId)}` : ""}`).then((r) => r.jobs),
   job: (id: string) => get<{ job: Job }>(`/api/jobs/${encodeURIComponent(id)}`).then((r) => r.job),
+  /** Agent sessions: the jobs each buying agent (an MCP server process) bought. */
+  agents: () => get<{ sessions: AgentSession[] }>("/api/agents").then((r) => r.sessions),
+  agent: (session: string) => get<AgentSession & { jobList: Job[] }>(`/api/agents/${encodeURIComponent(session)}`),
   /** Where a transaction stands: Monad's txpool, or Proposed / Voted / Finalized from the block tags. */
   tx: (hash: string) => get<TxStatusResponse>(`/api/tx/${encodeURIComponent(hash)}`),
   /** XorvLedger events — from the Envio indexer when the broker has one, else an RPC log scan. */

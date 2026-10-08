@@ -2551,6 +2551,33 @@ describe("Monad's 10 MON reserve on the broker's gas payers", () => {
   });
 });
 
+describe("agent sessions", () => {
+  it("groups the jobs an agent bought under its session tag, with its spend against its declared budget", async () => {
+    h = await boot();
+    const provider = await connectProvider(h);
+    const agent = { session: "sess_Abc123xyz", name: "research-agent", budgetUsdMicros: 20_000, client: "mcp" };
+    for (const prompt of ["first", "second"]) {
+      const { body: q } = await quoteWith(h, { prompt, agent });
+      const { body: paid } = await pay(h, q.quoteId as string);
+      await provider.completeNextJob(`answer to ${prompt}`);
+      await waitFor(async () => ((await getJob(h, paid.jobId as string)).status === "completed" ? true : undefined));
+      provider.dispatched.shift();
+    }
+    // An untagged job and a malformed tag don't join the session.
+    await quoteWith(h, { prompt: "untagged" });
+    expect((await quoteWith(h, { prompt: "bad tag", agent: { session: "no spaces allowed!", name: "x" } })).status).toBe(200);
+
+    const one = (await (await fetch(`${h.base}/api/agents/sess_Abc123xyz`)).json()) as Json;
+    expect(one).toMatchObject({ name: "research-agent", client: "mcp", budgetUsdMicros: 20_000, jobs: 2, completed: 2, spentUsdMicros: 2_000 });
+    expect((one.jobList as Json[]).map((j) => (j.agent as Json).session)).toEqual(["sess_Abc123xyz", "sess_Abc123xyz"]);
+    expect((one.payers as string[]).length).toBe(1);
+    const all = (await (await fetch(`${h.base}/api/agents`)).json()) as Json;
+    expect((all.sessions as Json[]).map((x) => x.session)).toEqual(["sess_Abc123xyz"]);
+    expect((await fetch(`${h.base}/api/agents/sess_nobody_here`)).status).toBe(404);
+    provider.close();
+  });
+});
+
 describe("transaction status", () => {
   it("reports where a transaction stands in Monad's consensus, and refuses anything that isn't a hash", async () => {
     h = await boot();

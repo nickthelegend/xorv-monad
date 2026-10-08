@@ -78,6 +78,7 @@ export function publicJob(
     rating: job.rating
       ? { value: job.rating.value, txHash: job.rating.txHash, feedbackURI: job.rating.feedbackURI }
       : null,
+    agent: job.request.agent ?? null,
     eventCount: job.events.length,
     events: opts.events ? job.events : undefined,
     // The Nansen related-wallet check run before relaying the rating, if one ran.

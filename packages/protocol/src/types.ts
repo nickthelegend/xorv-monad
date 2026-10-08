@@ -135,6 +135,21 @@ export interface JobRequest {
    * skipped for private jobs.
    */
   encryptTo?: string | null;
+  /**
+   * The agent session that bought this job, as the buying agent declared it
+   * (the MCP server tags its quotes): a random session id, the agent's name,
+   * and its session budget. Self-reported; it groups jobs, it proves nothing.
+   */
+  agent?: AgentSessionTag | null;
+}
+
+export interface AgentSessionTag {
+  /** Random per agent process (unpadded base64url / alphanumeric, 8–64 chars). */
+  session: string;
+  name: string;
+  /** The agent's own session budget in micro-USD; null when it runs without one. */
+  budgetUsdMicros: number | null;
+  client: "mcp";
 }
 
 /** A single streamed step from the provider while the job runs. */
@@ -527,6 +542,8 @@ export interface PublicJob {
   screening: JobScreening | null;
   verification: JobVerification | null;
   rating: JobRating | null;
+  /** The agent session that bought it, when an agent did (self-reported by the agent). */
+  agent?: AgentSessionTag | null;
   eventCount: number;
   /** Present only on the single-job route. */
   events?: JobEvent[];

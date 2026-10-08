@@ -42,6 +42,7 @@ const RUN_DIR = path.join(REPO, "e2e", ".runs", "demo");
 const CONTRACTS_DIR = path.join(REPO, "packages", "contracts");
 const FOUNDRY_OUT = path.join(REPO, "contracts", "out");
 const BROKER_ENTRY = path.join(REPO, "services", "broker", "dist", "index.js");
+const MCP_ENTRY = path.join(REPO, "packages", "mcp", "dist", "index.js");
 const CLI_ENTRY = path.join(REPO, "packages", "cli", "dist", "index.js");
 const APP_DIR = path.join(REPO, "apps", "app");
 const NETWORK = MONAD_TESTNET;
@@ -149,10 +150,11 @@ async function main(): Promise<void> {
   const fork = await startChain(forkUrl);
   log(`  chain ${fork.url} (chain id ${fork.chainId}, from block ${fork.forkBlock})`);
 
-  const parties = { operator: party(), facilitator: party(), buyer: party(), demo: party(), forwarder: party(), providers: PROVIDERS.map(party) };
+  const parties = { operator: party(), facilitator: party(), buyer: party(), demo: party(), agent: party(), forwarder: party(), providers: PROVIDERS.map(party) };
   for (const p of [parties.operator, parties.facilitator, parties.forwarder, ...parties.providers]) await setMon(fork, p.address, 100n * 10n ** 18n);
   await fundUsdc(fork, USDC, parties.buyer.address, 20_000_000n);
   await fundUsdc(fork, USDC, parties.demo.address, 20_000_000n);
+  await fundUsdc(fork, USDC, parties.agent.address, 1_000_000n);
   log("▸ funded: operator, facilitator and providers with MON; buyer and demo account with USDC only");
 
   const ledger = await deployLedger({ group, contractsDir: CONTRACTS_DIR, fork, broker: parties.operator.address, env: cleanEnv() });
@@ -275,6 +277,8 @@ async function main(): Promise<void> {
       const rated = await api.post<{ txHash: string }>(`/api/jobs/${jobId}/rate`, { value, deadline: offer.deadline, signature: await buyer.signTypedData(typedData) });
       log(`  rated ${jobId} ${value}/100: ERC-8004 feedback in ${rated.txHash.slice(0, 12)}…`);
     }
+    await seedAgentSession({ brokerUrl, forkUrl: fork.url, agentKey: parties.agent.key });
+
     // One cancelled job: the escrow refunds the buyer in full.
     const quote = await api.post<QuoteResponse>("/api/quotes", { prompt: "slow: a long research task the buyer cancels", maxPriceUsdMicros: 10_000 });
     const paid = await payQuote({ quote, buyer, network: NETWORK });
@@ -323,6 +327,55 @@ async function main(): Promise<void> {
     );
   }
   await new Promise(() => {});
+}
+
+/**
+ * An AI agent buying on its own: the MCP server (packages/mcp) over stdio, as
+ * Claude or any MCP client would run it, with a $0.003 session budget. It buys
+ * three $0.001 jobs; the fourth is refused by the server's own budget check
+ * before anything is signed. Its quotes carry its session tag, so the app's
+ * /agents page shows the session.
+ */
+async function seedAgentSession(opts: { brokerUrl: string; forkUrl: string; agentKey: Hex }): Promise<void> {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
+  const env = Object.fromEntries(Object.entries(cleanEnv()).filter((e): e is [string, string] => typeof e[1] === "string"));
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [MCP_ENTRY],
+    cwd: RUN_DIR,
+    env: {
+      ...env,
+      XORV_PRIVATE_KEY: opts.agentKey,
+      XORV_BROKER_URL: opts.brokerUrl,
+      XORV_NETWORK: NETWORK,
+      XORV_RPC_URL: opts.forkUrl,
+      XORV_MAX_PRICE: "0.002",
+      XORV_SESSION_BUDGET_USD: "0.003",
+      XORV_AGENT_NAME: "research-agent",
+    },
+    stderr: "pipe",
+  });
+  const client = new Client({ name: "xorv-demo-agent", version: "1.0.0" });
+  await client.connect(transport);
+  try {
+    const tasks = [
+      "Summarise the trade-offs of escrowed payments for AI work in three bullets.",
+      "List two ways an agent can check a provider before paying it.",
+      "Write a one-line status update for the research log.",
+      "One more: this one goes over the session budget.",
+    ];
+    for (const prompt of tasks) {
+      const out = (await client.callTool({ name: "xorv_run_job", arguments: { prompt, adapter: "echo", max_usd: 0.002 } }, undefined, { timeout: 180_000 })) as {
+        isError?: boolean;
+        content: { text?: string }[];
+      };
+      const text = out.content.map((c) => c.text ?? "").join(" ");
+      log(`  agent research-agent: ${out.isError ? `refused (${text.slice(0, 90)}…)` : `bought "${prompt.slice(0, 40)}…"`}`);
+    }
+  } finally {
+    await client.close().catch(() => {});
+  }
 }
 
 /** A model endpoint that lists one model and then never answers a completion: the stalled provider. */

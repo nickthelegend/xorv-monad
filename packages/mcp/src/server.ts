@@ -24,6 +24,7 @@ import {
   formatUsdc,
   networkConfig,
   type AccountBalances,
+  type AgentSessionTag,
   type NetworkInfo,
   type PublicJob,
   type PublicProvider,
@@ -92,6 +93,12 @@ export function createServer(deps: ServerDeps): McpServer {
   const configProblem = (): ReturnType<typeof fail> | null =>
     config.problems.length > 0 ? fail(`This Xorv MCP server is misconfigured:\n- ${config.problems.join("\n- ")}`) : null;
 
+  const agent: AgentSessionTag = {
+    session: config.session.id,
+    name: config.session.name,
+    budgetUsdMicros: config.sessionBudgetUsdMicros,
+    client: "mcp",
+  };
   const cap = formatUsd(config.maxPriceUsdMicros);
   const budgetNote =
     config.sessionBudgetUsdMicros === null ? "" : ` and at most ${formatUsd(config.sessionBudgetUsdMicros)} across this session`;
@@ -201,7 +208,7 @@ export function createServer(deps: ServerDeps): McpServer {
         budgetRemainingUsdMicros: Number.POSITIVE_INFINITY,
       });
       try {
-        const quote = await requestQuote(broker, { prompt, adapter, ceilingUsdMicros: ceiling });
+        const quote = await requestQuote(broker, { prompt, adapter, ceilingUsdMicros: ceiling, agent });
         const cfg = networkConfig(network);
         const p = quote.provider;
         return text(
@@ -328,6 +335,7 @@ export function createServer(deps: ServerDeps): McpServer {
             fetch: deps.fetch,
             pollIntervalMs: deps.pollIntervalMs,
             receiptWaitMs: deps.receiptWaitMs,
+            agent,
           },
           { prompt, adapter, maxUsd: max_usd },
         );
