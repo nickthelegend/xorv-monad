@@ -50,6 +50,7 @@ import { createAiHooks, type FeedbackSink, type GiveFeedbackInput } from "../src
 import { Hub } from "../src/hub.js";
 import { MemoryEscrow } from "../src/escrow.js";
 import type { GateInfo, IdentitySource } from "../src/identity.js";
+import type { LeashCheck } from "../src/leash.js";
 import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { NANSEN_OFF, createNansenTrust, type NansenTrust } from "../src/trust/index.js";
@@ -323,6 +324,7 @@ async function boot(
     /** Pay into this in-memory XorvEscrow instead of straight to the provider. */
     escrow?: MemoryEscrow;
     identity?: IdentitySource;
+    leash?: LeashCheck;
   } = {},
 ): Promise<Harness> {
   // Every confirmed transaction "landed" in block 4242 for 84,213 gas at 50 gwei, paid by the facilitator.
@@ -360,6 +362,7 @@ async function boot(
     trust: opts.trust,
     escrow: opts.escrow ?? null,
     identity: opts.identity ?? null,
+    leash: opts.leash ?? null,
     // The router's erc8004_reputation tool: buyer ratings via the ledger, verifier scores via its EOA.
     reputationSummary: async (_agentId, _clients, tag1) =>
       tag1 === "starred"
@@ -1048,6 +1051,61 @@ describe("the paid path", () => {
     });
     expect(res.status).toBe(409);
     provider.close();
+  });
+});
+
+describe("X-Leash-Agent", () => {
+  const leashed = (status: Awaited<ReturnType<LeashCheck>>["status"], seen: unknown[][] = []): LeashCheck =>
+    async (agent, seller, usdMicros) => {
+      seen.push([agent, seller, usdMicros]);
+      return { agent, status, remainingTodayUsdMicros: 4_900_000, expiry: 1_791_887_540, agentId: "10281" };
+    };
+
+  it("refuses an agent whose owner revoked it before it is asked to pay", async () => {
+    const seen: unknown[][] = [];
+    const lh = await boot({ leash: leashed("REVOKED", seen) });
+    try {
+      const provider = await connectProvider(lh);
+      const { body: q } = await quote(lh);
+      const res = await lh.paidFetch(`${lh.base}/api/jobs/${q.quoteId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Leash-Agent": lh.buyer.address },
+        body: "{}",
+      });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as Json).leash.status).toBe("REVOKED");
+      expect(seen).toEqual([[lh.buyer.address, q.provider.address, q.priceUsdMicros]]);
+      expect(lh.control.settled).toHaveLength(0);
+      provider.close();
+    } finally {
+      await lh.stop();
+    }
+  });
+
+  it("serves an agent its leash allows, and never reads the leash without the header", async () => {
+    const seen: unknown[][] = [];
+    const lh = await boot({ leash: leashed("OK", seen) });
+    try {
+      const provider = await connectProvider(lh);
+      const { body: q } = await quote(lh);
+      const unpaid = await fetch(`${lh.base}/api/jobs/${q.quoteId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(unpaid.status).toBe(402);
+      expect(seen).toHaveLength(0);
+      const res = await lh.paidFetch(`${lh.base}/api/jobs/${q.quoteId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Leash-Agent": lh.buyer.address },
+        body: "{}",
+      });
+      expect(res.status).toBe(200);
+      expect(seen.length).toBeGreaterThan(0);
+      provider.close();
+    } finally {
+      await lh.stop();
+    }
   });
 });
 

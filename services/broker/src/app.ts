@@ -126,6 +126,7 @@ import type { RouteCandidate, RoutingRecord, ScreeningRecord, VerificationRecord
 import { ReputationBook } from "./ai/reputation-book.js";
 import { createRouterData } from "./ai/router-data.js";
 import { VaultStore } from "./vaults.js";
+import { chainLeash, leashRefuses, type LeashCheck } from "./leash.js";
 import { createNansenTrust, publicRelatedCheck, refusalMessage, type NansenTrust } from "./trust/index.js";
 import {
   RATING_TTL_SECONDS,
@@ -233,6 +234,8 @@ export interface AppDeps {
   escrow?: EscrowOps | null;
   /** The escrow's Cleanverse identity gate. Defaults to reading it off the escrow; `null` turns it off. */
   identity?: IdentitySource | null;
+  /** Leash reads for buyers that send X-Leash-Agent (src/leash.ts). Defaults to the chain; `null` turns it off. */
+  leash?: LeashCheck | null;
 }
 
 export function createApp(deps: AppDeps) {
@@ -255,6 +258,7 @@ export function createApp(deps: AppDeps) {
   const app = new Hono();
   const metrics = deps.metrics ?? new Metrics();
   const net = networkConfig(config.network);
+  const leash = deps.leash !== undefined ? deps.leash : chainLeash(config.network);
   const bootedAt = Date.now();
   const heartbeatCounters = new Map<string, number>();
   /** The last registration fingerprint published per provider — re-registering unchanged is free. */
@@ -643,6 +647,7 @@ export function createApp(deps: AppDeps) {
         "Payment-Signature",
         "Access-Control-Expose-Headers",
         "X-Cancel-Token",
+        "X-Leash-Agent",
       ],
       // Browsers can't read a response header unless it's exposed, and x402
       // carries its whole contract in these. `payment-required` holds the 402's
@@ -1377,6 +1382,17 @@ export function createApp(deps: AppDeps) {
         },
         409,
       );
+    }
+    // A buyer that names its agent key in X-Leash-Agent is held to its owner's
+    // leash before it is asked to pay, and again before its payment settles.
+    const leashAgent = c.req.header("x-leash-agent");
+    if (leashAgent && leash) {
+      if (!isEvmAddress(leashAgent)) return c.json({ error: "X-Leash-Agent must be an EVM address" }, 400);
+      const verdict = await leash(leashAgent, quote.providerAddress, quote.priceUsdMicros).catch(() => null);
+      if (!verdict) return c.json({ error: "could not read the agent's leash; nothing was charged, try again" }, 503);
+      if (leashRefuses(verdict)) {
+        return c.json({ error: `the agent's leash refuses this payment: ${verdict.status}`, code: "leash_refused", leash: verdict }, 403);
+      }
     }
     if (!hasPaymentHeader(c)) return next();
     // Refused before anything settles: see onBeforeSettle.
