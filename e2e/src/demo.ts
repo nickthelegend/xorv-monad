@@ -20,7 +20,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPublicClient, createWalletClient, encodeAbiParameters, getAddress, http, parseAbi, type Abi, type Address, type Hex } from "viem";
+import { createPublicClient, createWalletClient, encodeAbiParameters, getAddress, http, keccak256, parseAbi, toHex, type Abi, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import {
   MONAD_TESTNET,
@@ -51,6 +51,11 @@ const USDC = NET.usdc.address as Address;
 const BASE = Number(process.env.XORV_DEMO_PORT_BASE ?? 8650);
 const PORTS = { chain: BASE, broker: BASE + 1, app: BASE + 2 };
 const WITH_APP = process.env.XORV_DEMO_APP !== "0";
+const WITH_GATE = process.env.XORV_DEMO_GATE !== "0";
+
+/** Cleanverse on Monad testnet (cloned onto the fork): the A-Pass, and the validator holding its ISSUER_ROLE. */
+const APASS = "0xbA82D189540CaC9DC6FF46B6837CaC1BFdEC58B9" as Address;
+const CV_VALIDATOR = "0xaC7e5179C2C7f03f209136886c172eb34F161792" as Address;
 const SEED = process.env.XORV_DEMO_SEED !== "0";
 
 const PROVIDERS: { label: string; capabilities: Capability[]; stalls?: boolean }[] = [
@@ -175,6 +180,20 @@ async function main(): Promise<void> {
 
   const stall = await startStallServer();
   log(`▸ stalling model endpoint ${stall.url} (accepts requests, never answers)`);
+
+  // Cleanverse CVI on the escrow: the real A-Pass contract, cloned onto this fork.
+  // Everyone gets an A-Pass except borealis, so the app shows both standings
+  // (and borealis, unverified, is never offered to buyers).
+  if (WITH_GATE) {
+    const gateArtifact = artifact("CleanverseGate");
+    const gateTx = await wallet.deployContract({ abi: gateArtifact.abi, bytecode: gateArtifact.bytecode, args: [APASS, CV_VALIDATOR, "0x0000000000000000000000000000000000000000"] });
+    const gate = getAddress((await fork.client.waitForTransactionReceipt({ hash: gateTx })).contractAddress!);
+    const set = await wallet.writeContract({ address: escrow, abi: parseAbi(["function setIdentityGate(address)"]), functionName: "setIdentityGate", args: [gate] });
+    await fork.client.waitForTransactionReceipt({ hash: set });
+    const verified = [parties.buyer, parties.demo, parties.agent, ...parties.providers.filter((_, i) => PROVIDERS[i]!.label !== "borealis")];
+    for (const p of verified) await issueAPass(fork, p.address);
+    log(`▸ CleanverseGate ${gate} over Cleanverse's A-Pass: ${verified.length} parties hold one, borealis doesn't`);
+  }
 
   const brokerUrl = `http://127.0.0.1:${PORTS.broker}`;
   const api = brokerApi(brokerUrl);
@@ -376,6 +395,20 @@ async function seedAgentSession(opts: { brokerUrl: string; forkUrl: string; agen
   } finally {
     await client.close().catch(() => {});
   }
+}
+
+/** Issue an A-Pass the way Cleanverse's validator does (it holds ISSUER_ROLE). Fork only. */
+async function issueAPass(fork: Fork, holder: Address): Promise<void> {
+  await fork.rpc("hardhat_impersonateAccount", [CV_VALIDATOR]);
+  await setMon(fork, CV_VALIDATOR, 10n ** 18n);
+  const block = await fork.client.getBlock();
+  const args = encodeAbiParameters(
+    [{ type: "address" }, { type: "uint8" }, { type: "uint8" }, { type: "bytes2" }, { type: "bytes2" }, { type: "uint64" }, { type: "uint256" }, { type: "uint256" }],
+    [holder, 2, 50, "0x0000", "0x4344", block.timestamp + 31_536_000n, BigInt(keccak256(toHex(`xorv-demo-kyc-${holder}`))), 1n],
+  );
+  const hash = await fork.rpc<Hex>("eth_sendTransaction", [{ from: CV_VALIDATOR, to: APASS, data: `0xb8dd3664${args.slice(2)}` }]);
+  const receipt = await fork.client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error(`A-Pass issue reverted for ${holder}: ${hash}`);
 }
 
 /** A model endpoint that lists one model and then never answers a completion: the stalled provider. */
