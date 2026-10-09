@@ -609,9 +609,10 @@ describe("vaults", () => {
     h = await boot();
   });
 
-  it("serves 404 for a vault that doesn't exist yet, and ciphertext once it does", async () => {
+  it("says a vault doesn't exist yet (200, exists: false), and serves ciphertext once it does", async () => {
     const missing = await fetch(`${h.base}/api/vaults/${AUTH.vaultId}`);
-    expect(missing.status).toBe(404);
+    expect(missing.status).toBe(200);
+    expect(await missing.json()).toMatchObject({ exists: false, version: 0 });
 
     const first = write(1, `{"v":1,"entries":[{"prompt":"${SECRET}"}]}`);
     expect((await put(AUTH.vaultId, first)).status).toBe(200);
@@ -646,7 +647,7 @@ describe("vaults", () => {
     const genuine = write(1);
     const swapped = { ...genuine, ciphertext: write(1, '{"v":1,"entries":[{"x":1}]}').ciphertext };
     expect((await put(AUTH.vaultId, swapped)).status).toBe(403);
-    expect((await fetch(`${h.base}/api/vaults/${AUTH.vaultId}`)).status).toBe(404);
+    expect(await (await fetch(`${h.base}/api/vaults/${AUTH.vaultId}`)).json()).toMatchObject({ exists: false });
   });
 
   it("rejects malformed writes and ids (400)", async () => {

@@ -178,3 +178,11 @@ pass; broker and app typechecks pass. Single-worker production app build passes.
 is UNTESTED pending a configured real Cleanverse gate, registered validator pool
 and A-Passes. Existing deployment/testnet holds remain in effect. No new chain
 transaction or hosting action was performed.
+
+## Wave 3 (9 Oct): build-out
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Settlement evidence: trust a facilitator's tx hash only once its receipt proves this authorization paid this job | parked in a git stash. The draft also requires durable payment persistence: without a durable store it answers 503, and 36 broker tests time out. It needs a design pass, not a patch |
+| 2 | First visit to /private: the vault lookup answers 200 `{exists: false}` instead of a 404, so the console stays clean (older brokers' 404 is still handled) | done |
+| 3 | Demo with the Cleanverse gate on and real A-Passes, so the badges show verified and unverified side by side | next |

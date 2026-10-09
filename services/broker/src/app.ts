@@ -1808,7 +1808,9 @@ export function createApp(deps: AppDeps) {
     const id = c.req.param("id");
     if (!isVaultId(id)) return c.json({ error: "a vault id is 64 lowercase hex characters" }, 400);
     const record = vaults.get(id);
-    if (!record) return c.json({ error: "no vault with this id yet", id, version: 0 }, 404);
+    // Not an error: a first-time buyer simply has no history yet. A 200 keeps the browser
+    // console clean on every first visit to /private.
+    if (!record) return c.json({ id, exists: false, version: 0 });
     return c.json({
       id: record.id,
       ciphertext: record.ciphertext,
