@@ -10,6 +10,44 @@ local chains and on forks of Monad testnet only. XorvLedger is already live; its
 **Agents never set secrets.** Keys go in the user's `.env` (gitignored) and in each host's dashboard.
 No script here writes a key anywhere.
 
+## Testnet go: keys and addresses (12 Oct)
+
+The testnet-only keys are funded from the hub wallet and sit, outside every repo, in
+`metropolis-funding/keys/`. They are installed in this worktree's gitignored `.env` and `cre/.env`
+(mode 600). Wait for `fund.py status` in that folder to show their MON before sending anything.
+
+| Role | Address | Key |
+|---|---|---|
+| Operator: deploys and owns the escrow and keeper; writes ledger receipts | `0x43E588Ca0195E1cE7A2C7BEBc1a1E23572660c92` | `.env` `XORV_OPERATOR_KEY` |
+| Facilitator: settlements, and the escrow's attester (fund, release, refund) | `0xf4c41542bdf5fe74890DDBE307d5F8F540792F79` | `.env` `XORV_FACILITATOR_KEY` |
+| CRE broadcast (shared by every project) | `0x4d9e1a826a6DBE986EF8997E57464A2a3443DAb2` | `cre/.env` `CRE_ETH_PRIVATE_KEY` |
+
+Monad keeps 10 MON per account in reserve, so the operator and the facilitator each need more than
+10 MON; the broker's Network page warns when one drops below it.
+
+**XorvLedger.** The live ledger (`0xc4b5…5FCD`) only accepts writes from its September broker,
+`0x45d6…5752`, whose key isn't in this worktree. Either that key's owner sets the new operator as the
+ledger's broker (`setBroker(0x43E5…0c92)` from the ledger owner `0x77bB…1C49`), or a fresh ledger is
+deployed with the new operator as its broker:
+
+```bash
+set -a; . ./.env; set +a
+XORV_BROKER_ADDRESS=0x43E588Ca0195E1cE7A2C7BEBc1a1E23572660c92 XORV_LEDGER_OWNER=<a cold address> pnpm deploy:ledger
+```
+
+**Escrow, keeper and gate**, attester = the facilitator (one command; add `XORV_CLEANVERSE=1` only once
+Cleanverse has issued A-Passes):
+
+```bash
+set -a; . ./.env; set +a
+cd contracts && forge script script/Deploy.s.sol --rpc-url https://testnet-rpc.monad.xyz --broadcast \
+  --verify --verifier sourcify --verifier-url https://sourcify-api-monad.blockvision.org
+```
+
+Then go through sections 2 and 3 below: point the broker at the escrow (`XORV_FACILITATOR=self`,
+`XORV_ESCROW_ADDRESS`, `XORV_REFUND_KEEPER_ADDRESS`), index it, and simulate the CRE keeper with
+`cre/.env`'s key.
+
 ## 0. Before "go" (the user)
 
 | What | Where | Gives |
