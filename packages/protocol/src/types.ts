@@ -358,6 +358,11 @@ export interface HeartbeatRequest {
   uptimeSeconds: number;
   /** Per-capability availability, so a busy adapter can be skipped. */
   available: Record<string, boolean>;
+  /**
+   * Why the node is taking no jobs, when it says (e.g. its daily model budget is
+   * spent). The broker passes it to buyers instead of a bare "no provider".
+   */
+  unavailableReason?: string | null;
 }
 
 export interface HeartbeatResponse {

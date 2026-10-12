@@ -749,6 +749,21 @@ describe("quoting", () => {
     provider.close();
   });
 
+  it("passes on a node's own reason for taking no jobs (its daily budget is spent)", async () => {
+    const provider = await connectProvider(h);
+    const beat = await fetch(`${h.base}/api/providers/${provider.providerId}/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.token}` },
+      body: JSON.stringify({ activeJobs: 0, uptimeSeconds: 5, available: { echo: false }, unavailableReason: "daily capacity reached: try again after 00:00 UTC" }),
+    });
+    expect(beat.status).toBe(200);
+    const { status, body } = await quote(h);
+    expect(status).toBe(503);
+    expect(String(body.error)).toBe("no online provider can take a job right now: daily capacity reached: try again after 00:00 UTC");
+    expect(await (await fetch(`${h.base}/api/providers`)).text()).not.toContain(provider.token);
+    provider.close();
+  });
+
   it("refuses to match above the buyer's ceiling", async () => {
     const provider = await connectProvider(h, { price: 20_000 });
     const { status } = await quote(h, "hi", 5_000);

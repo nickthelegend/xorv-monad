@@ -172,6 +172,7 @@ export class HostedModelAdapter implements JobAdapter {
   private reportCost(model: string, usage: LlmUsage, input: RunInput): void {
     const cost = usageCostUsd(model, usage.raw);
     const tokens = usage.totalTokens ?? (usage.promptTokens ?? 0) + (usage.completionTokens ?? 0);
+    if (tokens) input.onTokens?.(tokens);
     if (cost === null) {
       if (tokens) input.emit({ kind: "status", text: `${tokens} tokens` });
       return;

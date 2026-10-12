@@ -980,6 +980,7 @@ export function createApp(deps: AppDeps) {
       activeJobs: body.activeJobs ?? 0,
       uptimeSeconds: body.uptimeSeconds ?? 0,
       available: body.available ?? {},
+      unavailableReason: typeof body.unavailableReason === "string" ? body.unavailableReason : null,
     });
     if (!updated) return c.json({ error: "unknown provider" }, 404);
 
@@ -1109,12 +1110,17 @@ export function createApp(deps: AppDeps) {
     });
     if (candidates.length === 0) {
       const live = registry.live().length;
+      // A node that said why it is taking no jobs (its daily budget is spent)
+      // gets its reason passed on, rather than a bare "no match".
+      const reason = registry.live().map((p) => p.unavailableReason).find((r) => typeof r === "string" && r.length > 0);
       return c.json(
         {
           error:
             live === 0
               ? "no providers are online right now — start one with `xorv start`"
-              : `no online provider matches that request under ${formatUsd(maxPrice)}`,
+              : reason
+                ? `no online provider can take a job right now: ${reason}`
+                : `no online provider matches that request under ${formatUsd(maxPrice)}`,
           providersLive: live,
         },
         503,

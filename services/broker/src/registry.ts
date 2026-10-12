@@ -31,6 +31,8 @@ export interface ProviderRecord extends Provider {
   /** Per-capability availability from the last heartbeat. */
   available: Record<string, boolean>;
   uptimeSeconds: number;
+  /** The node's own reason for taking no jobs, from its last heartbeat. */
+  unavailableReason?: string | null;
 }
 
 /** What the matcher settled on. */
@@ -340,7 +342,7 @@ export class Registry {
 
   heartbeat(
     id: string,
-    input: { activeJobs: number; uptimeSeconds: number; available: Record<string, boolean> },
+    input: { activeJobs: number; uptimeSeconds: number; available: Record<string, boolean>; unavailableReason?: string | null },
   ): ProviderRecord | undefined {
     const provider = this.providers.get(id);
     if (!provider) return undefined;
@@ -348,6 +350,7 @@ export class Registry {
     provider.activeJobs = input.activeJobs;
     provider.uptimeSeconds = input.uptimeSeconds;
     provider.available = input.available;
+    provider.unavailableReason = input.unavailableReason ? String(input.unavailableReason).slice(0, 200) : null;
     provider.status = deriveStatus(provider);
     return provider;
   }

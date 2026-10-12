@@ -35,6 +35,7 @@ shot.
     2. use `http://127.0.0.1:8080/v1/graphql` as `XORV_INDEXER_URL`;
     3. point a local broker at it, since the hosted broker cannot reach a local index.
   - **Cleanverse A-Passes:** the gate stays off, so leave it out of the take.
+- **The provider's daily cap** (40 jobs, 120k tokens): if a take needs more, set `XORV_DAILY_CAP_OFF=1` on the Railway `provider` service while recording, and remove it afterwards.
 - **Cutaways with real txs:** the escrowed Kimi job and the CRE refund in README → Deployments.
 
 

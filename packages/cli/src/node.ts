@@ -26,7 +26,8 @@ import {
 } from "@xorv/protocol";
 import { createAdapter } from "./adapters/index.js";
 import { makeJobDir, removeJobDir, type JobAdapter } from "./adapters/base.js";
-import { appendEarning, payoutAddress, resolveBrokerUrl, type NodeConfig } from "./config.js";
+import { appendEarning, payoutAddress, resolveBrokerUrl, XORV_HOME, type NodeConfig } from "./config.js";
+import { CAPACITY_REACHED, DailyCap } from "./daily-cap.js";
 import { isPaused } from "./commands/manage.js";
 
 /** What the broker's `/api/providers/register` hands back, as the node uses it. */
@@ -119,9 +120,14 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     return this.wasPaused;
   }
 
-  constructor(config: NodeConfig) {
+  /** Jobs and model tokens per UTC day; see daily-cap.ts. */
+  readonly dailyCap: DailyCap;
+  private wasCapped = false;
+
+  constructor(config: NodeConfig, dailyCap: DailyCap = new DailyCap(XORV_HOME)) {
     super();
     this.config = config;
+    this.dailyCap = dailyCap;
     this.brokerUrl = resolveBrokerUrl(config);
     for (const capability of config.capabilities) {
       this.adapters.set(capability.id, createAdapter(capability.adapter));
@@ -277,13 +283,19 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     // advertising capacity, so the matcher skips it. Going offline instead
     // would drop it out of the fleet view and look like a crash.
     const paused = isPaused();
+    // Out of today's budget: stop advertising, so nobody is quoted or pays.
+    const capped = !this.dailyCap.hasRoom();
     const available: Record<string, boolean> = {};
     for (const capability of this.config.capabilities) {
       const running = [...this.running.values()].filter(
         (job) => job.capabilityId === capability.id,
       ).length;
       available[capability.id] =
-        !paused && running < Math.max(1, capability.maxConcurrency);
+        !paused && !capped && running < Math.max(1, capability.maxConcurrency);
+    }
+    if (capped !== this.wasCapped) {
+      this.log(capped ? "warn" : "ok", capped ? `not taking new jobs: ${this.dailyCap.describe()}` : "daily cap has room again");
+      this.wasCapped = capped;
     }
     if (paused !== this.wasPaused) {
       this.log(paused ? "warn" : "ok", paused ? "paused — not taking new jobs" : "resumed");
@@ -301,6 +313,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
           activeJobs: this.running.size,
           uptimeSeconds: Math.round((Date.now() - this.stats.startedAt) / 1000),
           available,
+          unavailableReason: capped ? CAPACITY_REACHED : null,
         }),
         signal: AbortSignal.timeout(10_000),
       });
@@ -366,6 +379,12 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     const adapter = this.adapters.get(dispatched.capabilityId);
     if (!capability || !adapter) {
       this.reportError(dispatched.jobId, `this node has no capability "${dispatched.capabilityId}"`, 0);
+      return;
+    }
+    if (!this.dailyCap.claimJob()) {
+      // Matched just before the cap filled. Failing it refunds the buyer's escrow.
+      this.reportError(dispatched.jobId, CAPACITY_REACHED, 0);
+      this.log("warn", `job ${short(dispatched.jobId)} refused: ${this.dailyCap.describe()}`);
       return;
     }
     const sealTo = dispatched.encryptTo ?? null;
@@ -439,6 +458,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
         signal: controller.signal,
         emit,
         model: capability.model ?? null,
+        onTokens: (tokens) => this.dailyCap.addTokens(tokens),
       });
 
       // Sealed here, on the provider, the moment the adapter returns: the

@@ -661,7 +661,7 @@ stops the broker. `GET /api/network` reports each role's state.
 |---|---|---|
 | App | <https://xorv-monad-app.vercel.app> | Vercel |
 | Broker | <https://broker-production-2d62.up.railway.app> (`/api/network`) | Railway; settles through its self-hosted x402 facilitator `0xf4c4…2F79` (both `exact` and `escrow`) |
-| Provider node (Kimi K3) | Railway service `provider`, `Dockerfile.provider` | a real seller for the hosted app: $0.02 per job, one at a time, replies capped at 4,000 tokens |
+| Provider node (Kimi K3) | Railway service `provider`, `Dockerfile.provider` | a real seller for the hosted app: $0.02 per job, one at a time, replies capped at 4,000 tokens; a persisted daily cap (40 jobs, 120k tokens per UTC day) guards the model credit, since testnet USDC is free |
 | XorvLedger (current) | [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408) | deploy tx [`0xfa8979…3390`](https://testnet.monadvision.com/tx/0xfa8979372f92329aea91a2eaf7c31b7037339ada52f9a20bccc510d203753390); a live provider registration [`0x9a5c33…9e08`](https://testnet.monadvision.com/tx/0x9a5c336ef1b3e1381eb333cb31d97342c7919f325d1ee5361947064761519e08), finalized in block 70463902 |
 | XorvEscrow | [`0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91) | attester = the facilitator `0xf4c4…2F79`; live: see the escrowed job and the CRE refund below |
 | XorvRefundKeeper (Chainlink CRE receiver) | [`0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f) | forwarder: Chainlink's MockKeystoneForwarder `0xB9F7…D192` |
