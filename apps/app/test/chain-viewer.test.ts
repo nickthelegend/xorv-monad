@@ -42,4 +42,26 @@ describe("in-app chain viewer", () => {
     expect(decoded[1]).toMatchObject({ contract: null, event: null });
     expect(decoded[1]!.raw?.topics[0]).toBe("0x" + "ab".repeat(32));
   });
+  it("names a Chainlink CRE refund: the keeper's events and the forwarder's report", () => {
+    const keeper = "0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f" as const;
+    const forwarder = "0xB9F79d863261869B234c481D1f9A7af84AeAd192" as const;
+    const jobId = `0x${"a4".repeat(32)}` as Hex;
+    const keeperAbi = parseAbi(["event KeeperRefunded(bytes32 indexed jobId)", "event ReportProcessed(uint256 requested, uint256 refunded)"]);
+    const fwdAbi = parseAbi(["event ReportProcessed(address indexed receiver, bytes32 indexed workflowExecutionId, bytes2 indexed reportId, bool result)"]);
+    const logs = [
+      { address: keeper, logIndex: 2, topics: encodeEventTopics({ abi: keeperAbi, eventName: "KeeperRefunded", args: { jobId } }) as [Hex, ...Hex[]], data: "0x" as Hex },
+      { address: keeper, logIndex: 3, topics: encodeEventTopics({ abi: keeperAbi, eventName: "ReportProcessed" }) as [Hex, ...Hex[]], data: encodeAbiParameters([{ type: "uint256" }, { type: "uint256" }], [1n, 1n]) },
+      {
+        address: forwarder,
+        logIndex: 4,
+        topics: encodeEventTopics({ abi: fwdAbi, eventName: "ReportProcessed", args: { receiver: keeper, workflowExecutionId: jobId, reportId: "0x0001" } }) as [Hex, ...Hex[]],
+        data: encodeAbiParameters([{ type: "bool" }], [true]),
+      },
+    ];
+    const labels = { [keeper.toLowerCase()]: "XorvRefundKeeper", [forwarder.toLowerCase()]: "Chainlink forwarder (CRE simulation)" };
+    const [refunded, processed, forwarded] = decodeLogs(logs, labels);
+    expect(refunded).toMatchObject({ contract: "XorvRefundKeeper", event: "KeeperRefunded", args: { jobId } });
+    expect(processed).toMatchObject({ event: "ReportProcessed", args: { requested: "1", refunded: "1" } });
+    expect(forwarded).toMatchObject({ contract: "Chainlink forwarder (CRE simulation)", event: "ReportProcessed", args: { result: "true" } });
+  });
 });

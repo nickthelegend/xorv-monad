@@ -570,7 +570,7 @@ function EscrowRows({ escrow }: { escrow: NonNullable<NonNullable<Job["payment"]
         </Row>
       ) : escrow.state === "funded" ? (
         <Row label="refundable after">
-          <span className="tnum">{new Date(escrow.deadline * 1000).toLocaleTimeString()}</span>
+          <span className="tnum" suppressHydrationWarning>{new Date(escrow.deadline * 1000).toLocaleTimeString()}</span>
         </Row>
       ) : null}
     </>

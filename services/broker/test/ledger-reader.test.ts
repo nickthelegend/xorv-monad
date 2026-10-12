@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { LedgerEvent } from "@xorv/protocol";
-import { createLedgerReader } from "../src/ledger-reader.js";
+import { createLedgerReader, createRpcTail } from "../src/ledger-reader.js";
 
 const LEDGER = "0x00000000000000000000000000000000000000Aa";
 const buyer = "0x2222222222222222222222222222222222222222";
@@ -135,5 +135,35 @@ describe("createLedgerReader", () => {
     const reader = createLedgerReader({ network: "eip155:10143", ledgerAddress: null, fromBlock: null, indexerUrl: null });
     expect(await reader.events("receipts", 5)).toEqual({ source: "none", events: [] });
     expect(await reader.leaderboard(5)).toBeNull();
+  });
+});
+
+describe("the incremental RPC tail", () => {
+  it("backfills once from the deploy block, then scans only new blocks, newest first and without duplicates", async () => {
+    let head = 150n;
+    const scan = vi.fn(async (_kind: string, _limit: number, from: bigint | null) =>
+      from === 90n ? [rpcEvent(40), rpcEvent(10)] : [rpcEvent(60), rpcEvent(40)],
+    );
+    const read = createRpcTail({ head: async () => head, scan }, 90n);
+    expect((await read("receipts", 5)).map((e) => e.blockNumber)).toEqual([140, 110]);
+    head = 170n;
+    expect((await read("receipts", 5)).map((e) => e.blockNumber)).toEqual([160, 140, 110]);
+    expect(scan.mock.calls.map((c) => c[2])).toEqual([90n, 151n]);
+    // Nothing new since the last scan: no RPC scan at all.
+    expect((await read("receipts", 2)).map((e) => e.blockNumber)).toEqual([160, 140]);
+    expect(scan).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves the last good feed when a refresh fails, but fails loudly before the first success", async () => {
+    let fail = true;
+    const read = createRpcTail(
+      { head: async () => 200n, scan: async () => { if (fail) throw new Error("429 Too Many Requests"); return [rpcEvent(1)]; } },
+      null,
+    );
+    await expect(read("receipts", 5)).rejects.toThrow(/429/);
+    fail = false;
+    expect(await read("receipts", 5)).toHaveLength(1);
+    fail = true;
+    expect(await read("receipts", 5)).toHaveLength(1);
   });
 });

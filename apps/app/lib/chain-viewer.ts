@@ -12,6 +12,17 @@ import { decodeEventLog, parseAbi, type Abi, type Hex, type Log } from "viem";
 import { IDENTITY_ABI, REPUTATION_ABI, XORV_ESCROW_ABI, XORV_LEDGER_ABI } from "@xorv/protocol/web";
 
 const TRANSFER_ABI = parseAbi(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
+/** XorvRefundKeeper, the Chainlink CRE receiver that refunds expired escrowed jobs. */
+const REFUND_KEEPER_ABI = parseAbi([
+  "event KeeperRefunded(bytes32 indexed jobId)",
+  "event KeeperSkipped(bytes32 indexed jobId, bytes reason)",
+  "event ReportProcessed(uint256 requested, uint256 refunded)",
+  "event ForwarderUpdated(address indexed previous, address indexed forwarder)",
+]);
+/** Chainlink's KeystoneForwarder (and the MockKeystoneForwarder a CRE simulation uses). */
+const KEYSTONE_FORWARDER_ABI = parseAbi([
+  "event ReportProcessed(address indexed receiver, bytes32 indexed workflowExecutionId, bytes2 indexed reportId, bool result)",
+]);
 
 /** Where an explorer URL leads in the in-app viewer, or null for pages it doesn't have (NFTs). */
 export function viewerPath(explorerUrl: string, href: string): string | null {
@@ -40,6 +51,8 @@ const ABIS: { label: string; abi: Abi }[] = [
   { label: "ERC-8004 identity", abi: IDENTITY_ABI as Abi },
   { label: "ERC-8004 reputation", abi: REPUTATION_ABI as Abi },
   { label: "ERC-20", abi: TRANSFER_ABI as Abi },
+  { label: "XorvRefundKeeper", abi: REFUND_KEEPER_ABI as Abi },
+  { label: "Chainlink forwarder", abi: KEYSTONE_FORWARDER_ABI as Abi },
 ];
 
 function show(value: unknown): string {

@@ -31,6 +31,10 @@ function labelsFrom(info: NetworkInfo | null): Record<string, string> {
   };
   add(info.usdc?.address, "USDC");
   add(info.escrow?.address, "XorvEscrow");
+  add(info.escrow?.keeper, "XorvRefundKeeper");
+  // Chainlink's forwarders: the simulator's MockKeystoneForwarder and the DON's KeystoneForwarder.
+  add("0xB9F79d863261869B234c481D1f9A7af84AeAd192", "Chainlink forwarder (CRE simulation)");
+  add("0xF8344CFd5c43616a4366C34E3EEE75af79a74482", "Chainlink forwarder");
   add(info.ledger?.address, "XorvLedger");
   add(info.erc8004?.identity, "ERC-8004 identity");
   add(info.erc8004?.reputation, "ERC-8004 reputation");

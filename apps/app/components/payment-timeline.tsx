@@ -73,7 +73,8 @@ export function PaymentTimeline({ job, keeper }: { job: Job; keeper?: string | n
                     >
                       {step.title}
                     </p>
-                    <span className="mono tnum text-[11px] text-fg-4">
+                    {/* The server renders in UTC and the browser in local time: the clock text may differ. */}
+                    <span className="mono tnum text-[11px] text-fg-4" suppressHydrationWarning>
                       {step.key === "paid" && step.at ? new Date(step.at).toLocaleTimeString() : offset ?? ""}
                     </span>
                   </div>
