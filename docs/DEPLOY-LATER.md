@@ -10,6 +10,18 @@ local chains and on forks of Monad testnet only. XorvLedger is already live; its
 **Agents never set secrets.** Keys go in the user's `.env` (gitignored) and in each host's dashboard.
 No script here writes a key anywhere.
 
+## Status (12 Oct): deployed
+
+Done: a fresh XorvLedger, plus XorvEscrow and XorvRefundKeeper, all verified. The broker is on Railway
+(`Dockerfile.railway`: Railway rejects BuildKit cache mounts and VOLUME) and the app on Vercel. Addresses
+are in README → Deployments. Still waiting:
+- MON for the facilitator (to self-host settlement and turn on escrowed payments);
+- the operator's top-up above the 10 MON reserve;
+- test USDC for a buyer (paid smoke jobs);
+- `cre workflow simulate --broadcast` (the shared CRE key holds 3 MON);
+- Cleanverse A-Passes before the gate;
+- the indexer on Envio Cloud.
+
 ## Testnet go: keys and addresses (12 Oct)
 
 The testnet-only keys are funded from the hub wallet and sit, outside every repo, in

@@ -93,5 +93,5 @@ export const MONAD_WS_URL = process.env.NEXT_PUBLIC_XORV_MONAD_WS_URL?.trim() ||
 
 /** XorvLedger as deployed on Monad testnet (packages/contracts/deployments/monadTestnet.json). */
 export const LIVE_LEDGER: Record<string, `0x${string}`> = {
-  "eip155:10143": "0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD",
+  "eip155:10143": "0x40918C2fEc752B3b8C30bB121779011132668408",
 };
