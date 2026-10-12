@@ -63,6 +63,16 @@ const STREAM_BODY: Record<LlmPresetKind, Record<string, unknown>> = {
   hunyuan: {},
 };
 
+/**
+ * `XORV_HOSTED_MAX_TOKENS` caps each hosted-model reply (reasoning included).
+ * A node selling a hosted model to the public pays the model bill per job, so
+ * the operator sets the ceiling; unset leaves the provider's default.
+ */
+export function maxTokensBody(env: NodeJS.ProcessEnv = process.env): { max_tokens?: number } {
+  const n = Number.parseInt(env.XORV_HOSTED_MAX_TOKENS ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? { max_tokens: n } : {};
+}
+
 export class HostedModelAdapter implements JobAdapter {
   readonly kind: AdapterKind;
   readonly installHint: string;
@@ -128,7 +138,7 @@ export class HostedModelAdapter implements JobAdapter {
         preset,
         model,
         messages: [{ role: "user", content: input.prompt }],
-        body: STREAM_BODY[this.preset],
+        body: { ...STREAM_BODY[this.preset], ...maxTokensBody() },
         signal: AbortSignal.any([input.signal, AbortSignal.timeout(input.timeoutMs)]),
         fetch: this.opts.fetch,
       })) {

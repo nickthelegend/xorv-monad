@@ -14,13 +14,20 @@ No script here writes a key anywhere.
 
 Done: a fresh XorvLedger, plus XorvEscrow and XorvRefundKeeper, all verified. The broker is on Railway
 (`Dockerfile.railway`: Railway rejects BuildKit cache mounts and VOLUME) and the app on Vercel. Addresses
-are in README → Deployments. Still waiting:
-- MON for the facilitator (to self-host settlement and turn on escrowed payments);
-- the operator's top-up above the 10 MON reserve;
-- test USDC for a buyer (paid smoke jobs);
-- `cre workflow simulate --broadcast` (the shared CRE key holds 3 MON);
-- Cleanverse A-Passes before the gate;
-- the indexer on Envio Cloud.
+are in README → Deployments.
+
+Done on 12–13 Oct:
+- the facilitator funded, with `exact` and `escrow` both settling through it;
+- paid escrowed jobs from the MCP agent's Privy wallet;
+- `cre workflow simulate --broadcast` refunding a real expired job, reading from a local Envio index;
+- a hosted provider node: Railway service `provider`, `Dockerfile.provider`, configured from env by
+  `packages/cli/scripts/hosted-node.mjs`, with `XORV_HOSTED_MAX_TOKENS` capping each Kimi reply.
+
+Still deferred to the user (doitlater.md):
+- the indexer on Envio Cloud, then `XORV_INDEXER_URL` on the broker and in `cre/refund-keeper/config.production.json`;
+- Cleanverse A-Passes, before the gate;
+- Qwen (`DASHSCOPE_API_KEY`);
+- Nansen, at recording time only.
 
 ## Testnet go: keys and addresses (12 Oct)
 

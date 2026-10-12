@@ -21,6 +21,23 @@ shot.
 
 ## Before you hit record
 
+**State on 13 Oct.**
+- **Live and hosted:**
+  - the app: <https://xorv-monad-app.vercel.app>;
+  - the broker: <https://broker-production-2d62.up.railway.app>, settling `exact` and `escrow` through its own facilitator;
+  - one provider node, "Xorv hosted · Kimi K3" (Railway service `provider`, $0.02 a job);
+  - the MCP agent's Privy wallet.
+- **Deferred (doitlater.md):**
+  - **Qwen is not configured.** On Auto, the 0:16 shot shows the router's honest "not configured" line. Pick the provider by hand instead.
+  - **Nansen is unused until this recording** (100 credits). Set `NANSEN_API_KEY` on the broker just before the 1:55 shot.
+  - **Envio Cloud.** For the 1:40 shot, run the indexer locally:
+    1. `cd services/indexer && pnpm dev`, with the `ENVIO_XORV_*` variables from docs/DEPLOY-LATER.md;
+    2. use `http://127.0.0.1:8080/v1/graphql` as `XORV_INDEXER_URL`;
+    3. point a local broker at it, since the hosted broker cannot reach a local index.
+  - **Cleanverse A-Passes:** the gate stays off, so leave it out of the take.
+- **Cutaways with real txs:** the escrowed Kimi job and the CRE refund in README → Deployments.
+
+
 Takes are ruined in this part, not during the recording. Everything here assumes the deployment
 checklist in [SUBMISSION.md](SUBMISSION.md#before-you-submit) is done: ledger deployed, broker public
 with `XORV_PUBLIC_URL`, indexer live, app on https.

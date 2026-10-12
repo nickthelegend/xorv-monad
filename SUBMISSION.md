@@ -127,11 +127,12 @@ Details and file links are in [README → Monad-native](README.md#monad-native);
 | | Address / URL | Evidence |
 |---|---|---|
 | App | <https://xorv-monad-app.vercel.app> | Vercel |
-| Broker | <https://broker-production-2d62.up.railway.app> (`/api/network`) | Railway; settles through Monad's hosted x402 facilitator until the self-hosted one is funded |
+| Broker | <https://broker-production-2d62.up.railway.app> (`/api/network`) | Railway; settles through its self-hosted x402 facilitator `0xf4c4…2F79` (both `exact` and `escrow`) |
+| Provider node (Kimi K3) | Railway service `provider`, `Dockerfile.provider` | a real seller for the hosted app: $0.02 per job, one at a time, replies capped at 4,000 tokens |
 | XorvLedger (current) | [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408) | deploy tx [`0xfa8979…3390`](https://testnet.monadvision.com/tx/0xfa8979372f92329aea91a2eaf7c31b7037339ada52f9a20bccc510d203753390); a live provider registration [`0x9a5c33…9e08`](https://testnet.monadvision.com/tx/0x9a5c336ef1b3e1381eb333cb31d97342c7919f325d1ee5361947064761519e08), finalized in block 70463902 |
-| XorvEscrow | [`0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91) | attester = the facilitator `0xf4c4…2F79`; escrowed payments switch on once it holds MON |
+| XorvEscrow | [`0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91) | attester = the facilitator `0xf4c4…2F79`; live: see the escrowed job and the CRE refund below |
 | XorvRefundKeeper (Chainlink CRE receiver) | [`0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f) | forwarder: Chainlink's MockKeystoneForwarder `0xB9F7…D192` |
-| MCP agent's Privy server wallet | [`0x6613490F1A424e7595149D26cF4e274C9C0a40fB`](https://testnet.monadvision.com/address/0x6613490F1A424e7595149D26cF4e274C9C0a40fB) | policy: x402 USDC ≤ $0.05 per payment, plus ledger ratings |
+| MCP agent's Privy server wallet | [`0x6613490F1A424e7595149D26cF4e274C9C0a40fB`](https://testnet.monadvision.com/address/0x6613490F1A424e7595149D26cF4e274C9C0a40fB) | policy: x402 USDC ≤ $0.05 per payment (direct or into XorvEscrow only), plus ledger ratings |
 
 **First live escrowed job (12 Oct):** an MCP agent paid $0.001 USDC from its policy-bounded Privy server
 wallet into XorvEscrow ([fund `0xb95dc3…8bbd`](https://testnet.monadvision.com/tx/0xb95dc3df81f5b29b79d77f170dc9a644f6929a8cb40ce16c775f533aa0458bbd)),
@@ -140,6 +141,14 @@ with an XorvLedger receipt ([`0x07ed16…4899`](https://testnet.monadvision.com/
 and a Kimi verification. Measured by the broker on Monad: payment executed in 468 ms and final in
 1,147 ms; release executed in 302 ms and final in 973 ms. Both receipts came back in the send itself
 (`eth_sendRawTransactionSync`).
+
+**Fully hosted paid job (13 Oct):** the MCP agent bought a Kimi K3 answer from the hosted provider
+node on Railway, for $0.02 paid into XorvEscrow from the Privy wallet
+([fund `0x9d3ab6…c7b2`](https://testnet.monadvision.com/tx/0x9d3ab6147ac88fd14feedd7feef8ad1dae21b2389f7e4854d8386b67fb38c7b2),
+[release `0xb1cc49…b710`](https://testnet.monadvision.com/tx/0xb1cc49d5c863489678d9f1b7f69537eb427d0a4f4212d452bef1028e74b3b710),
+[ledger receipt `0x14f102…9b64`](https://testnet.monadvision.com/tx/0x14f1022608290821b49cfc269ba82e32890b283f1920b9ebce567e0c257c9b64)).
+Kimi's verifier scored it 95/100. Payment executed in 473 ms and was final in 1,150 ms; release
+executed in 177 ms and was final in 855 ms.
 
 **First CRE refund (13 Oct):** a $0.001 escrowed job was funded from the Privy wallet and left undelivered
 ([fund `0x7f1cfd…0a9c`](https://testnet.monadvision.com/tx/0x7f1cfd8d1a61f3276274912a8c364b8e8b0d371b98f5de50ffc091d0add80a9c)).

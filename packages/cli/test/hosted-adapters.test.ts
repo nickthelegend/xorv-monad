@@ -286,3 +286,13 @@ describe("pricing", () => {
     expect(usageCostUsd("kimi-k3", { prompt_tokens: 10 })).toBeNull();
   });
 });
+
+describe("XORV_HOSTED_MAX_TOKENS", () => {
+  it("caps the reply only when set to a positive integer", async () => {
+    const { maxTokensBody } = await import("../src/adapters/hosted.js");
+    expect(maxTokensBody({ XORV_HOSTED_MAX_TOKENS: "2000" })).toEqual({ max_tokens: 2000 });
+    expect(maxTokensBody({})).toEqual({});
+    expect(maxTokensBody({ XORV_HOSTED_MAX_TOKENS: "0" })).toEqual({});
+    expect(maxTokensBody({ XORV_HOSTED_MAX_TOKENS: "lots" })).toEqual({});
+  });
+});
