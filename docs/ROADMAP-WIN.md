@@ -186,3 +186,14 @@ transaction or hosting action was performed.
 | 1 | Settlement evidence: trust a facilitator's tx hash only once its receipt proves this authorization paid this job | parked in a git stash. The draft also requires durable payment persistence: without a durable store it answers 503, and 36 broker tests time out. It needs a design pass, not a patch |
 | 2 | First visit to /private: the vault lookup answers 200 `{exists: false}` instead of a 404, so the console stays clean (older brokers' 404 is still handled) | done |
 | 3 | Demo with the Cleanverse gate on and real A-Passes, so the badges show verified and unverified side by side | done. `pnpm demo` deploys CleanverseGate over the A-Pass contract cloned onto the fork and issues A-Passes (impersonating Cleanverse's validator) to everyone except borealis. All seeding still passes through the gate, and borealis is never quoted. Running it for real found and fixed a badge bug: every fresh check read as stale. Screens: `wave2/w3-apass-*.png` |
+
+## Shared keys (12 Oct)
+
+Installed in gitignored env files (mode 600; never printed or committed): Moonshot (Kimi), the shared
+Privy app, Envio. Nansen is deliberately not installed until the demo is recorded, and with no Qwen
+key the router stays "not configured".
+- **Privy:** `privy:setup` made a policy (`u89ezf36ig9fp8uei9o61s31`: x402 USDC ≤ $0.05 per payment,
+  plus XorvLedger ratings) and an MCP agent server wallet `0x6613490F1A424e7595149D26cF4e274C9C0a40fB`.
+  It needs test USDC from faucet.circle.com.
+- **Kimi:** the verifier now caps output at 1,200 tokens and caches verdicts by content, so the
+  same work is never paid for twice. One live call: kimi-k3 scored a test haiku 92/100 in 4.8 s.

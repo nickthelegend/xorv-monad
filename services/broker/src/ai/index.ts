@@ -197,6 +197,9 @@ export function createAiHooks(opts: CreateAiHooksOptions): AiHooks {
   };
   const bodies: Partial<Record<AiRoleName, Record<string, unknown>>> = {
     screener: screenerBody(screening.reasoning),
+    // A verdict is a few lines of JSON. The cap bounds what one job can cost on a paid
+    // model (Kimi's credit is limited), with room for a reasoning model's thinking.
+    verifier: { max_tokens: 1_200 },
   };
 
   const clientFor = (role: AiRoleName): RoleClient | null => {

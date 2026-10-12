@@ -299,6 +299,15 @@ describe("the Hunyuan screener", () => {
 // ---------------------------------------------------------------------------
 
 describe("the Kimi verifier", () => {
+  it("scores the same work once: a repeat comes from its cache, not another paid call", async () => {
+    const llm = stubLlm({ json: { score: 80, pass: true, rationale: "Fine.", flags: [] } });
+    const verifier = new KimiVerifier({ client: client("kimi", llm.fetch), log: quiet });
+    const first = await verifier.verify(job());
+    const second = await verifier.verify(job());
+    expect(second).toMatchObject({ score: first!.score, rationale: "Fine." });
+    expect(llm.calls).toHaveLength(1);
+  });
+
   it("scores a completed job", async () => {
     const llm = stubLlm({ json: { score: 86.6, pass: true, rationale: "A valid haiku on topic.", flags: ["Incomplete "] } });
     const verifier = new KimiVerifier({ client: client("kimi", llm.fetch), log: quiet });
