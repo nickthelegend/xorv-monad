@@ -5,6 +5,7 @@ import type { Job } from "@/lib/api";
 import { IS_LOCAL_CHAIN, NETWORK } from "@/lib/network";
 import { refundedByKeeper } from "@/lib/payment-timeline";
 import { Ext, Panel } from "@/components/ui";
+import { useLocalTime } from "@/lib/hooks";
 
 /**
  * How the buyer got their money back without the broker: the Chainlink CRE
@@ -13,10 +14,10 @@ import { Ext, Panel } from "@/components/ui";
  */
 export function CreReplay({ job, keeper }: { job: Job; keeper: string | null | undefined }) {
   const held = job.payment?.escrow;
+  const deadline = useLocalTime(held ? held.deadline * 1000 : null);
   if (!held || !keeper) return null;
   const done = refundedByKeeper(job, keeper);
   if (!done && held.state !== "funded") return null;
-  const deadline = new Date(held.deadline * 1000).toLocaleTimeString();
 
   const steps: { title: string; body: string; tx?: string | null }[] = [
     { title: "Cron trigger", body: "The workflow runs every 30 seconds on Chainlink's DON." },
