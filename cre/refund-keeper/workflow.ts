@@ -44,8 +44,12 @@ import { z } from "zod";
 export const configSchema = z.object({
   // Cron with a seconds field: "0 */5 * * * *" runs every five minutes.
   schedule: z.string(),
-  /** Envio HyperIndex GraphQL endpoint for the Xorv indexer. */
-  indexerUrl: z.string().url(),
+  /**
+   * Envio HyperIndex GraphQL endpoint for the Xorv indexer. A regex, not
+   * `z.string().url()`: zod's url check calls `new URL()`, which the CRE WASM
+   * runtime lacks, so it rejected every URL and the workflow never started.
+   */
+  indexerUrl: z.string().regex(/^https?:\/\/[^\s/?#]+[^\s]*$/),
   chainSelectorName: z.string(),
   escrowAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   keeperAddress: z.string().regex(/^0x[0-9a-fA-F]{40}$/),

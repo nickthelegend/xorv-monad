@@ -141,6 +141,14 @@ and a Kimi verification. Measured by the broker on Monad: payment executed in 46
 1,147 ms; release executed in 302 ms and final in 973 ms. Both receipts came back in the send itself
 (`eth_sendRawTransactionSync`).
 
+**First CRE refund (13 Oct):** a $0.001 escrowed job was funded from the Privy wallet and left undelivered
+([fund `0x7f1cfd…0a9c`](https://testnet.monadvision.com/tx/0x7f1cfd8d1a61f3276274912a8c364b8e8b0d371b98f5de50ffc091d0add80a9c)).
+After its deadline, `cre workflow simulate refund-keeper --broadcast` read it from the Envio index as
+Funded and past its deadline. It checked `isRefundable` on the escrow, then sent the report through the
+MockKeystoneForwarder to XorvRefundKeeper, which refunded the buyer
+([refund `0xa85c2f…cd15`](https://testnet.monadvision.com/tx/0xa85c2f69d7ccb7fea3d3d574d453f9974125b493675d626a2e037e8002decd15)).
+The index then showed the job as Refunded.
+
 The September deployment (the first XorvLedger, `0xc4b5…5FCD`, with its live paid job and receipt) stays
 on chain as history; its rows follow. Its record is `packages/contracts/deployments/monadTestnet-sept.json`.
 

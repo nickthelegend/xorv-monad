@@ -37,6 +37,10 @@ The steps below need a CRE account, a deployed escrow and keeper (`cd contracts 
    cre login
    ```
 
+   `config.staging.json` points at the live escrow and keeper, and at a local indexer
+   (`cd services/indexer && pnpm dev`, GraphQL on `127.0.0.1:8080`). The simulator runs on this machine,
+   so a local index works; a DON needs the hosted Envio Cloud URL instead.
+
 3. Simulate. This produces a real transaction on Monad testnet through the MockKeystoneForwarder. `CRE_ETH_PRIVATE_KEY` in `cre/.env` pays its gas:
 
    ```bash
