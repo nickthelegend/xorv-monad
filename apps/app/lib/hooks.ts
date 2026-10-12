@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { api, type NetworkInfo } from "@/lib/api";
+import { utcTime } from "@/lib/payment-timeline";
 
 /**
  * Polling, not sockets.
@@ -114,10 +115,17 @@ export function useDemoPayer(): DemoPayerInfo | null {
  * text and the browser's local text disagree, a React hydration error.
  */
 export function useLocalTime(ms: number | null | undefined): string {
+  const format = useTimeFormat();
+  return ms == null ? "" : format(ms);
+}
+
+/** The formatter behind `useLocalTime`, for code that builds sentences around a time. */
+export function useTimeFormat(): (ms: number) => string {
   // false while hydrating (the server snapshot), true after: no effect needed.
   const mounted = useSyncExternalStore(noSubscribe, () => true, () => false);
-  if (ms == null) return "";
-  return mounted ? new Date(ms).toLocaleTimeString() : `${new Date(ms).toISOString().slice(11, 19)} UTC`;
+  return mounted ? localTime : utcTime;
 }
+
+const localTime = (ms: number): string => new Date(ms).toLocaleTimeString();
 
 const noSubscribe = (): (() => void) => () => {};

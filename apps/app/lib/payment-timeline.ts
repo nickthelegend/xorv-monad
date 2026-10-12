@@ -49,7 +49,15 @@ export function refundedByKeeper(job: Job, keeper: string | null | undefined): b
   return Boolean(keeper && via && via.toLowerCase() === keeper.toLowerCase());
 }
 
-export function paymentTimeline(job: Job, opts: { keeper?: string | null } = {}): TimelineStep[] {
+export function paymentTimeline(
+  job: Job,
+  opts: {
+    keeper?: string | null;
+    /** How a clock time reads. The component passes a hydration-safe one; the default is UTC. */
+    formatTime?: (ms: number) => string;
+  } = {},
+): TimelineStep[] {
+  const formatTime = opts.formatTime ?? utcTime;
   const payment = job.payment;
   const held = payment?.escrow ?? null;
   const terminal = TERMINAL.has(job.status);
@@ -147,7 +155,7 @@ export function paymentTimeline(job: Job, opts: { keeper?: string | null } = {})
       steps.push({
         key: "settled",
         title: "Released on delivery",
-        detail: `Or refunded in full if the job fails. After ${new Date(held.deadline * 1000).toLocaleTimeString()} anyone can refund it, the Chainlink CRE keeper included.`,
+        detail: `Or refunded in full if the job fails. After ${formatTime(held.deadline * 1000)} anyone can refund it, the Chainlink CRE keeper included.`,
         at: null,
         tx: null,
         state: "pending",
@@ -169,4 +177,9 @@ export function paymentTimeline(job: Job, opts: { keeper?: string | null } = {})
   });
 
   return steps;
+}
+
+/** A clock time in UTC: the same on the server and in every browser. */
+export function utcTime(ms: number): string {
+  return `${new Date(ms).toISOString().slice(11, 19)} UTC`;
 }

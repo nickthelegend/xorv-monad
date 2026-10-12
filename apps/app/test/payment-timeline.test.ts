@@ -129,3 +129,14 @@ describe("offsetLabel", () => {
     expect(offsetLabel(null, T0)).toBeNull();
   });
 });
+
+describe("the refund deadline's clock", () => {
+  it("reads in UTC unless the caller passes a formatter, so server and browser agree", async () => {
+    const { paymentTimeline: timeline, utcTime } = await import("@/lib/payment-timeline");
+    expect(utcTime(Date.UTC(2026, 9, 13, 2, 15, 28))).toBe("02:15:28 UTC");
+    const running = { ...job(), status: "running", completedAt: null, resultHash: null } as unknown as Parameters<typeof timeline>[0];
+    const funded = withEscrow(running, { state: "funded", releaseTx: undefined });
+    expect(timeline(funded)[3]!.detail).toMatch(/After \d\d:\d\d:\d\d UTC anyone can refund it/);
+    expect(timeline(funded, { formatTime: () => "LOCAL" })[3]!.detail).toContain("After LOCAL anyone");
+  });
+});
