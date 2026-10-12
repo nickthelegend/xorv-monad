@@ -15,7 +15,7 @@ invented values.
 | **One-liner** | A decentralized marketplace for AI capacity: pay per job in USDC over x402 on Monad, with every job receipted on-chain and provider reputation held in ERC-8004. |
 | **Track** | **04: Trust, Identity & AI Infrastructure** |
 | **Repository** | <https://github.com/nickthelegend/xorv-monad> (MIT) |
-| **Demo video (~3 min)** | **TODO(deploy)**: record [RECORDING.md](RECORDING.md), upload, paste the link |
+| **Demo video (~3 min)** | [docs/demo/xorv-demo.mp4](docs/demo/xorv-demo.mp4) (2:02, 1080p, captions burned in plus [an .srt](docs/demo/xorv-demo.srt)). It was recorded on 13 Oct from the live hosted app, broker and provider on Monad testnet by `node e2e/web/record-demo.mjs .env`. In it an MCP agent pays $0.02 from its Privy server wallet into XorvEscrow, the escrow releases to the Kimi provider, Kimi verifies the answer, a Nansen wallet profile appears, and the CRE refund shows on chain. Every timing on screen was measured live. Upload this file to the portal's video field. |
 | **Founder pitch (≤2 min)** | **TODO(deploy)**: record the pitch in [RECORDING.md](RECORDING.md#the-founder-pitch-200-or-less), paste the link |
 | **Project graphic (≤3 MB)** | **TODO(deploy)**: export one. Suggested source: `brand/xorv-logo.svg` on the app's dark background |
 | **Working Monad link** | **TODO(deploy)**: the deployed app's https URL (Vercel project for `apps/app`, [DEPLOY.md §5](DEPLOY.md#5-deploy-the-app-and-the-landing-to-vercel)) |
@@ -475,7 +475,7 @@ the one judged.
       with the value from the command named next to it.
 
 **Record**
-- [ ] The ~3-minute demo ([RECORDING.md](RECORDING.md)), showing the Monad integration and each
+- [x] The demo video: [docs/demo/xorv-demo.mp4](docs/demo/xorv-demo.mp4), recorded from the live hosted stack. The longer narrated cut in [RECORDING.md](RECORDING.md), showing the Monad integration and each
       entered bounty: three Privy features, Envio, Nansen, Kimi, Qwen and the live cross-device Mera
       decrypt.
 - [ ] The ≤2-minute founder pitch (same file).

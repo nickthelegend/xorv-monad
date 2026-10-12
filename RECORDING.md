@@ -19,6 +19,14 @@ shot.
 
 ---
 
+## The recorded cut (13 Oct)
+
+[docs/demo/xorv-demo.mp4](docs/demo/xorv-demo.mp4) is a 2:02 captioned cut, recorded by `node e2e/web/record-demo.mjs .env` against the hosted stack:
+- one real $0.02 escrowed Kimi job, bought by the MCP agent;
+- Nansen switched on only for the take.
+
+It has no voice-over and no Privy Google login, which needs a person. The shot list below is the longer narrated version.
+
 ## Before you hit record
 
 **State on 13 Oct.**
