@@ -666,6 +666,14 @@ stops the broker. `GET /api/network` reports each role's state.
 | XorvRefundKeeper (Chainlink CRE receiver) | [`0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f) | forwarder: Chainlink's MockKeystoneForwarder `0xB9F7…D192` |
 | MCP agent's Privy server wallet | [`0x6613490F1A424e7595149D26cF4e274C9C0a40fB`](https://testnet.monadvision.com/address/0x6613490F1A424e7595149D26cF4e274C9C0a40fB) | policy: x402 USDC ≤ $0.05 per payment, plus ledger ratings |
 
+**First live escrowed job (12 Oct):** an MCP agent paid $0.001 USDC from its policy-bounded Privy server
+wallet into XorvEscrow ([fund `0xb95dc3…8bbd`](https://testnet.monadvision.com/tx/0xb95dc3df81f5b29b79d77f170dc9a644f6929a8cb40ce16c775f533aa0458bbd)),
+and the escrow released it to the provider ([release `0x23a926…0ca3`](https://testnet.monadvision.com/tx/0x23a926c9df1df27615c2ab820fc1deddc48e2e31190d8afca251f3ef12eb0ca3))
+with an XorvLedger receipt ([`0x07ed16…4899`](https://testnet.monadvision.com/tx/0x07ed16e0ab225ab103b1b527eb0348de0f095a4f31464df526a3e18c5e924899))
+and a Kimi verification. Measured by the broker on Monad: payment executed in 468 ms and final in
+1,147 ms; release executed in 302 ms and final in 973 ms. Both receipts came back in the send itself
+(`eth_sendRawTransactionSync`).
+
 The September deployment (the first XorvLedger, `0xc4b5…5FCD`, with its live paid job and receipt) stays
 on chain as history; its rows follow. Its record is `packages/contracts/deployments/monadTestnet-sept.json`.
 

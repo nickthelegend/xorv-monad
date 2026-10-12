@@ -42,6 +42,11 @@ export const TRANSFER_WITH_AUTHORIZATION_TYPES = {
   ],
 };
 
+/** EIP-3009 `ReceiveWithAuthorization`: what Xorv's escrow scheme signs (only XorvEscrow can redeem it). */
+export const RECEIVE_WITH_AUTHORIZATION_TYPES = {
+  ReceiveWithAuthorization: TRANSFER_WITH_AUTHORIZATION_TYPES.TransferWithAuthorization,
+};
+
 /** A policy condition in Privy's wire format (the subset used here). */
 export type PolicyCondition =
   | {
@@ -97,6 +102,8 @@ export function buildAgentPolicy(opts: {
   payTo?: string[];
   /** XorvLedger address; enables the rating rule. */
   ledger?: string | null;
+  /** XorvEscrow address; enables escrowed payments (into this escrow only, same cap). */
+  escrow?: string | null;
   name?: string;
 }): AgentPolicy {
   const cfg = networkConfig(opts.network);
@@ -141,6 +148,7 @@ export function buildAgentPolicy(opts: {
       conditions: payConditions,
     },
   ];
+  if (opts.escrow) rules.push(escrowRule(opts.network, opts.capUnits, opts.escrow));
   if (opts.ledger) {
     rules.push({
       name: "XorvLedger job ratings",
@@ -163,5 +171,25 @@ export function buildAgentPolicy(opts: {
     name: opts.name ?? `xorv-agent-${cfg.label}`,
     version: "1.0",
     rules,
+  };
+}
+
+/**
+ * Escrowed payments: a USDC `ReceiveWithAuthorization` under the same per-payment
+ * cap, whose `to` is this XorvEscrow and nothing else.
+ */
+export function escrowRule(network: string, capUnits: bigint, escrow: string): PolicyRule {
+  const cfg = networkConfig(network);
+  const rwa = { primary_type: "ReceiveWithAuthorization", types: RECEIVE_WITH_AUTHORIZATION_TYPES };
+  return {
+    name: `x402 escrow USDC <= ${formatUsdc(capUnits)} into XorvEscrow`,
+    method: "eth_signTypedData_v4",
+    action: "ALLOW",
+    conditions: [
+      { field_source: "ethereum_typed_data_domain", field: "chainId", operator: "eq", value: String(cfg.chainId) },
+      { field_source: "ethereum_typed_data_domain", field: "verifyingContract", operator: "in", value: addressVariants(cfg.usdc.address) },
+      { field_source: "ethereum_typed_data_message", field: "value", operator: "lte", value: capUnits.toString(), typed_data: rwa as never },
+      { field_source: "ethereum_typed_data_message", field: "to", operator: "in", value: addressVariants(normalizeAddress(escrow)), typed_data: rwa as never },
+    ],
   };
 }
