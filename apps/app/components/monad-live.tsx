@@ -93,7 +93,7 @@ export function CommitPipeline() {
           return (
             <div key={state}>
               <p className="tnum text-[20px] font-semibold tracking-[-0.02em] text-fg">{ms !== null ? `${ms} ms` : "—"}</p>
-              <p className="text-[11.5px] text-fg-4">median to {state.toLowerCase()}</p>
+              <p className="text-[12px] text-fg-3">median to {state.toLowerCase()}</p>
             </div>
           );
         })}
@@ -105,7 +105,7 @@ export function CommitPipeline() {
           <BlockChip key={block.blockId} block={block} />
         ))}
       </ol>
-      <p className="mt-2 flex flex-wrap gap-3 text-[11px] text-fg-4">
+      <p className="mt-2 flex flex-wrap gap-3 text-[12px] text-fg-3">
         {COMMIT_STATES.map((s) => (
           <span key={s} className="flex items-center gap-1">
             <span className={cn("inline-block h-2 w-2 rounded-sm border", CHIP[s])} />
@@ -143,7 +143,7 @@ function BlockChip({ block }: { block: TrackedBlock }) {
   const ms = block.ms[block.state];
   return (
     <li
-      className={cn("mono rounded-md border px-2 py-1 text-[11px] transition-colors duration-300", CHIP[block.state])}
+      className={cn("mono rounded-md border px-2.5 py-1 text-[12.5px] transition-colors duration-300", CHIP[block.state])}
       title={`#${block.number} ${block.state}${COMMIT_STATES.map((s) => (block.ms[s] !== undefined ? ` · ${s} +${block.ms[s]} ms` : "")).join("")}`}
       data-state={block.state}
     >
