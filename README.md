@@ -16,9 +16,10 @@ Monad's **ERC-8004** registries.
 [![ERC-8004](https://img.shields.io/badge/ERC--8004-v2.0.0-3DDCFF?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8004)
 [![License](https://img.shields.io/badge/license-MIT-50F0C8?style=flat-square)](LICENSE)
 
-**Demo video:** **TODO(deploy)** <!-- record RECORDING.md, paste the link --> ·
-**App:** **TODO(deploy)** <!-- the apps/app Vercel URL, DEPLOY.md §5 --> ·
-**XorvLedger:** [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) (Monad testnet, [verified on Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD))
+**Demo video:** [docs/demo/xorv-demo.mp4](docs/demo/xorv-demo.mp4) ·
+**App:** <https://xorv-monad-app.vercel.app> ·
+**Broker:** <https://broker-production-2d62.up.railway.app> ·
+**XorvLedger:** [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408) (Monad testnet, Sourcify-verified)
 
 </div>
 
@@ -148,15 +149,14 @@ Outside the pnpm workspace:
 | Nansen x402 payments: only the Monad mainnet USDC row of Nansen's real 402s is paid, at the captured price, under a per-call cap and a daily budget; a related-wallet rating refused with 403 and nothing relayed | `services/broker/test/trust.test.ts` (replays the captured 402s), "Nansen trust" in `services/broker/test/integration.test.ts` |
 | **XorvLedger deployed on Monad testnet** | ✅ [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD), deploy tx [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) in block 66379818, source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD); wired to the canonical ERC-8004 registries (`packages/contracts/deployments/monadTestnet.json`) |
 | **A job paid and receipted on Monad testnet** | ✅ A live `xorv run` job: x402 settlement [`0x579205fe…`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7), where Monad's public facilitator paid the gas and 0.01 USDC moved buyer → provider (the buyer holds no MON); then `JobRecorded` on XorvLedger [`0xbddafbf6…`](https://testnet.monadscan.com/tx/0xbddafbf69499df11f5c0289b4cefb6491cd0b168fd799bae2c77145dd855c6c7), carrying that payment tx and the result hash |
-| **XorvEscrow, the refund keeper and the Cleanverse gate on Monad testnet** | **Not yet. TODO(deploy)**: testnet deploys are on hold; the runbook is [docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md) |
-| **A CRE simulation broadcasting a refund** | **Not yet. TODO(deploy)**: `cre workflow simulate refund-keeper --target staging-settings --broadcast` after `cre login` and the escrow deploy |
-| **Rated and verified on Monad testnet** | **Not yet. TODO(deploy)**: `rating.txHash` and `verification.feedbackTxHash` from `curl -s <broker>/api/jobs/<job>` (needs the provider's ERC-8004 identity and `MOONSHOT_API_KEY`) |
-| **An MCP agent paying from a policy-bounded Privy server wallet on Monad testnet** | **Not yet. TODO(deploy)**: the `Payment:` link `xorv_run_job` prints |
-| **Envio indexer live on Envio Cloud** | **Not yet. TODO(deploy)**: the endpoint from `envio-cloud deployment endpoint <indexer> <commit>`, deployed between Oct 10 and 13 (see [SUBMISSION.md](SUBMISSION.md#before-you-submit)) |
-| **A Nansen call paid over x402 on Monad mainnet** | **Not yet. TODO(deploy)**: `curl -s <broker>/api/network \| jq -r .nansen.lastPaidTx.url`, with a mainnet key holding a few USDC (or one lookup with `pnpm nansen:probe --mode live <address>`) |
+| **XorvEscrow and the refund keeper on Monad testnet** | ✅ [`0x87d5…Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91) and [`0x69Ab…223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f), Sourcify-verified (12 Oct). The Cleanverse gate waits on A-Passes |
+| **A CRE simulation broadcasting a refund** | ✅ [`0xa85c2f…cd15`](https://testnet.monadvision.com/tx/0xa85c2f69d7ccb7fea3d3d574d453f9974125b493675d626a2e037e8002decd15): a real expired job refunded through XorvRefundKeeper (13 Oct) |
+| **Rated and verified on Monad testnet** | Kimi verifies every hosted job live (e.g. `job_ccTfHv-CM1O1`, 95/100). **Not yet** on chain: the feedback write and buyer ratings need the hosted provider's ERC-8004 identity, which waits on MON |
+| **An MCP agent paying from a policy-bounded Privy server wallet on Monad testnet** | ✅ into XorvEscrow [`0x9d3ab6…c7b2`](https://testnet.monadvision.com/tx/0x9d3ab6147ac88fd14feedd7feef8ad1dae21b2389f7e4854d8386b67fb38c7b2), released [`0xb1cc49…b710`](https://testnet.monadvision.com/tx/0xb1cc49d5c863489678d9f1b7f69537eb427d0a4f4212d452bef1028e74b3b710) |
+| **Envio indexer live on Envio Cloud** | **Not yet** (needs the user's GitHub login). It has run live locally against the testnet contracts (13 Oct), and the CRE refund read from it |
+| **A Nansen call paid over x402 on Monad mainnet** | **Not yet.** Nansen ran live with `NANSEN_API_KEY` (13 Oct, 4 calls); the x402 path needs a mainnet key holding USDC |
 
-Nothing in this README claims an on-chain transaction that isn't linked. Every **TODO(deploy)** names
-the command or file its value comes from, and is filled in after deployment.
+Nothing in this README claims an on-chain transaction that isn't linked. Every **Not yet** says what it waits on.
 
 ---
 
@@ -399,9 +399,9 @@ Chainlink CRE, Cleanverse CVI/CVA.
   verifier scores, shrunk toward a neutral prior (`services/broker/src/ai/reputation-book.ts`, one
   batched GraphQL query a minute at most). It falls back to the broker's own jobs when there is no
   indexer.
-- **Deployment.** **TODO(deploy)**: the Envio Cloud GraphQL endpoint (`envio-cloud deployment endpoint
-  <indexer> <commit>`). Envio Cloud's free plan keeps a deployment for 30 days, so it is deployed
-  between Oct 10 and 13.
+- **Deployment.** Envio Cloud waits on the user's GitHub login (`envio-cloud deployment endpoint
+  <indexer> <commit>` once it exists). Until then the indexer runs locally (`pnpm dev`) against the
+  testnet contracts.
 - **In the demo.** The network page and leaderboard, with the "indexed by Envio" label, and one live
   GraphQL query against the deployed indexer.
 
@@ -555,7 +555,7 @@ Chainlink CRE, Cleanverse CVI/CVA.
   reads and the on-chain receiver. It is tested on the CRE SDK's own test runtime and compiles to
   WASM; `cre workflow simulate --broadcast` is the live step.
 - **Code.** `cre/refund-keeper/` ([README](cre/README.md)), `contracts/src/XorvRefundKeeper.sol`.
-- **Live.** **TODO(deploy)**: the simulation's refund tx, after `cre login` and the escrow deploy
+- **Live.** On 13 Oct `cre workflow simulate --broadcast` refunded a real expired job: [`0xa85c2f…cd15`](https://testnet.monadvision.com/tx/0xa85c2f69d7ccb7fea3d3d574d453f9974125b493675d626a2e037e8002decd15)
   ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)).
 
 ### Cleanverse: identity-gated value movement
@@ -699,7 +699,7 @@ The September deployment (the first XorvLedger, `0xc4b5…5FCD`, with its live p
 on chain as history; its rows follow. Its record is `packages/contracts/deployments/monadTestnet-sept.json`.
 
 
-XorvLedger is live on Monad testnet. Every remaining **TODO(deploy)** row is filled from the source
+XorvLedger is live on Monad testnet. Every row is filled from the source
 named next to it; do not remove the rows. `<broker>` is the broker's public URL and `<job>` a job id.
 
 | | Monad testnet (`eip155:10143`) | Where the value comes from |
@@ -708,19 +708,19 @@ named next to it; do not remove the rows. `<broker>` is the broker's public URL 
 | XorvLedger deploy tx | [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) (block 66379818) | `txHash` in the same file |
 | XorvLedger owner | [`0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49`](https://testnet.monadscan.com/address/0x77bB70848eB39523fDA7Bb3E8Db57a4b31EE1C49) | `owner` in the same file (`XORV_LEDGER_OWNER`, a key the broker's host doesn't hold) |
 | Broker operator EOA (ledger writes, rating relay, verifier) | [`0x45d6510E68308566B7e1d7cA578707a59dC15752`](https://testnet.monadscan.com/address/0x45d6510E68308566B7e1d7cA578707a59dC15752) | `broker` in the same file; `pnpm setup:monad` prints it with its balance |
-| XorvEscrow, XorvRefundKeeper, CleanverseGate | **TODO(deploy)**: on hold; built and tested on local chains and Monad forks | `contracts/script/Deploy.s.sol` ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)) |
+| XorvEscrow, XorvRefundKeeper, CleanverseGate | [`0x87d5…Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91), [`0x69Ab…223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f); the gate waits on Cleanverse A-Passes | `contracts/script/Deploy.s.sol` ([docs/DEPLOY-LATER.md](docs/DEPLOY-LATER.md)) |
 | Facilitator | Monad's public facilitator, `https://x402-facilitator.molandak.org` (the default; it pays settlement gas) | `curl -s <broker>/api/network | jq .facilitator` |
 | Example x402 settlement (buyer → provider USDC) | [`0x579205fe…`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7) (0.01 USDC, gas paid by the public facilitator) | `curl -s <broker>/api/jobs/<job> \| jq -r .job.payment.txHash` |
 | Example `recordJobs` receipt | [`0xbddafbf6…`](https://testnet.monadscan.com/tx/0xbddafbf69499df11f5c0289b4cefb6491cd0b168fd799bae2c77145dd855c6c7) (`JobRecorded`) | `… \| jq -r .job.receiptTxHash` |
-| Example `rateJob` → ERC-8004 feedback | **TODO(deploy)** | `… \| jq -r .job.rating.txHash` |
-| Example Kimi `giveFeedback` (`xorv-verified`) | **TODO(deploy)** | `… \| jq -r .job.verification.feedbackTxHash` |
-| Example Privy server-wallet payment (MCP agent) | **TODO(deploy)** | the `Payment:` link `xorv_run_job` prints |
-| Example Nansen x402 payment (Monad **mainnet**, broker → Nansen) | **TODO(deploy)** | `curl -s <broker>/api/network \| jq -r .nansen.lastPaidTx.url` |
-| Demo provider's ERC-8004 agent | **TODO(deploy)** | the agent id from `xorv identity show`, as `https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/<agentId>` |
-| Envio GraphQL endpoint | **TODO(deploy)** | `envio-cloud deployment endpoint <indexer> <commit>` |
-| Broker URL | **TODO(deploy)** | `XORV_PUBLIC_URL` |
-| App URL | **TODO(deploy)** | the `apps/app` Vercel project ([DEPLOY.md §5](DEPLOY.md#5-deploy-the-app-and-the-landing-to-vercel)) |
-| Landing URL | **TODO(deploy)** | the `apps/landing` Vercel project |
+| Example `rateJob` → ERC-8004 feedback | Not yet: needs the hosted provider's ERC-8004 identity and a person logged in | `… \| jq -r .job.rating.txHash` |
+| Example Kimi `giveFeedback` (`xorv-verified`) | Kimi verifies live; the on-chain write waits on the provider's ERC-8004 identity | `… \| jq -r .job.verification.feedbackTxHash` |
+| Example Privy server-wallet payment (MCP agent) | [`0x9d3ab6…c7b2`](https://testnet.monadvision.com/tx/0x9d3ab6147ac88fd14feedd7feef8ad1dae21b2389f7e4854d8386b67fb38c7b2) | the `Payment:` link `xorv_run_job` prints |
+| Example Nansen x402 payment (Monad **mainnet**, broker → Nansen) | Not made: the live run used `NANSEN_API_KEY` | `curl -s <broker>/api/network \| jq -r .nansen.lastPaidTx.url` |
+| Demo provider's ERC-8004 agent | None yet (registering spends MON, which is held for the top-up) | the agent id from `xorv identity show`, as `https://testnet.monadscan.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/<agentId>` |
+| Envio GraphQL endpoint | Waits on the user's Envio Cloud login; the indexer runs locally meanwhile | `envio-cloud deployment endpoint <indexer> <commit>` |
+| Broker URL | <https://broker-production-2d62.up.railway.app> | `XORV_PUBLIC_URL` |
+| App URL | <https://xorv-monad-app.vercel.app> | the `apps/app` Vercel project ([DEPLOY.md §5](DEPLOY.md#5-deploy-the-app-and-the-landing-to-vercel)) |
+| Landing URL | Not deployed: the app is the entry point | the `apps/landing` Vercel project |
 | USDC (Circle) | [`0x534b2f3A21130d7a60830c2Df862319e593943A3`](https://testnet.monadscan.com/token/0x534b2f3A21130d7a60830c2Df862319e593943A3) |
 | ERC-8004 Identity / Reputation | `0x8004A818BFB912233c491871b3d84c89A494BD9e` / `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
 
