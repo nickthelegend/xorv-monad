@@ -343,8 +343,12 @@ Xorv is entered in Track 04, so it can take the bounties marked **All tracks** a
 the portal card, then says what the integration does in the product, how it meets the card, where the
 code is, and where it appears in the demo ([RECORDING.md](RECORDING.md)).
 
-**Bounties entered:** Privy, Envio, Nansen, Kimi, Mera (One Passkey, Many Keys), Qwen 3.8 Max,
-Chainlink CRE, Cleanverse CVI/CVA.
+**Bounties:** the portal decisions are in [docs/PORTAL-COPY.md](docs/PORTAL-COPY.md#bounties).
+- **Submitted:** Privy, Chainlink CRE and Kimi.
+- **Conditional:** Nansen (with the recording), Envio (once on Envio Cloud), Cleanverse CVI (as fork evidence) and Mera (after a two-device check).
+- **Held:** Qwen 3.8 Max, which needs a key.
+
+The sections below document all of them.
 
 ### Privy: the account that pays, rates, and runs agents
 

@@ -173,3 +173,31 @@ The judge's one paid job: `job_4bqsF7v5GZI-`, payment `0x7cd2a01897f99f395449da7
 - Envio Cloud.
 - Nansen live (shared credits; recording only).
 - The Qwen and Hunyuan keys.
+
+## Round 3 verdict (fresh judge, no payment, 20:50 IST): **7.4 / 10**
+
+| Criterion | Round 1 | Round 2 | Round 3 |
+|---|---:|---:|---:|
+| Product quality | 7 | 7 | 7 |
+| Technical excellence | 8 | 6 | 8 |
+| Monad integration | 8 | 8 | 8 |
+| Track fit | 7 | 6 | 8 |
+| Innovation | 6 | 6 | 6 |
+| **Weighted** | **7.2** | **6.6** | **7.4** |
+
+**Bounties in round 3:** Privy 78, CRE 67, Kimi 67, Nansen (conditional) 55, Cleanverse (fork evidence) 50, Envio: don't enter until deployed.
+
+**Its strongest objection:** the final rule (release only after the on-chain verdict, from 20:25) has no live job yet. The Kimi row still cited the pre-gate pair. Every buyer and provider is the team's own.
+
+**Fixed after round 3:**
+- The Kimi row cites the `job_qYHL9A_f9aGZ` pair (feedback, then release, tx index 1 then 2), and says on-chain feedback started with the provider's identity.
+- The README's bounty list matches the portal's submit, conditional and held decisions.
+- The CRE row names the simulator's broadcasting key and the MockKeystoneForwarder. XorvRefundKeeper's `onReport` reverts for any other sender.
+- The job page no longer claims a release followed the on-chain verdict; it states the verdict's feedback tx.
+
+**Needs MON or the user:**
+- **Post-gate live jobs.** 3–5 jobs, including a fail → refund, would show the final rule live. That is about 0.15 MON each from the facilitator and operator, plus 0.02 USDC per job. It is held under the no-testnet-spend rule; the runbook's shot 9b does it at recording time.
+- **Outside buyers and providers.** An independent buyer and provider.
+- **A CRE DON deploy.**
+- **Envio Cloud.**
+- **Nansen** on during judging.
