@@ -2913,9 +2913,20 @@ export function createApp(deps: AppDeps) {
    */
   function releaseVerdict(job: StoredJob): "release" | "refund" | "wait" {
     if (!config.releaseOnVerdict || !deps.ai?.verifier || !verifiable(job)) return "release";
-    if (job.verification) return job.verification.pass ? "release" : "refund";
     const since = job.completedAt ?? Date.now();
-    if (Date.now() - since < (config.verdictGraceMs ?? VERDICT_GRACE_MS)) return "wait";
+    const withinGrace = Date.now() - since < (config.verdictGraceMs ?? VERDICT_GRACE_MS);
+    const v = job.verification;
+    if (v) {
+      // When the verdict is going on chain (ERC-8004 feedback), the money moves
+      // only after it lands, so anyone can check the release followed a recorded
+      // pass. A write that failed, or is refused, is recorded on the job and
+      // doesn't hold the money; neither does one stuck past the grace period.
+      const sink = deps.ai?.verifier?.feedback ?? null;
+      const onChain = sink !== null && !("skip" in verificationTarget(job, sink));
+      if (onChain && !v.feedbackTxHash && !v.feedbackError && withinGrace) return "wait";
+      return v.pass ? "release" : "refund";
+    }
+    if (withinGrace) return "wait";
     console.warn(`[broker] no verdict for ${job.id} within the grace period; releasing without one`);
     return "release";
   }

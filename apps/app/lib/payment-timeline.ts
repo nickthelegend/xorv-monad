@@ -121,7 +121,7 @@ export function paymentTimeline(
       steps.push({
         key: "settled",
         title: `Released to ${provider}`,
-        detail: `XorvEscrow paid ${amount} USDC to the provider, with the result hash on-chain${by}.`,
+        detail: `XorvEscrow paid ${amount} USDC to the provider, with the result hash on-chain${by}.${opts.releaseOnVerdict && job.verification?.pass && job.verification.feedbackTxHash ? ` Released after the verifier's pass was recorded on chain (ERC-8004 feedback ${shortHex(job.verification.feedbackTxHash)}).` : ""}`,
         at: held.settledAt ?? null,
         tx: held.releaseTx ?? null,
         state: "done",

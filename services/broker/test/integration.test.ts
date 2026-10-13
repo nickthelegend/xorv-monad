@@ -1930,7 +1930,10 @@ class StubFeedback implements FeedbackSink {
   readonly reputationRegistry = "0x8004B663056A597Dffe9eCcC1965A193B7388713";
   readonly writes: GiveFeedbackInput[] = [];
   fail = false;
+  /** Milliseconds each write takes, to show what waits on it. */
+  delayMs = 0;
   async giveFeedback(input: GiveFeedbackInput) {
+    if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
     if (this.fail) throw new Error("insufficient funds for gas");
     this.writes.push(input);
     const txHash = `0x${"fb".repeat(31)}${this.writes.length.toString(16).padStart(2, "0")}`;
@@ -2234,6 +2237,29 @@ describe("AI roles", () => {
       expect(job.status).toBe("completed");
       expect((job.payment as Json).escrow).toMatchObject({ state: "refunded", refundReason: "failed verification" });
       expect(((job.payment as Json).escrow as Json).refundTx).toMatch(/^0x[0-9a-f]{64}$/);
+      provider.close();
+    });
+
+    it("releases only after the verdict is on chain when the provider has an ERC-8004 identity", async () => {
+      const s = scriptedAi({ screen: ALLOW, verify: { score: 93, pass: true, rationale: "Correct.", flags: [] } });
+      s.feedback.delayMs = 600;
+      const escrow = new MemoryEscrow();
+      ai = await boot({ ai: s.ai, escrow, config: { releaseOnVerdict: true } });
+      ai.agentWallets.set("7", PAYEE_A);
+      const provider = await connectProvider(ai, { agentId: "7" });
+      const { body: q } = await quoteWith(ai, { prompt: "explain x402 in one line" });
+      const { body: paid } = await pay(ai, q.quoteId);
+      await provider.completeNextJob("x402 is HTTP 402 plus a signed payment.");
+      // The verdict is in, but its feedback write is still in flight: the money stays put.
+      const judged = await waitFor(async () => {
+        const j = await getJob(ai, paid.jobId);
+        return j.verification?.pass ? j : undefined;
+      });
+      expect(((judged.payment as Json).escrow as Json).state).toBe("funded");
+      const job = await settled(paid.jobId);
+      expect((job.payment as Json).escrow).toMatchObject({ state: "released" });
+      expect(job.verification.feedbackTxHash).toMatch(/^0x/);
+      expect(escrow.calls.map((c) => c.op)).toContain("release");
       provider.close();
     });
 
