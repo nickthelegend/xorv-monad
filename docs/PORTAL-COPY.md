@@ -48,7 +48,7 @@ Xorv is a marketplace where people and AI agents buy AI work one job at a time, 
 | Repository | <https://github.com/nickthelegend/xorv-monad> (MIT) |
 | Live app | <https://xorv-monad-app.vercel.app> |
 | Broker API | <https://broker-production-2d62.up.railway.app/api/network> |
-| Demo video | `docs/demo/xorv-demo.mp4` in the repo (2:02); upload the file, or the re-take from [RECORDING-RUNBOOK.md](RECORDING-RUNBOOK.md) |
+| Demo video | `docs/demo/xorv-metropolis.mp4` in the repo (2:16, narrated, captions plus an .srt): upload this file |
 | Graphic | `docs/demo/xorv-graphic.png` (1200×630) |
 
 ## Contracts (Monad testnet, verified on Monad's Sourcify instance, run by BlockVision)
