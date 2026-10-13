@@ -231,6 +231,8 @@ export interface EscrowRecord {
   provider: string;
   releaseTx?: string;
   refundTx?: string;
+  /** Why the broker refunded rather than released, when it was not a failed job (e.g. "failed verification"). */
+  refundReason?: string;
   reassignTxs?: string[];
   /** SHA-256 of the result, recorded on chain with the release. */
   resultHash?: string;
@@ -680,6 +682,8 @@ export interface NetworkInfo {
     url: string;
     /** Seconds from quote until anyone (a keeper) may refund the buyer. */
     deadlineSeconds: number;
+    /** Delivered jobs are released only once the verifier passes them (refunded on a fail). */
+    releaseOnVerdict?: boolean;
     /** XorvRefundKeeper, which the Chainlink CRE workflow reports to; null when this broker doesn't know it. */
     keeper?: string | null;
     /** Cleanverse CVI: when set, only active A-Pass holders can fund the escrow or be paid by it. */

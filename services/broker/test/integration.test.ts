@@ -2202,6 +2202,52 @@ describe("AI roles", () => {
     kimi.close();
   });
 
+  describe("with XORV_RELEASE_ON_VERDICT", () => {
+    async function escrowedJob(verify: Json | null, config: Partial<BrokerConfig> = {}) {
+      const s = scriptedAi({ screen: ALLOW, ...(verify ? { verify } : {}) });
+      const escrow = new MemoryEscrow();
+      ai = await boot({ ai: s.ai, escrow, config: { releaseOnVerdict: true, ...config } });
+      const provider = await connectProvider(ai);
+      const { body: q } = await quoteWith(ai, { prompt: "explain x402 in one line" });
+      const { body: paid } = await pay(ai, q.quoteId);
+      await provider.completeNextJob("x402 is HTTP 402 plus a signed payment.");
+      return { s, escrow, provider, jobId: paid.jobId as string };
+    }
+    const settled = (jobId: string) =>
+      waitFor(async () => {
+        const j = await getJob(ai, jobId);
+        const state = ((j.payment as Json)?.escrow as Json | undefined)?.state;
+        return state === "released" || state === "refunded" ? j : undefined;
+      }, 6_000);
+
+    it("releases the escrow once the verifier passes the work", async () => {
+      const { provider, jobId } = await escrowedJob({ score: 91, pass: true, rationale: "Correct.", flags: [] });
+      const job = await settled(jobId);
+      expect(job.verification).toMatchObject({ pass: true });
+      expect((job.payment as Json).escrow).toMatchObject({ state: "released" });
+      provider.close();
+    });
+
+    it("refunds the buyer, at the provider's fault, when the verifier fails the work", async () => {
+      const { provider, jobId } = await escrowedJob({ score: 20, pass: false, rationale: "Off topic.", flags: ["off_topic"] });
+      const job = await settled(jobId);
+      expect(job.status).toBe("completed");
+      expect((job.payment as Json).escrow).toMatchObject({ state: "refunded", refundReason: "failed verification" });
+      expect(((job.payment as Json).escrow as Json).refundTx).toMatch(/^0x[0-9a-f]{64}$/);
+      provider.close();
+    });
+
+    it("releases without a verdict once the grace period runs out", async () => {
+      const { provider, jobId } = await escrowedJob({ broken: true } as Json, { verdictGraceMs: 300 });
+      // A malformed verdict is no verdict; the sweep releases after the grace.
+      await new Promise((r) => setTimeout(r, 400));
+      ai.sweep();
+      const job = await settled(jobId);
+      expect((job.payment as Json).escrow).toMatchObject({ state: "released" });
+      provider.close();
+    });
+  });
+
   it("never sends a private job's sealed result to the verifier", async () => {
     const s = scriptedAi({ screen: ALLOW, verify: { score: 90, pass: true, rationale: "x", flags: [] } });
     ai = await boot({ ai: s.ai });

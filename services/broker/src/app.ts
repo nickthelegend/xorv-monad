@@ -146,6 +146,8 @@ import {
 } from "./public.js";
 
 /** How long registration waits for its ledger write before answering without it. */
+/** How long an escrow release waits for the verifier's verdict before releasing without it. */
+const VERDICT_GRACE_MS = 120_000;
 const REGISTRATION_WAIT_MS = 2_500;
 /** How long registration waits on the Identity Registry to verify a claimed agent id. */
 const AGENT_CHECK_TIMEOUT_MS = 4_000;
@@ -779,6 +781,8 @@ export function createApp(deps: AppDeps) {
             deadlineSeconds: escrowDeadlineSeconds,
             keeper: config.refundKeeperAddress ?? null,
             identityGate: identity?.gate() ?? null,
+            // Delivered jobs wait for the verifier: released on a pass, refunded on a fail.
+            releaseOnVerdict: Boolean(config.releaseOnVerdict && deps.ai?.verifier),
           }
         : null,
       // Monad's reserve rule, for the accounts that pay this broker's gas.
@@ -2853,6 +2857,16 @@ export function createApp(deps: AppDeps) {
     if (!escrow || !job || !held || held.state !== "funded" || !isTerminal(job.status) || settling.has(jobId) || cancelling.has(jobId)) return;
     settling.add(jobId);
     try {
+      const verdict = job.status === "completed" && job.resultHash ? releaseVerdict(job) : null;
+      if (verdict === "wait") return;
+      if (verdict === "refund") {
+        // The verifier failed the delivered work: the buyer gets the money back, at the provider's fault.
+        const started = Date.now();
+        const tx = await escrow.refund(held.jobId as Hex);
+        patchEscrow(jobId, { state: "refunded", refundTx: tx, settledAt: Date.now(), lastError: undefined, refundReason: "failed verification" });
+        timeEscrowSettlement(jobId, tx, started, Date.now());
+        return;
+      }
       if (job.status === "completed" && job.resultHash) {
         const finisher = job.providerId ? registry.get(job.providerId)?.address : undefined;
         if (finisher && !(await repointEscrow(jobId, finisher))) return;
@@ -2887,6 +2901,23 @@ export function createApp(deps: AppDeps) {
     } finally {
       settling.delete(jobId);
     }
+  }
+
+  /**
+   * With XORV_RELEASE_ON_VERDICT on, a delivered job's escrow follows the
+   * verifier: release on pass, refund on fail, and wait while the verdict is
+   * pending. A verdict that never comes (verifier down, or past its timeout)
+   * must not freeze the provider's money, so after a grace period the job is
+   * released as it would be without the gate. Jobs the verifier can't read
+   * (private ones) and brokers without a verifier release as before.
+   */
+  function releaseVerdict(job: StoredJob): "release" | "refund" | "wait" {
+    if (!config.releaseOnVerdict || !deps.ai?.verifier || !verifiable(job)) return "release";
+    if (job.verification) return job.verification.pass ? "release" : "refund";
+    const since = job.completedAt ?? Date.now();
+    if (Date.now() - since < (config.verdictGraceMs ?? VERDICT_GRACE_MS)) return "wait";
+    console.warn(`[broker] no verdict for ${job.id} within the grace period; releasing without one`);
+    return "release";
   }
 
   // -------------------------------------------------------------------------

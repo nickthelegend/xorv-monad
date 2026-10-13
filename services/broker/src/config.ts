@@ -113,6 +113,13 @@ export interface BrokerConfig {
   indexerUrl: string | null;
   /** Read Chainlink Data Feeds (USDC peg guard, MON/USD gas pricing). XORV_PRICE_FEEDS=off disables. */
   priceFeeds?: boolean;
+  /**
+   * Hold an escrowed job's release for the verifier's verdict: release on pass, refund on fail.
+   * XORV_RELEASE_ON_VERDICT=on. Off (the default), the verdict only feeds reputation.
+   */
+  releaseOnVerdict?: boolean;
+  /** How long a release waits for a verdict that never comes, before releasing anyway. */
+  verdictGraceMs?: number;
   corsOrigins: string[];
   feeBps: number;
   /** SQLite file for durable jobs and earnings; "off" disables persistence. */
@@ -309,6 +316,7 @@ export function loadConfig(): BrokerConfig {
     appUrl: optional("XORV_APP_URL")?.replace(/\/+$/, "") ?? null,
     indexerUrl: optional("XORV_INDEXER_URL"),
     priceFeeds: (optional("XORV_PRICE_FEEDS") ?? "on").toLowerCase() !== "off",
+    releaseOnVerdict: (optional("XORV_RELEASE_ON_VERDICT") ?? "off").toLowerCase() === "on",
     corsOrigins: (process.env.XORV_CORS_ORIGINS ?? "")
       .split(",")
       .map((s) => s.trim())

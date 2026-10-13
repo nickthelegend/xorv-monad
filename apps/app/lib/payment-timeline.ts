@@ -53,6 +53,8 @@ export function paymentTimeline(
   job: Job,
   opts: {
     keeper?: string | null;
+    /** The broker holds a delivered job's release for the verifier's verdict. */
+    releaseOnVerdict?: boolean;
     /** How a clock time reads. The component passes a hydration-safe one; the default is UTC. */
     formatTime?: (ms: number) => string;
   } = {},
@@ -136,8 +138,11 @@ export function paymentTimeline(
     } else if (held.state === "refunded") {
       steps.push({
         key: "settled",
-        title: "Refunded to the buyer",
-        detail: `XorvEscrow returned the full ${amount} USDC. The provider was paid nothing${by}.`,
+        title: held.refundReason === "failed verification" ? "Refunded: the work failed verification" : "Refunded to the buyer",
+        detail:
+          held.refundReason === "failed verification"
+            ? `The verifier failed the delivered work, so XorvEscrow returned the full ${amount} USDC to the buyer, at the provider's fault.`
+            : `XorvEscrow returned the full ${amount} USDC. The provider was paid nothing${by}.`,
         at: held.settledAt ?? null,
         tx: held.refundTx ?? null,
         state: "done",
@@ -146,7 +151,11 @@ export function paymentTimeline(
       steps.push({
         key: "settled",
         title: job.status === "completed" ? "Releasing to the provider" : "Refunding the buyer",
-        detail: held.lastError ? `Retrying: ${held.lastError}` : null,
+        detail: held.lastError
+          ? `Retrying: ${held.lastError}`
+          : job.status === "completed" && !job.verification && opts.releaseOnVerdict
+            ? "Waiting for the verifier's verdict: released on a pass, refunded on a fail."
+            : null,
         at: null,
         tx: null,
         state: "active",

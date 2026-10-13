@@ -140,3 +140,14 @@ describe("the refund deadline's clock", () => {
     expect(timeline(funded, { formatTime: () => "LOCAL" })[3]!.detail).toContain("After LOCAL anyone");
   });
 });
+
+describe("a release held for the verifier", () => {
+  it("says it is waiting for the verdict, and names a failed verification as the refund's reason", async () => {
+    const { paymentTimeline: timeline } = await import("@/lib/payment-timeline");
+    const delivered = withEscrow({ ...job(), verification: null } as never, { state: "funded", releaseTx: undefined });
+    expect(timeline(delivered, { releaseOnVerdict: true })[3]!.detail).toMatch(/Waiting for the verifier's verdict/);
+    expect(timeline(delivered)[3]!.detail).toBeNull();
+    const failed = withEscrow(job(), { state: "refunded", releaseTx: undefined, refundTx: "0xrefund", refundReason: "failed verification" } as never);
+    expect(timeline(failed)[3]).toMatchObject({ title: "Refunded: the work failed verification", tx: "0xrefund" });
+  });
+});

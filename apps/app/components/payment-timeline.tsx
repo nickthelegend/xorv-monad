@@ -5,7 +5,7 @@ import { explorerAddress, explorerTx, shortHex } from "@xorv/protocol/web";
 import type { Job } from "@/lib/api";
 import { NETWORK } from "@/lib/network";
 import { EASE, useEntrance } from "@/lib/motion";
-import { useTimeFormat } from "@/lib/hooks";
+import { useNetworkInfo, useTimeFormat } from "@/lib/hooks";
 import { offsetLabel, paymentTimeline, type StepState } from "@/lib/payment-timeline";
 import { Ext, Panel } from "@/components/ui";
 import { TxBadge } from "@/components/tx-badge";
@@ -24,7 +24,8 @@ import { cn } from "@/lib/utils";
 export function PaymentTimeline({ job, keeper }: { job: Job; keeper?: string | null }) {
   const animate = useEntrance();
   const formatTime = useTimeFormat();
-  const steps = paymentTimeline(job, { keeper, formatTime });
+  const releaseOnVerdict = useNetworkInfo()?.escrow?.releaseOnVerdict ?? false;
+  const steps = paymentTimeline(job, { keeper, formatTime, releaseOnVerdict });
   const start = job.payment?.settledAt ?? null;
   const escrow = job.payment?.escrow ?? null;
 
