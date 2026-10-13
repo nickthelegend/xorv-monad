@@ -7,7 +7,7 @@ Rent out the AI subscription or model key you already pay for. Get paid **per jo
 [x402](https://x402.org)**, with every job receipted on-chain and every provider's reputation held in
 Monad's **ERC-8004** registries.
 
-**[▶ Demo video (2:02)](docs/demo/xorv-demo.mp4)**, recorded live on Monad testnet from the hosted app.
+**[▶ Metropolis demo video (2:16)](docs/demo/xorv-metropolis.mp4)** ([captions](docs/demo/xorv-metropolis.srt)). It has an ElevenLabs-narrated intro, then the live hosted app on Monad testnet. The job bought on camera is `job_2pu9KhyvMlUX`: its payment executed in 516 ms and was final in 1.08 s. Kimi's verdict [`0xb9d4c6…`](https://testnet.monadvision.com/tx/0xb9d4c6012128c7883a23691a81857c85709941ad4dff99e137ab20c65fb74749) is in block 70750655, before the release [`0x62e327…`](https://testnet.monadvision.com/tx/0x62e32773a577b4c0ec053eeada6099bc38e219e8c273606ef24c37c09988af30) in block 70750656. The earlier captions-only cut: [docs/demo/xorv-demo.mp4](docs/demo/xorv-demo.mp4).
 
 **Sponsors and Monad-native features:** [docs/SPONSOR-COVERAGE.md](docs/SPONSOR-COVERAGE.md) lists 8 sponsor protocols working: Chainlink CRE, Chainlink Data Feeds, Privy, Kimi, Envio, Nansen, Agora AUSD ([an AUSD escrow job on testnet](https://testnet.monadvision.com/tx/0x3ac185126ec55ba765456680c827363fcfa7d6534b5dc80f28c5d4faa68d96e2)) and Cleanverse (fork evidence on the real A-Pass). It also lists 4 partial and 13 not used, each with a reason. It also covers the 8 Monad-native features.
 

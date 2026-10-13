@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!-- Xorv's intro and outro cards for the Metropolis video. The timeline (scene windows and caption
+     chunks, from the narration's own word timestamps) is injected as window.TIMELINE; window.go()
+     starts the clock. Captured at 1920x1080 by render-cards.mjs. -->
+<style>
+  :root { --bg:#08080a; --fg:#f4f4f5; --fg2:#c4c4cc; --fg3:#8a8a96; --line:#26262d; --a:#7C5CFF; --b:#4C9BFF; --c:#3DDCFF; --live:#4ade80; }
+  * { box-sizing:border-box; margin:0; padding:0 }
+  html,body { width:1920px; height:1080px; background:var(--bg); color:var(--fg); font-family:Inter, "SF Pro Display", system-ui, sans-serif; overflow:hidden }
+  .grid { position:absolute; inset:0; background-image:linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size:96px 96px; opacity:.25; mask-image:radial-gradient(ellipse at center, #000 30%, transparent 75%) }
+  .glow { position:absolute; width:900px; height:900px; left:510px; top:90px; border-radius:50%; background:radial-gradient(circle, rgba(124,92,255,.22), rgba(61,220,255,.06) 50%, transparent 70%); filter:blur(20px) }
+  .scene { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; opacity:0; transform:translateY(16px); transition:opacity .6s ease, transform .6s ease }
+  .scene.on { opacity:1; transform:none }
+  h1 { font-size:76px; font-weight:650; letter-spacing:-.03em; text-align:center; line-height:1.08; max-width:1500px }
+  h2 { font-size:38px; font-weight:450; color:var(--fg2); letter-spacing:-.01em; text-align:center; margin-top:28px; max-width:1400px; line-height:1.3 }
+  .grad { background:linear-gradient(90deg, var(--a), var(--b), var(--c)); -webkit-background-clip:text; background-clip:text; color:transparent }
+  .reveal { opacity:0; transform:translateY(10px); transition:opacity .5s ease, transform .5s ease }
+  .on .reveal { opacity:1; transform:none }
+  .on .d1 { transition-delay:1.6s } .on .d2 { transition-delay:3.2s } .on .d3 { transition-delay:4.8s } .on .d4 { transition-delay:6.4s } .on .d5 { transition-delay:8.4s }
+  .agents { display:flex; gap:28px; margin-top:56px }
+  .agent { width:150px; height:150px; border:1px solid var(--line); border-radius:28px; display:flex; align-items:center; justify-content:center; font-size:22px; color:var(--fg2); background:rgba(255,255,255,.02) }
+  .checks { display:flex; gap:40px; margin-top:56px }
+  .check { padding:26px 36px; border:1px solid var(--line); border-radius:20px; font-size:32px; color:var(--fg2); background:rgba(255,255,255,.02) }
+  .check b { color:var(--fg) }
+  .flow { display:flex; align-items:center; gap:22px; margin-top:64px }
+  .node { padding:24px 30px; border:1px solid var(--line); border-radius:20px; font-size:28px; color:var(--fg2); background:rgba(255,255,255,.02); text-align:center; min-width:210px }
+  .node small { display:block; font-size:18px; color:var(--fg3); margin-top:6px }
+  .node.hl { border-color:transparent; background:linear-gradient(var(--bg),var(--bg)) padding-box, linear-gradient(90deg,var(--a),var(--c)) border-box; color:var(--fg) }
+  .arrow { font-size:34px; color:var(--fg3) }
+  .refund { margin-top:26px; font-size:24px; color:var(--fg3) }
+  .stats { display:flex; gap:56px; margin-top:56px }
+  .stat { text-align:center } .stat .n { font-size:110px; font-weight:650; letter-spacing:-.04em } .stat .l { font-size:24px; color:var(--fg3); margin-top:6px }
+  .mark { width:180px; height:180px }
+  .url { margin-top:40px; font-size:34px; color:var(--fg2); font-family:"SF Mono", ui-monospace, monospace }
+  .tag { position:absolute; top:44px; right:56px; font-size:18px; letter-spacing:.14em; color:var(--live); border:1px solid rgba(74,222,128,.4); padding:10px 16px; border-radius:999px }
+  .brand { position:absolute; top:40px; left:56px; display:flex; align-items:center; gap:14px; font-size:30px; font-weight:650 }
+  .brand svg { width:40px; height:40px }
+  #cap { position:absolute; left:0; right:0; bottom:0; padding:30px 120px 40px; text-align:center; font-size:38px; font-weight:500; line-height:1.3; color:var(--fg); background:linear-gradient(transparent, rgba(8,8,10,.92) 35%); min-height:150px }
+</style>
+</head>
+<body>
+<div class="grid"></div><div class="glow"></div>
+<div class="brand" id="brand"><svg viewBox="0 0 64 64"><defs><linearGradient id="g" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7C5CFF"/><stop offset=".5" stop-color="#4C9BFF"/><stop offset="1" stop-color="#3DDCFF"/></linearGradient></defs><g stroke="url(#g)" stroke-width="7" stroke-linecap="round" fill="none"><path d="M14 14 L27 27"/><path d="M37 37 L50 50"/><path d="M50 14 L37 27"/><path d="M27 37 L14 50"/></g><rect x="27.6" y="27.6" width="8.8" height="8.8" rx="2.2" transform="rotate(45 32 32)" fill="url(#g)"/></svg>Xorv</div>
+
+<section class="scene" id="i1">
+  <h1>Millions pay for AI<br/>they barely use.</h1>
+  <h2 class="reveal d3">And AI agents need to buy work from other AIs, <span class="grad">one job at a time</span>.</h2>
+  <div class="agents reveal d4"><div class="agent">agent</div><div class="agent">→</div><div class="agent">model</div><div class="agent">→</div><div class="agent">result</div></div>
+</section>
+
+<section class="scene" id="i2">
+  <h1>Paying a stranger<br/>is the hard part.</h1>
+  <div class="checks"><div class="check reveal d1">Was the work <b>done</b>?</div><div class="check reveal d2">Do I get my money <b>back</b> if not?</div></div>
+</section>
+
+<section class="scene" id="i3">
+  <h1><span class="grad">Xorv</span> is a marketplace for AI work.</h1>
+  <h2>Pay per job, in USDC.</h2>
+  <div class="flow">
+    <div class="node reveal d1">Buyer<small>signs once</small></div><div class="arrow reveal d1">→</div>
+    <div class="node hl reveal d2">XorvEscrow<small>holds the USDC</small></div><div class="arrow reveal d2">→</div>
+    <div class="node reveal d3">AI verifier<small>checks the result</small></div><div class="arrow reveal d3">→</div>
+    <div class="node reveal d4">Provider<small>paid on a pass</small></div>
+  </div>
+  <div class="refund reveal d5">↩ a fail, or a missed deadline, refunds the buyer in full</div>
+</section>
+
+<section class="scene" id="i4">
+  <h1>Instant, on <span class="grad">Monad</span>.</h1>
+  <div class="stats">
+    <div class="stat reveal d1"><div class="n">~0.4 s</div><div class="l">payment executed</div></div>
+    <div class="stat reveal d1"><div class="n">~1 s</div><div class="l">final</div></div>
+    <div class="stat reveal d2"><div class="n">&lt;$0.001</div><div class="l">gas per payment, at Chainlink MON/USD</div></div>
+  </div>
+  <h2 class="reveal d3" style="font-size:24px;color:var(--fg3)">measured on Xorv's own jobs on Monad testnet</h2>
+</section>
+
+<section class="scene" id="o1">
+  <svg class="mark" viewBox="0 0 64 64"><defs><linearGradient id="g2" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#7C5CFF"/><stop offset=".5" stop-color="#4C9BFF"/><stop offset="1" stop-color="#3DDCFF"/></linearGradient></defs><g stroke="url(#g2)" stroke-width="7" stroke-linecap="round" fill="none"><path d="M14 14 L27 27"/><path d="M37 37 L50 50"/><path d="M50 14 L37 27"/><path d="M27 37 L14 50"/></g><rect x="27.6" y="27.6" width="8.8" height="8.8" rx="2.2" transform="rotate(45 32 32)" fill="url(#g2)"/></svg>
+  <h1 style="margin-top:36px">Xorv</h1>
+  <h2>Pay-per-job AI with escrow, verified and reputed on <span class="grad">Monad</span>.</h2>
+  <div class="url">xorv-monad-app.vercel.app</div>
+</section>
+
+<div class="tag" id="tag" style="display:none">LIVE · MONAD TESTNET</div>
+<div id="cap"></div>
+<script>
+  window.go = () => {
+    const t0 = performance.now(), T = window.TIMELINE;
+    if (T.tag) document.getElementById("tag").style.display = "block";
+    if (T.hideBrand) document.getElementById("brand").style.display = "none";
+    const tick = () => {
+      const t = (performance.now() - t0) / 1000;
+      for (const s of T.scenes) document.getElementById(s.id).classList.toggle("on", t >= s.start && t < s.end);
+      const c = T.captions.find((c) => t >= c.start && t < c.end);
+      document.getElementById("cap").textContent = c ? c.text : "";
+      if (t < T.length) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+</script>
+</body>
+</html>

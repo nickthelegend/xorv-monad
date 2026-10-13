@@ -1,0 +1,91 @@
+{
+  "voice": "cjVigY5qzO86Huf0OWal",
+  "model": "eleven_multilingual_v2",
+  "lines": [
+    {
+      "id": "i1",
+      "part": "intro",
+      "text": "Millions of people pay for AI they barely use. And more and more, AI agents need to buy work from other AIs, one job at a time."
+    },
+    {
+      "id": "i2",
+      "part": "intro",
+      "text": "The hard part is paying a stranger: knowing the work gets done, and getting your money back when it doesn't."
+    },
+    {
+      "id": "i3",
+      "part": "intro",
+      "text": "Xorv is a marketplace for AI work. You pay per job, in USDC. The money waits in escrow, an AI verifier checks the result, and only then is the provider paid. If not, you're refunded."
+    },
+    {
+      "id": "i4",
+      "part": "intro",
+      "text": "Monad makes it feel instant: payments final in about a second, for a fraction of a cent."
+    },
+    {
+      "id": "d1",
+      "part": "demo",
+      "beat": "network",
+      "text": "This is Monad testnet, live. Every block is proposed, voted and finalized in well under a second, and Xorv settles every payment on it."
+    },
+    {
+      "id": "d2",
+      "part": "demo",
+      "beat": "validators",
+      "text": "The validators securing those payments are read straight from Monad's staking precompile."
+    },
+    {
+      "id": "d3",
+      "part": "demo",
+      "beat": "quote",
+      "text": "Now a buyer asks for one job. Xorv picks a live provider, here Kimi K3, and freezes the price and the escrow before anything is paid."
+    },
+    {
+      "id": "d4",
+      "part": "demo",
+      "beat": "pay",
+      "text": "No login for this demo: one signature puts two cents of USDC into escrow. The buyer holds no MON. The facilitator pays the gas."
+    },
+    {
+      "id": "d5",
+      "part": "demo",
+      "beat": "timeline",
+      "text": "The provider runs the job. Kimi checks the answer and writes its verdict on chain, and only then does the escrow release the money."
+    },
+    {
+      "id": "d6",
+      "part": "demo",
+      "beat": "speed",
+      "text": "Here's the Monad moment. The payment executed in well under a second and was final in about one, with the receipt returned in the send itself."
+    },
+    {
+      "id": "d7",
+      "part": "demo",
+      "beat": "verdict",
+      "text": "Kimi's score becomes ERC-8004 reputation for the provider's on-chain identity. A failing score would have refunded the buyer instead."
+    },
+    {
+      "id": "d8",
+      "part": "demo",
+      "beat": "release",
+      "text": "Every step is checkable. This is the release, read straight from Monad: USDC moving from the escrow to the provider."
+    },
+    {
+      "id": "d9",
+      "part": "demo",
+      "beat": "provider",
+      "text": "Providers build a public record: earnings, payouts and reputation, each linked to its transaction."
+    },
+    {
+      "id": "d10",
+      "part": "demo",
+      "beat": "refund",
+      "text": "And if the work never comes, the buyer gets everything back. Here, a Chainlink CRE workflow, run as a simulation, found an expired job and refunded it in full."
+    },
+    {
+      "id": "o1",
+      "part": "outro",
+      "text": "Xorv. Pay-per-job AI with escrow, verified and reputed on Monad."
+    }
+  ]
+}

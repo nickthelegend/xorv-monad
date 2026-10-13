@@ -1,0 +1,23 @@
+/** Capture cards.html with a timeline as a 1920x1080 video. node render-cards.mjs <timeline.json> <out.webm> */
+import { chromium } from "playwright";
+import { mkdtempSync, readdirSync, readFileSync, renameSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+const [tlPath, out] = process.argv.slice(2);
+const timeline = JSON.parse(readFileSync(tlPath, "utf8"));
+const dir = mkdtempSync(join(tmpdir(), "xorv-cards-"));
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 1920, height: 1080 }, recordVideo: { dir, size: { width: 1920, height: 1080 } } });
+const page = await ctx.newPage();
+const t0 = Date.now();
+await page.goto(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "cards.html")).href);
+await page.evaluate((tl) => { window.TIMELINE = tl; }, timeline);
+await page.waitForTimeout(800);
+const startOffset = (Date.now() - t0) / 1000;
+await page.evaluate(() => window.go());
+await page.waitForTimeout(timeline.length * 1000 + 300);
+await ctx.close(); await browser.close();
+const raw = join(dir, readdirSync(dir).find((f) => f.endsWith(".webm")));
+renameSync(raw, resolve(out));
+console.log(JSON.stringify({ out: resolve(out), startOffset }));
