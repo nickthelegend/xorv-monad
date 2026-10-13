@@ -156,6 +156,8 @@ executed in 177 ms and was final in 855 ms.
 
 **A browser purchase with no login (13 Oct):** on the hosted app, "Pay from demo account" paid $0.02 into XorvEscrow for `job_qYHL9A_f9aGZ` ([`0x8922a3…28dd`](https://testnet.monadvision.com/tx/0x8922a3a27429753fc04634bbbbed437ec7711f4a3fef6af9dde16c798a9628dd)). The payment was final in 1.02 s, Kimi passed the work (95/100), and the escrow released to agent #2252.
 
+**Activity seeded by the team for the demo (13 Oct):** three fresh buyer wallets, each funded with test USDC by the demo payer, bought and rated one job each ([docs/evidence/seed-13oct.md](docs/evidence/seed-13oct.md)). They are not organic users. Two of them show the final gate on chain, with the verdict blocks before the release.
+
 **First CRE refund (13 Oct):** a $0.001 escrowed job was funded from the Privy wallet and left undelivered
 ([fund `0x7f1cfd…0a9c`](https://testnet.monadvision.com/tx/0x7f1cfd8d1a61f3276274912a8c364b8e8b0d371b98f5de50ffc091d0add80a9c)).
 After its deadline, `cre workflow simulate refund-keeper --broadcast` read it from the Envio index as
