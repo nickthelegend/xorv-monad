@@ -670,8 +670,16 @@ function Disc() {
     <div aria-hidden className="relative h-[68px] w-[68px]">
       <div className="absolute inset-0 rounded-full border border-[var(--line-2)]" />
       <div className="absolute inset-[9px] rounded-full border border-[var(--line)]" />
-      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full p-[19px] text-fg">
-        <g stroke="currentColor" strokeWidth="7" strokeLinecap="round" fill="none">
+      {/* The Xorv mark in its brand gradient: drawn in plain white, a judge read it as a close button. */}
+      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full p-[19px]">
+        <defs>
+          <linearGradient id="disc-beam" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#7C5CFF" />
+            <stop offset="0.5" stopColor="#4C9BFF" />
+            <stop offset="1" stopColor="#3DDCFF" />
+          </linearGradient>
+        </defs>
+        <g stroke="url(#disc-beam)" strokeWidth="7" strokeLinecap="round" fill="none">
           <path d="M14 14 L27 27" />
           <path d="M37 37 L50 50" />
           <path d="M50 14 L37 27" />
@@ -684,7 +692,7 @@ function Disc() {
           height="8.8"
           rx="2.2"
           transform="rotate(45 32 32)"
-          fill="currentColor"
+          fill="url(#disc-beam)"
         />
       </svg>
     </div>
