@@ -78,7 +78,17 @@ layer, not a consumer app:
   on Monad for each provider's payout-wallet history, and turns it into a trust score that breaks
   matching ties and is shown, with attribution, on every provider.
 
-## For judges: use it in one command
+## For judges: try it live first
+
+1. Open <https://xorv-monad-app.vercel.app> on Monad testnet. The hero and the model picker show what is on sale right now: a hosted provider node selling **Kimi K3** at $0.02 a job.
+2. Type a prompt and press ⌘↵. The quote card freezes the price, the provider and XorvEscrow before anything is paid.
+3. **Log in to pay** (Privy, Google or email). The new wallet needs test USDC: the wallet menu links Circle's faucet ("Monad Testnet"). It needs **no MON**, because the facilitator pays the gas.
+4. Watch the job page: the payment enters XorvEscrow, the job runs, and the escrow releases on delivery. Each step links its Monad transaction, and the speed receipt shows "executed X ms · final Y ms".
+5. **Network** shows Monad's live consensus pipeline and validator set. **Chain** reads any transaction straight from the RPC.
+
+Or watch the [2-minute recorded walkthrough](docs/demo/xorv-demo.mp4).
+
+## For judges: run everything locally in one command
 
 ```bash
 pnpm install && pnpm build && (cd contracts && forge build) && pnpm demo

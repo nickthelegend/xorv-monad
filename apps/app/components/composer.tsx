@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { explorerAddress, shortHex } from "@xorv/protocol/web";
 import { Ext } from "@/components/ui";
 import { ModelPicker, type ModelOption } from "./model-picker";
 import { useWallet } from "@/components/wallet-provider";
 import { api, BROKER_URL, type Quote } from "@/lib/api";
-import { useDemoPayer, useNetworkInfo } from "@/lib/hooks";
+import { useDemoPayer, useNetworkInfo, usePoll } from "@/lib/hooks";
 import { CHAIN_CONFIG, IS_TESTNET, NETWORK } from "@/lib/network";
 import { PaymentError, classifyPaymentError, payQuote, payableQuote, type PaymentFailureKind } from "@/lib/x402-pay";
 import { EASE, useEntrance } from "@/lib/motion";
@@ -97,10 +97,21 @@ export function Composer() {
   // cheapest live provider, best-rated on a tie, when it doesn't. The hint
   // says which.
   const aiRouter = info?.ai.router ?? null;
+  // What is actually on sale right now: adapters some online provider sells.
+  // They lead the picker and name the hero; the rest are marked, so nobody
+  // picks one and meets "no provider matches" after typing a prompt.
+  const { data: providers } = usePoll(useCallback(() => api.providers(), []), 15_000);
+  const live = new Set(
+    (providers ?? [])
+      .filter((p) => p.status === "online")
+      .flatMap((p) => p.capabilities.map((c) => c.adapter as string)),
+  );
   const models: ModelOption[] = [
     { id: "", label: "Auto", hint: aiRouter ? `${roleLabel(aiRouter) ?? aiRouter.model} routes` : "cheapest" },
-    ...ADAPTERS,
+    ...ADAPTERS.filter((a) => live.has(a.id)).map((a) => ({ ...a, hint: a.hint ? `${a.hint} · online` : "online" })),
+    ...ADAPTERS.filter((a) => !live.has(a.id)).map((a) => ({ ...a, hint: "no provider online" })),
   ];
+  const heroModel = ADAPTERS.find((a) => live.has(a.id) && a.id !== "echo")?.label ?? "AI";
 
   // Grow with the content rather than scrolling inside a fixed box — a prompt
   // you can't see all of is a prompt you can't check before paying for it.
@@ -303,7 +314,7 @@ export function Composer() {
       >
         Run a job on someone else&rsquo;s{" "}
         <span className="inline-flex translate-y-[2px] items-center gap-1.5 rounded-lg border border-[var(--line-2)] px-2.5 py-0.5 align-baseline text-[22px] sm:text-[27px]">
-          Claude
+          {heroModel}
         </span>
       </motion.h1>
 
