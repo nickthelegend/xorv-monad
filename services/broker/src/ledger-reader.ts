@@ -114,7 +114,9 @@ export function createLedgerReader(opts: LedgerReaderOptions): LedgerReader {
     createRpcTail(
       opts.tail ?? {
         head: () => (headClient ??= publicClientFor(opts.network)).getBlockNumber(),
-        scan: (kind, limit, fromBlock) => readLedgerEvents(opts.network, opts.ledgerAddress ?? "", { kind, limit, fromBlock }),
+        // Two windows at a time: several feeds backfill at once after a restart, and the public RPC
+        // rate-limits anything faster into a 502 for the page that asked.
+        scan: (kind, limit, fromBlock) => readLedgerEvents(opts.network, opts.ledgerAddress ?? "", { kind, limit, fromBlock, concurrency: 2 }),
       },
       opts.fromBlock,
     );

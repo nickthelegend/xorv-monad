@@ -92,6 +92,8 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
   private ws: WebSocket | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  /** The control channel's current URL; it changes when the node re-registers. */
+  private wsUrl: string | null = null;
   private backoffMs = 1_000;
   private stopped = false;
   private reregistering = false;
@@ -232,6 +234,9 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
 
   private connect(wsUrl: string): void {
     if (this.stopped) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.wsUrl = wsUrl;
     const ws = new WebSocket(wsUrl);
     this.ws = ws;
 
@@ -259,6 +264,10 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
     });
 
     ws.on("close", () => {
+      // A socket that has been replaced (re-registration hands out a new
+      // token and URL) must not reconnect: it would retry its dead token
+      // forever and keep superseding the live connection.
+      if (this.ws !== ws) return;
       this.stats.connected = false;
       this.emit("state");
       if (this.stopped) return;
@@ -267,7 +276,7 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
       // shouldn't be hammered, and a node left running overnight should still
       // rejoin promptly when it comes back.
       this.log("warn", `control channel lost — retrying in ${Math.round(this.backoffMs / 1000)}s`);
-      this.reconnectTimer = setTimeout(() => this.connect(wsUrl), this.backoffMs);
+      this.reconnectTimer = setTimeout(() => this.connect(this.wsUrl ?? wsUrl), this.backoffMs);
       this.reconnectTimer.unref?.();
       this.backoffMs = Math.min(this.backoffMs * 2, 30_000);
     });
@@ -335,8 +344,9 @@ export class ProviderNode extends EventEmitter<ProviderNodeEvents> {
             return null;
           });
           if (result) {
-            this.ws?.close();
+            const old = this.ws;
             this.connect(result.wsUrl);
+            old?.close();
           }
         } finally {
           this.reregistering = false;
