@@ -149,22 +149,7 @@ export function buildAgentPolicy(opts: {
     },
   ];
   if (opts.escrow) rules.push(escrowRule(opts.network, opts.capUnits, opts.escrow));
-  if (opts.ledger) {
-    rules.push({
-      name: "XorvLedger job ratings",
-      method: "eth_signTypedData_v4",
-      action: "ALLOW",
-      conditions: [
-        { field_source: "ethereum_typed_data_domain", field: "chainId", operator: "eq", value: chainId },
-        {
-          field_source: "ethereum_typed_data_domain",
-          field: "verifyingContract",
-          operator: "in",
-          value: addressVariants(normalizeAddress(opts.ledger)),
-        },
-      ],
-    });
-  }
+  if (opts.ledger) rules.push(ratingRule(opts.network, opts.ledger));
 
   return {
     chain_type: "ethereum",
@@ -190,6 +175,25 @@ export function escrowRule(network: string, capUnits: bigint, escrow: string): P
       { field_source: "ethereum_typed_data_domain", field: "verifyingContract", operator: "in", value: addressVariants(cfg.usdc.address) },
       { field_source: "ethereum_typed_data_message", field: "value", operator: "lte", value: capUnits.toString(), typed_data: rwa as never },
       { field_source: "ethereum_typed_data_message", field: "to", operator: "in", value: addressVariants(normalizeAddress(escrow)), typed_data: rwa as never },
+    ],
+  };
+}
+
+/** Job ratings: an EIP-712 rating whose domain is this XorvLedger on this chain, and nothing else. */
+export function ratingRule(network: string, ledger: string): PolicyRule {
+  const cfg = networkConfig(network);
+  return {
+    name: "XorvLedger job ratings",
+    method: "eth_signTypedData_v4",
+    action: "ALLOW",
+    conditions: [
+      { field_source: "ethereum_typed_data_domain", field: "chainId", operator: "eq", value: String(cfg.chainId) },
+      {
+        field_source: "ethereum_typed_data_domain",
+        field: "verifyingContract",
+        operator: "in",
+        value: addressVariants(normalizeAddress(ledger)),
+      },
     ],
   };
 }

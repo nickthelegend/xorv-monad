@@ -15,3 +15,16 @@ describe("the escrow rule", () => {
     expect(buildAgentPolicy({ network: "eip155:10143", capUnits: 50_000n, escrow }).rules.some((r) => r.name.includes("escrow"))).toBe(true);
   });
 });
+
+describe("ratingRule", () => {
+  it("allows ratings only on this chain's XorvLedger, and buildAgentPolicy uses the same rule", async () => {
+    const { ratingRule, buildAgentPolicy } = await import("../src/privy-policy.js");
+    const ledger = "0x40918C2fEc752B3b8C30bB121779011132668408";
+    const rule = ratingRule("eip155:10143", ledger);
+    expect(rule.conditions[0]).toMatchObject({ field: "chainId", value: "10143" });
+    expect(rule.conditions[1]).toMatchObject({ field: "verifyingContract", operator: "in" });
+    expect((rule.conditions[1] as { value: string[] }).value).toContain(ledger.toLowerCase());
+    const policy = buildAgentPolicy({ network: "eip155:10143", capUnits: 50_000n, ledger } as never);
+    expect(policy.rules.find((r) => r.name === "XorvLedger job ratings")).toEqual(rule);
+  });
+});

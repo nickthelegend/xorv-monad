@@ -39,7 +39,7 @@ import {
   networkConfig,
   normalizeAddress,
 } from "@xorv/protocol";
-import { buildAgentPolicy, escrowRule, parseCapUsdc, type AgentPolicy } from "../privy-policy.js";
+import { buildAgentPolicy, escrowRule, parseCapUsdc, ratingRule, type AgentPolicy, type PolicyRule } from "../privy-policy.js";
 
 const USAGE = `Usage: pnpm --filter @xorv/mcp privy:setup -- --cap-usdc <dollars> [options]
 
@@ -54,6 +54,8 @@ Options:
   --name <label>       Policy / wallet display name.
   --owner-key          Generate a P-256 owner key for the wallet and policy.
   --dry-run            Print the policy JSON and exit without calling Privy.
+  --add-to-policy <id> Extend an existing policy instead of creating one.
+  --rules <list>       With --add-to-policy: escrow (default), ratings, or escrow,ratings.
   -h, --help           Show this help.
 
 Environment: XORV_PRIVY_APP_ID and XORV_PRIVY_APP_SECRET (or PRIVY_APP_ID / PRIVY_APP_SECRET).`;
@@ -71,6 +73,8 @@ export interface SetupOptions {
   escrow: string | null;
   /** Add the escrow rule to this existing policy instead of creating a policy and a wallet. */
   addToPolicy: string | null;
+  /** With --add-to-policy: which rules to add (escrow, ratings). */
+  addRules: string[];
 }
 
 /** Parse argv (without node and script) into options; throws with a usable message. */
@@ -90,6 +94,7 @@ export function parseSetupArgs(argv: string[], env: Record<string, string | unde
       "dry-run": { type: "boolean" },
       escrow: { type: "string" },
       "add-to-policy": { type: "string" },
+      rules: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -121,6 +126,7 @@ export function parseSetupArgs(argv: string[], env: Record<string, string | unde
     dryRun: Boolean(values["dry-run"]),
     escrow: values.escrow ? normalizeAddress(values.escrow) : null,
     addToPolicy: values["add-to-policy"]?.trim() || null,
+    addRules: (values.rules ?? "escrow").split(",").map((r) => r.trim()).filter(Boolean),
   };
 }
 
@@ -203,13 +209,31 @@ export async function main(argv: string[], env: Record<string, string | undefine
 
   if (opts.addToPolicy) {
     // A funded wallet stays bound to its policy: extend that policy rather than replace it.
-    if (!escrow) {
-      err("privy:setup: --add-to-policy adds the escrow rule; give --escrow <0x…> or a --broker that has one.");
-      return 2;
+    // --rules picks what to add: escrow (the default), ratings (for a redeployed XorvLedger), or both.
+    const add: PolicyRule[] = [];
+    for (const kind of opts.addRules) {
+      if (kind === "escrow") {
+        if (!escrow) {
+          err("privy:setup: the escrow rule needs --escrow <0x…> or a --broker that has one.");
+          return 2;
+        }
+        add.push(escrowRule(cfg.caip2, opts.capUnits, escrow));
+      } else if (kind === "ratings") {
+        if (!ledger) {
+          err("privy:setup: the ratings rule needs --ledger <0x…> or a --broker that has one.");
+          return 2;
+        }
+        add.push(ratingRule(cfg.caip2, ledger));
+      } else {
+        err(`privy:setup: unknown rule "${kind}" (expected escrow or ratings)`);
+        return 2;
+      }
     }
-    const rule = escrowRule(cfg.caip2, opts.capUnits, escrow);
-    await privy.policies().createRule(opts.addToPolicy, rule as never);
-    out(`Added to policy ${opts.addToPolicy}:\n  - ALLOW ${rule.method}: ${rule.name}`);
+    out(`Added to policy ${opts.addToPolicy}:`);
+    for (const rule of add) {
+      await privy.policies().createRule(opts.addToPolicy, rule as never);
+      out(`  - ALLOW ${rule.method}: ${rule.name}`);
+    }
     return 0;
   }
 
