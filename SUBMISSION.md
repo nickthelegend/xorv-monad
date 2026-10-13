@@ -9,6 +9,8 @@ invented values.
 
 ## Project
 
+**Sponsors and Monad-native features:** [docs/SPONSOR-COVERAGE.md](docs/SPONSOR-COVERAGE.md) lists 6 sponsor protocols working (Chainlink CRE, Chainlink Data Feeds, Privy, Kimi, Envio, Nansen), 6 partial and 13 not used, each with a reason. It also covers the 8 Monad-native features.
+
 | Field | Value |
 |---|---|
 | **Project name** | Xorv |

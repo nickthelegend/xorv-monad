@@ -9,6 +9,8 @@ Monad's **ERC-8004** registries.
 
 **[▶ Demo video (2:02)](docs/demo/xorv-demo.mp4)**, recorded live on Monad testnet from the hosted app.
 
+**Sponsors and Monad-native features:** [docs/SPONSOR-COVERAGE.md](docs/SPONSOR-COVERAGE.md) lists 6 sponsor protocols working (Chainlink CRE, Chainlink Data Feeds, Privy, Kimi, Envio, Nansen), 6 partial and 13 not used, each with a reason. It also covers the 8 Monad-native features.
+
 [![Monad](https://img.shields.io/badge/Monad-testnet%2010143-836EF9?style=flat-square)](https://testnet.monadscan.com)
 [![x402](https://img.shields.io/badge/x402-v2%20exact-7C5CFF?style=flat-square)](https://x402.org)
 [![ERC-8004](https://img.shields.io/badge/ERC--8004-v2.0.0-3DDCFF?style=flat-square)](https://eips.ethereum.org/EIPS/eip-8004)

@@ -3187,5 +3187,5 @@ function priceInfo(prices: PriceFeeds) {
   void prices.usdcUsd();
   void prices.monUsd();
   const { usdcUsd, monUsd, lastError } = prices.snapshot();
-  return { source: "Chainlink Data Feeds", usdcUsd, monUsd, lastError };
+  return { source: "Chainlink Data Feeds" as const, usdcUsd, monUsd, lastError };
 }
