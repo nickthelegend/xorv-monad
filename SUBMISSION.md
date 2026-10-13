@@ -9,7 +9,7 @@ invented values.
 
 ## Project
 
-**Sponsors and Monad-native features:** [docs/SPONSOR-COVERAGE.md](docs/SPONSOR-COVERAGE.md) lists 6 sponsor protocols working (Chainlink CRE, Chainlink Data Feeds, Privy, Kimi, Envio, Nansen), 6 partial and 13 not used, each with a reason. It also covers the 8 Monad-native features.
+**Sponsors and Monad-native features:** [docs/SPONSOR-COVERAGE.md](docs/SPONSOR-COVERAGE.md) lists 8 sponsor protocols working: Chainlink CRE, Chainlink Data Feeds, Privy, Kimi, Envio, Nansen, Agora AUSD ([an AUSD escrow job on testnet](https://testnet.monadvision.com/tx/0x3ac185126ec55ba765456680c827363fcfa7d6534b5dc80f28c5d4faa68d96e2)) and Cleanverse (fork evidence on the real A-Pass). It also lists 4 partial and 13 not used, each with a reason. It also covers the 8 Monad-native features.
 
 | Field | Value |
 |---|---|
