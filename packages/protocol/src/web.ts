@@ -30,5 +30,6 @@ export * from "./vault.js";
 export type { TxState, TxStatus } from "./tx-status.js";
 export * from "./reserve.js";
 export * from "./staking.js";
+export * from "./price-feeds.js";
 export * from "./p256.js";
 export { XORV_ESCROW_ABI } from "./xorv-escrow.abi.js";

@@ -119,6 +119,7 @@ import { resolveFacilitator } from "./facilitator.js";
 import { chainEscrow, type EscrowOps } from "./escrow.js";
 import { IdentityBook, chainIdentity, type IdentitySource } from "./identity.js";
 import { createLedgerReader, type LedgerReader } from "./ledger-reader.js";
+import { createPriceFeeds, type PriceFeeds } from "./prices.js";
 import { hookDeadline, withHookTimeout, type AiHooks, type JobVerifier } from "./ai-hooks.js";
 import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/feedback.js";
 import { verifiable } from "./ai/verifier.js";
@@ -229,6 +230,8 @@ export interface AppDeps {
    * a fixture-backed one.
    */
   trust?: NansenTrust;
+  /** Chainlink Data Feeds; null turns them off. Defaults to live reads when config.priceFeeds is on. */
+  prices?: PriceFeeds | null;
   /** XorvEscrow operations. Defaults to the chain when XORV_ESCROW_ADDRESS is set; `null` pays providers directly. */
   escrow?: EscrowOps | null;
   /** The escrow's Cleanverse identity gate. Defaults to reading it off the escrow; `null` turns it off. */
@@ -240,6 +243,11 @@ export function createApp(deps: AppDeps) {
   const vaults = deps.vaults ?? new VaultStore();
   const trust =
     deps.trust ?? createNansenTrust(config.nansen, { log: (line) => console.log(`[broker] ${line}`) });
+  const prices: PriceFeeds | null =
+    deps.prices !== undefined ? deps.prices : config.priceFeeds ? createPriceFeeds({ log: (line) => console.log(`[broker] ${line}`) }) : null;
+  // Warm the cache so the first quote and the network page don't wait on it.
+  void prices?.usdcUsd();
+  void prices?.monUsd();
   // The matcher breaks price ties on reliability nudged by wallet trust…
   registry.setTrustScorer((address) => trust.matchScore(address));
   // …and by reputation: buyer ratings and verifier scores from the Envio
@@ -815,6 +823,8 @@ export function createApp(deps: AppDeps) {
         timingChain: chainKind,
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+      // Chainlink Data Feeds: the last readings (refreshed in the background, at most once a minute).
+      prices: prices ? priceInfo(prices) : null,
     };
     return c.json(body);
   });
@@ -1101,7 +1111,11 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    // 2. Everything that could take the job right now, in matcher order.
+    // 2. Chainlink USDC/USD: jobs are sold in USDC as dollars, so not while USDC is off its peg.
+    const depeg = prices ? await prices.quoteBlocker() : null;
+    if (depeg) return c.json({ error: `not quoting right now: ${depeg}` }, 503);
+
+    // 3. Everything that could take the job right now, in matcher order.
     const candidates = registry.candidates({
       adapter: request.adapter ?? null,
       maxPriceUsdMicros: maxPrice,
@@ -1127,7 +1141,7 @@ export function createApp(deps: AppDeps) {
       );
     }
 
-    // 3. The router, when the buyer left the adapter open and there is a real
+    // 4. The router, when the buyer left the adapter open and there is a real
     //    choice to make: Qwen reads the candidates' on-chain reputation,
     //    receipts, indexer stats and wallet trust with its tools and picks a
     //    provider. The pick is checked against the live candidates (all under
@@ -3168,3 +3182,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 export type { AdapterKind, JobRequest };
+
+function priceInfo(prices: PriceFeeds) {
+  void prices.usdcUsd();
+  void prices.monUsd();
+  const { usdcUsd, monUsd, lastError } = prices.snapshot();
+  return { source: "Chainlink Data Feeds", usdcUsd, monUsd, lastError };
+}

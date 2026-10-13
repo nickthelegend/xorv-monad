@@ -654,6 +654,13 @@ export interface NetworkInfo {
     timingChain?: "monad" | "local";
   };
   heartbeatIntervalMs: number;
+  /** Chainlink Data Feeds the broker reads: USDC/USD (testnet), MON/USD (mainnet). Null when off. */
+  prices?: {
+    source: "Chainlink Data Feeds";
+    usdcUsd: import("./price-feeds.js").FeedReading | null;
+    monUsd: import("./price-feeds.js").FeedReading | null;
+    lastError: string | null;
+  } | null;
   /** Monad's 10 MON reserve, against the accounts that pay this broker's gas. */
   gas?: {
     reserveWei: string;

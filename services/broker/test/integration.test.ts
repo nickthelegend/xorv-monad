@@ -53,6 +53,7 @@ import type { GateInfo, IdentitySource } from "../src/identity.js";
 import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { NANSEN_OFF, createNansenTrust, type NansenTrust } from "../src/trust/index.js";
+import { createPriceFeeds, type PriceFeeds } from "../src/prices.js";
 
 /** Response bodies are asserted on, not typed: the tests are what pin their shape. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -323,6 +324,7 @@ async function boot(
     /** Pay into this in-memory XorvEscrow instead of straight to the provider. */
     escrow?: MemoryEscrow;
     identity?: IdentitySource;
+    prices?: PriceFeeds;
   } = {},
 ): Promise<Harness> {
   // Every confirmed transaction "landed" in block 4242 for 84,213 gas at 50 gwei, paid by the facilitator.
@@ -344,6 +346,7 @@ async function boot(
     jobs,
     getHub: () => hub,
     facilitator: opts.injectFacilitator === false ? undefined : stubFacilitator(control),
+    ...(opts.prices ? { prices: opts.prices } : {}),
     ledgerReader: reader,
     agentWallet: async (agentId) => {
       if (agentId === "999") throw new Error("rpc unreachable");
@@ -762,6 +765,25 @@ describe("quoting", () => {
     expect(String(body.error)).toBe("no online provider can take a job right now: daily capacity reached: try again after 00:00 UTC");
     expect(await (await fetch(`${h.base}/api/providers`)).text()).not.toContain(provider.token);
     provider.close();
+  });
+
+  it("stops quoting while Chainlink says USDC is off its peg, and quotes again once it isn't", async () => {
+    let price = 0.95;
+    const prices = createPriceFeeds({
+      cacheMs: 0,
+      read: async (spec) => ({ pair: spec.pair, network: spec.network, feed: spec.address, price, updatedAt: Date.now(), stale: false, readAt: Date.now() }),
+    });
+    const hp = await boot({ prices });
+    const provider = await connectProvider(hp);
+    const refused = await quote(hp);
+    expect(refused.status).toBe(503);
+    expect(String(refused.body.error)).toMatch(/^not quoting right now: USDC is off its peg: Chainlink USDC\/USD reads \$0\.9500/);
+    price = 0.9998;
+    expect((await quote(hp)).status).toBe(200);
+    const net = await (await fetch(`${hp.base}/api/network`)).json();
+    expect(net.prices).toMatchObject({ source: "Chainlink Data Feeds", usdcUsd: { pair: "USDC/USD", price: 0.9998 } });
+    provider.close();
+    await hp.stop();
   });
 
   it("refuses to match above the buyer's ceiling", async () => {

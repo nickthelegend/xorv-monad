@@ -1,10 +1,11 @@
 "use client";
 
-import { explorerAddress, explorerBlock, shortHex } from "@xorv/protocol/web";
+import { explorerAddress, explorerBlock, monToUsd, shortHex } from "@xorv/protocol/web";
 import type { Job } from "@/lib/api";
 import { NETWORK, NETWORK_LABEL } from "@/lib/network";
 import { formatGas, formatMon, formatMs, vsEthereumSlot } from "@/lib/speed";
 import { Ext, Panel, Row } from "@/components/ui";
+import { useNetworkInfo } from "@/lib/hooks";
 
 /**
  * The speed receipt: how fast this job's money actually moved, with two
@@ -19,6 +20,7 @@ import { Ext, Panel, Row } from "@/components/ui";
  */
 export function SpeedReceipt({ job }: { job: Job }) {
   const timing = job.payment?.timing;
+  const monUsd = useNetworkInfo()?.prices?.monUsd ?? null;
   if (!timing) return null;
   const held = job.payment?.escrow;
   const settle = held?.settleTiming ?? null;
@@ -55,6 +57,13 @@ export function SpeedReceipt({ job }: { job: Job }) {
             {formatGas(timing.gasUsed)} · {formatMon(timing.gasPaidWei)}
           </span>
         </Row>
+        {monUsd && !local ? (
+          <Row label="gas in dollars">
+            <span className="tnum" title={`Chainlink MON/USD on Monad mainnet (${monUsd.feed}); testnet MON has no market price`}>
+              ≈ {formatUsdTiny(monToUsd(BigInt(timing.gasPaidWei), monUsd))} at Chainlink MON/USD ${monUsd.price.toFixed(4)}
+            </span>
+          </Row>
+        ) : null}
         <Row label="gas paid by">
           {local ? (
             <span className="mono">
@@ -96,4 +105,10 @@ function Timer({ label, ms }: { label: string; ms: number | null }) {
       <p className="text-[11.5px] text-fg-3">{label}</p>
     </div>
   );
+}
+
+/** Sub-cent dollar amounts, which is what Monad gas costs. */
+function formatUsdTiny(usd: number): string {
+  if (usd >= 0.01) return `$${usd.toFixed(2)}`;
+  return `$${usd.toPrecision(2)}`;
 }

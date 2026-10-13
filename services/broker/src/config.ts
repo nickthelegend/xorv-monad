@@ -111,6 +111,8 @@ export interface BrokerConfig {
   appUrl: string | null;
   /** Envio GraphQL endpoint; when set it serves feeds and the leaderboard. */
   indexerUrl: string | null;
+  /** Read Chainlink Data Feeds (USDC peg guard, MON/USD gas pricing). XORV_PRICE_FEEDS=off disables. */
+  priceFeeds?: boolean;
   corsOrigins: string[];
   feeBps: number;
   /** SQLite file for durable jobs and earnings; "off" disables persistence. */
@@ -306,6 +308,7 @@ export function loadConfig(): BrokerConfig {
     publicUrl,
     appUrl: optional("XORV_APP_URL")?.replace(/\/+$/, "") ?? null,
     indexerUrl: optional("XORV_INDEXER_URL"),
+    priceFeeds: (optional("XORV_PRICE_FEEDS") ?? "on").toLowerCase() !== "off",
     corsOrigins: (process.env.XORV_CORS_ORIGINS ?? "")
       .split(",")
       .map((s) => s.trim())

@@ -96,6 +96,20 @@ export function NetworkView() {
           <Row label="usdc">
             {info ? <Ext href={explorerToken(NETWORK, info.usdc.address)}>{shortHex(info.usdc.address)} ↗</Ext> : "—"}
           </Row>
+          <Row label="usdc / usd">
+            {info?.prices?.usdcUsd ? (
+              <span className="tnum">
+                ${info.prices.usdcUsd.price.toFixed(4)}
+                <span className="text-fg-4">
+                  {" "}· Chainlink Data Feed{" "}
+                  <Ext href={explorerAddress(NETWORK, info.prices.usdcUsd.feed)}>{shortHex(info.prices.usdcUsd.feed)} ↗</Ext>
+                  {info.prices.usdcUsd.stale ? " · stale" : ""} · quoting pauses if USDC leaves its peg by 2%
+                </span>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
           <Row label="payment executed in">
             {info?.stats.settleMedianMs != null ? (
               <span className="tnum">
