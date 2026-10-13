@@ -122,7 +122,7 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
               </p>
               {detailed ? (
                 <p className="mt-1.5 text-[11.5px] text-fg-3">
-                  {rank?.avgRating != null ? (
+                  {rank?.avgRating != null && rank.ratings > 0 ? (
                     <>
                       <span className="text-fg-2">{"★".repeat(valueToStars(rank.avgRating))}</span>{" "}
                       <span className="tnum">{Math.round(rank.avgRating)}/100</span> from {rank.ratings} rating

@@ -9,7 +9,7 @@ export default function Home() {
         <Composer />
       </section>
 
-      <div className="grid gap-10 lg:grid-cols-[1.25fr_1fr] lg:gap-12">
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-12">
         <section>
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h2 className="text-[13px] font-medium text-fg">Recent jobs</h2>

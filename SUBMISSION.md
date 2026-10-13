@@ -124,7 +124,7 @@ Details and file links are in [README → Monad-native](README.md#monad-native);
 
 ## Deployed contracts and transactions
 
-**Live on Monad testnet (12 Oct, testnet go).** All contracts are Sourcify-verified, and every link opens on MonadVision.
+**Live on Monad testnet (12 Oct, testnet go).** All contracts are verified on Monad's Sourcify (BlockVision's instance; links below), and every link opens on MonadVision.
 
 | | Address / URL | Evidence |
 |---|---|---|
@@ -174,8 +174,8 @@ deployed app.
 
 | | Monad testnet (`eip155:10143`) | Where the value comes from |
 |---|---|---|
-| `XorvLedger` (current, 12 Oct) | [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408), deploy tx [`0xfa8979…3390`](https://testnet.monadvision.com/tx/0xfa8979372f92329aea91a2eaf7c31b7037339ada52f9a20bccc510d203753390) (block 70456136), Sourcify-verified | `packages/contracts/deployments/monadTestnet.json` |
-| `XorvEscrow`, `XorvRefundKeeper` | [`0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91), [`0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f), Sourcify-verified. `CleanverseGate` is not deployed to testnet: **user** (A-Passes) | `contracts/script/Deploy.s.sol` output |
+| `XorvLedger` (current, 12 Oct) | [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408), deploy tx [`0xfa8979…3390`](https://testnet.monadvision.com/tx/0xfa8979372f92329aea91a2eaf7c31b7037339ada52f9a20bccc510d203753390) (block 70456136), verified on Monad's Sourcify (BlockVision) | `packages/contracts/deployments/monadTestnet.json` |
+| `XorvEscrow`, `XorvRefundKeeper` | [`0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91), [`0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f), verified on Monad's Sourcify (BlockVision). `CleanverseGate` is not deployed to testnet: **user** (A-Passes) | `contracts/script/Deploy.s.sol` output |
 | `XorvLedger` (September) | [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) — source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD) | `packages/contracts/deployments/monadTestnet.json` |
 | Deploy transaction | [`0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) (block 66379818) | same file |
 | x402 settlement (buyer → provider USDC) | [`0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7): 0.01 USDC, submitted and gas-paid by Monad's public facilitator | a live `xorv run` job |

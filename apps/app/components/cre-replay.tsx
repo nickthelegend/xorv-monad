@@ -20,13 +20,13 @@ export function CreReplay({ job, keeper }: { job: Job; keeper: string | null | u
   if (!done && held.state !== "funded") return null;
 
   const steps: { title: string; body: string; tx?: string | null }[] = [
-    { title: "Cron trigger", body: "The workflow runs every 30 seconds on Chainlink's DON." },
-    { title: "Find expired jobs", body: `HTTP query (with DON consensus) to the Envio index: funded EscrowJobs whose deadline passed. This job's deadline: ${deadline}.` },
+    { title: "Cron trigger", body: "Every 30 seconds. Today the workflow runs through `cre workflow simulate --broadcast`, whose report goes through Chainlink's MockKeystoneForwarder. Deployed to a DON, the same workflow runs unattended." },
+    { title: "Find expired jobs", body: `HTTP query (with consensus, on a DON) to the Envio index: funded EscrowJobs whose deadline passed. This job's deadline: ${deadline}.` },
     { title: "Check each on Monad", body: `EVM read: XorvEscrow.isRefundable(${shortHex(held.jobId)}).` },
-    { title: "One signed report", body: "abi.encode(bytes32[] jobIds), signed by the DON." },
+    { title: "One signed report", body: "abi.encode(bytes32[] jobIds), signed by the workflow (by the DON, once deployed)." },
     {
       title: "Deliver and refund",
-      body: `KeystoneForwarder → XorvRefundKeeper ${shortHex(keeper)}.onReport → XorvEscrow.refund. Refunds are never gated, and no one's permission is needed after the deadline.`,
+      body: `Chainlink forwarder → XorvRefundKeeper ${shortHex(keeper)}.onReport → XorvEscrow.refund. Refunds are never gated, and no one's permission is needed after the deadline.`,
       tx: done ? held.refundTx : null,
     },
   ];
@@ -38,7 +38,7 @@ export function CreReplay({ job, keeper }: { job: Job; keeper: string | null | u
         <p className="text-[12.5px] leading-relaxed text-fg-3">
           {done
             ? "The broker didn't refund this job; Chainlink CRE did. This is the path the refund took."
-            : `The money is held in XorvEscrow. If the job hasn't delivered by ${deadline}, the Chainlink CRE refund keeper refunds the buyer in full, whether or not this broker is still running.`}
+            : `The money is held in XorvEscrow. If the job hasn't delivered by ${deadline}, anyone may refund the buyer in full, including the Chainlink CRE refund keeper, whether or not this broker is still running.`}
         </p>
         <ol className="mt-3 space-y-2">
           {steps.map((s, i) => (

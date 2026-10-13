@@ -163,7 +163,7 @@ export function paymentTimeline(
     } else {
       steps.push({
         key: "settled",
-        title: "Released on delivery",
+        title: "To be released on delivery",
         detail: `Or refunded in full if the job fails. After ${formatTime(held.deadline * 1000)} anyone can refund it, the Chainlink CRE keeper included.`,
         at: null,
         tx: null,

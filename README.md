@@ -19,7 +19,7 @@ Monad's **ERC-8004** registries.
 **Demo video:** [docs/demo/xorv-demo.mp4](docs/demo/xorv-demo.mp4) ·
 **App:** <https://xorv-monad-app.vercel.app> ·
 **Broker:** <https://broker-production-2d62.up.railway.app> ·
-**XorvLedger:** [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408) (Monad testnet, Sourcify-verified)
+**XorvLedger:** [`0x40918C2fEc752B3b8C30bB121779011132668408`](https://testnet.monadvision.com/address/0x40918C2fEc752B3b8C30bB121779011132668408) (Monad testnet, verified on Monad's Sourcify (BlockVision))
 
 </div>
 
@@ -29,16 +29,18 @@ Millions of people pay for Claude, Codex, Qwen or Kimi and use a fraction of it.
 job done has to buy a whole plan or an API key. Xorv is the rail between them. A provider runs one
 command and their machine joins the network. A buyer (a person in a browser, a script, or another
 AI agent) asks for a quote, signs one USDC authorization, and the job runs on the provider's machine.
-The USDC moves **straight from buyer to provider** in a single Monad transaction that the network's
-facilitator submits and pays gas for. The broker only introduces the two parties and never holds the
-money. Every paid job is written to the `XorvLedger` contract. The buyer rates it with a free EIP-712
+The USDC goes into the **XorvEscrow** contract in a single Monad transaction that the facilitator submits
+and pays gas for. It is released to the provider on delivery, or refunded to the buyer, and the broker
+never holds it. (Without an escrow, the same authorization pays the provider directly.) Every paid job is written to the `XorvLedger` contract. The buyer rates it with a free EIP-712
 signature, and that rating becomes ERC-8004 reputation which only a paying buyer can give (and which
 the broker refuses to relay when Nansen links the buyer's wallet to the provider's). Three sponsor
-models sit in the core loop: Hunyuan screens every prompt, Qwen runs a tool-using agent that
-reads ERC-8004 reputation, XorvLedger receipts and Envio aggregates on Monad before it picks the
-provider for an "Auto" job, and Kimi verifies results and writes its score on-chain. The broker
-itself is a paying agent too: it buys Nansen wallet data per call, over x402 on Monad, to score
-every provider's payout wallet.
+models have core-loop roles. Kimi verifies results and writes its score on-chain, and it is live on the
+hosted broker. When their keys are set, Hunyuan screens every prompt and Qwen runs a tool-using agent
+that reads ERC-8004 reputation, XorvLedger receipts and Envio aggregates before it picks the provider
+for an "Auto" job. Without keys, the hosted demo shows them as "not configured" and Auto picks the
+cheapest provider. The broker can be
+a paying agent too: with Nansen switched on, it buys wallet data per call to score every provider's
+payout wallet. It is off on the hosted demo between recordings, to save shared credits.
 
 When the broker runs its own facilitator, the buyer can pay into **XorvEscrow** instead: the USDC
 waits in the contract until the job delivers, is released to the provider with the result's hash,
@@ -159,7 +161,7 @@ Outside the pnpm workspace:
 | Nansen x402 payments: only the Monad mainnet USDC row of Nansen's real 402s is paid, at the captured price, under a per-call cap and a daily budget; a related-wallet rating refused with 403 and nothing relayed | `services/broker/test/trust.test.ts` (replays the captured 402s), "Nansen trust" in `services/broker/test/integration.test.ts` |
 | **XorvLedger deployed on Monad testnet** | ✅ [`0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD`](https://testnet.monadscan.com/address/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD), deploy tx [`0xb342175f…`](https://testnet.monadscan.com/tx/0xb342175f22adb752d95400eb16288425c403c3f44427735f8439a234453dacc3) in block 66379818, source verified on [Sourcify](https://sourcify-api-monad.blockvision.org/repo-ui/10143/0xc4b5461e2C19bab790c8C01cfBDf72b6d8AE5FCD); wired to the canonical ERC-8004 registries (`packages/contracts/deployments/monadTestnet.json`) |
 | **A job paid and receipted on Monad testnet** | ✅ A live `xorv run` job: x402 settlement [`0x579205fe…`](https://testnet.monadscan.com/tx/0x579205fe205b8069682f147377efd6d9a6ca404e2c1c6ea95312853a921202d7), where Monad's public facilitator paid the gas and 0.01 USDC moved buyer → provider (the buyer holds no MON); then `JobRecorded` on XorvLedger [`0xbddafbf6…`](https://testnet.monadscan.com/tx/0xbddafbf69499df11f5c0289b4cefb6491cd0b168fd799bae2c77145dd855c6c7), carrying that payment tx and the result hash |
-| **XorvEscrow and the refund keeper on Monad testnet** | ✅ [`0x87d5…Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91) and [`0x69Ab…223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f), Sourcify-verified (12 Oct). The Cleanverse gate waits on A-Passes |
+| **XorvEscrow and the refund keeper on Monad testnet** | ✅ [`0x87d5…Df91`](https://testnet.monadvision.com/address/0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91) and [`0x69Ab…223f`](https://testnet.monadvision.com/address/0x69Abe4e96A5A84caAF01F2B3151e3CA1C53F223f), verified on Monad's Sourcify (BlockVision) (12 Oct). The Cleanverse gate waits on A-Passes |
 | **A CRE simulation broadcasting a refund** | ✅ [`0xa85c2f…cd15`](https://testnet.monadvision.com/tx/0xa85c2f69d7ccb7fea3d3d574d453f9974125b493675d626a2e037e8002decd15): a real expired job refunded through XorvRefundKeeper (13 Oct) |
 | **Rated and verified on Monad testnet** | ✅ The hosted provider is ERC-8004 [agent #2252](https://testnet.monadvision.com/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/2252) (registered [`0xe4a0ab…3f26`](https://testnet.monadvision.com/tx/0xe4a0ab0243ceb04caa9a324f6cb281ba7e4c241d3e67e88a78a2f60993939f26)). On job `job_EKJtz-mTs66f`, Kimi's 92/100 verdict was written as ERC-8004 feedback [`0xf4dbbe…ca4d`](https://testnet.monadvision.com/tx/0xf4dbbe91e7c727e15d3d9a327a603c8aea5f3000c05f8f852280d9ecb7e5ca4d), and the MCP agent's rating, signed in its Privy wallet, was relayed [`0x11761f…4348`](https://testnet.monadvision.com/tx/0x11761ff5a77199d4946d3f74f903dc468aa5b273e1899b6bd74ef8acada54348) |
 | **An MCP agent paying from a policy-bounded Privy server wallet on Monad testnet** | ✅ into XorvEscrow [`0x9d3ab6…c7b2`](https://testnet.monadvision.com/tx/0x9d3ab6147ac88fd14feedd7feef8ad1dae21b2389f7e4854d8386b67fb38c7b2), released [`0xb1cc49…b710`](https://testnet.monadvision.com/tx/0xb1cc49d5c863489678d9f1b7f69537eb427d0a4f4212d452bef1028e74b3b710) |
@@ -272,7 +274,7 @@ with the reasons for anything not applicable, is in
 | **P256 precompile** (`0x0100`) | `verifyPasskeyAssertion` checks a WebAuthn passkey signature on chain. Tested on anvil's precompile and confirmed on testnet's. Buyers' private-job keys already come from their passkeys (Mera) | built + live check | [`packages/protocol/src/p256.ts`](packages/protocol/src/p256.ts) |
 | **Gas billed on the limit; 10 MON reserve; MIP-8; parallel execution** | Explicit limits (estimate × 1.15; a reverting estimate never sends). The broker watches its gas payers against the reserve. The escrow keeps one struct per job (one storage page) and a transient-storage reentrancy guard (no global slot written per call) | built | [docs/MONAD-GAS.md](docs/MONAD-GAS.md) |
 | **Monad's x402 facilitator** | The default settlement path: `exact` USDC payments settle through `x402-facilitator.molandak.org`, which pays the gas. A live testnet job settled through it | live since 28 Sep | [`packages/protocol/src/x402.ts`](packages/protocol/src/x402.ts) |
-| **Canonical contracts and MonadVision** | Multicall3 (`0xcA11…CA11`) batches payment checks into one `eth_call`. Circle USDC and the ERC-8004 registries are used directly. XorvLedger is Sourcify-verified, and every hash links to MonadVision (plain text on a fork, where no explorer has it) | live + built | [`packages/protocol/src/evm.ts`](packages/protocol/src/evm.ts) (`readBatch`) |
+| **Canonical contracts and MonadVision** | Multicall3 (`0xcA11…CA11`) batches payment checks into one `eth_call`. Circle USDC and the ERC-8004 registries are used directly. XorvLedger is verified on Monad's Sourcify (BlockVision), and every hash links to MonadVision (plain text on a fork, where no explorer has it) | live + built | [`packages/protocol/src/evm.ts`](packages/protocol/src/evm.ts) (`readBatch`) |
 
 ## How it works
 
@@ -669,7 +671,7 @@ stops the broker. `GET /api/network` reports each role's state.
 
 ## Deployments
 
-**Live on Monad testnet (12 Oct, testnet go).** All contracts are Sourcify-verified, and every link opens on MonadVision.
+**Live on Monad testnet (12 Oct, testnet go).** All contracts are verified on Monad's Sourcify (BlockVision's instance; links below), and every link opens on MonadVision.
 
 | | Address / URL | Evidence |
 |---|---|---|

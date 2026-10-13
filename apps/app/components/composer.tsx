@@ -275,7 +275,12 @@ export function Composer() {
   // The primary button says whose money moves. Never a generic "Pay": with a
   // wallet it names the wallet, and the demo path is labelled as the demo's.
   let primary: { label: string; onClick: () => void; disabled?: boolean };
-  if (walletAddress) {
+  // A visitor with no wallet yet sees the one-click path first: the demo
+  // account (labelled as such), with logging in as the second choice.
+  const demoFirst = demoReady && !walletAddress && !wallet.creatingWallet;
+  if (demoFirst) {
+    primary = { label: `Pay ${quote?.priceLabel ?? ""} from demo account (no login)`, onClick: () => void payFromDemo() };
+  } else if (walletAddress) {
     const whose = wallet.kind === "embedded" ? "your Privy wallet" : shortHex(walletAddress);
     primary = { label: `Pay ${quote?.priceLabel ?? ""} USDC from ${whose}`, onClick: () => void payFromWallet() };
   } else if (wallet.available && !wallet.creatingWallet) {
@@ -291,7 +296,8 @@ export function Composer() {
   } else {
     primary = { label: "No wallet available", onClick: () => {}, disabled: true };
   }
-  const offerDemo = demoReady && (walletAddress !== null || wallet.available);
+  const offerDemo = demoReady && walletAddress !== null;
+  const offerLogin = demoFirst && wallet.available;
 
   return (
     <div className="mx-auto max-w-2xl text-center">
@@ -425,13 +431,13 @@ export function Composer() {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[14.5px] font-medium text-fg">{quote.provider.label}</p>
-                  <p className="mt-0.5 truncate text-[12.5px] text-fg-3">
+                  <p className="mt-0.5 break-words text-[12.5px] text-fg-3">
                     {quote.provider.capability}
                     {quote.provider.model ? ` · ${quote.provider.model}` : ""} ·{" "}
                     {quote.provider.stats.jobsCompleted} done
                     {quote.provider.agentId ? ` · agent #${quote.provider.agentId}` : ""}
                   </p>
-                  <p className="mono mt-1.5 truncate text-[11.5px] text-fg-4">
+                  <p className="mono mt-1.5 break-words text-[11.5px] leading-relaxed text-fg-4">
                     {quote.escrow ? (
                       <>
                         <Ext href={quote.escrow.explorerUrl || explorerAddress(NETWORK, quote.escrow.address)}>
@@ -500,6 +506,16 @@ export function Composer() {
                   className="mt-2 w-full rounded-lg border border-[var(--line)] px-4 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-[var(--line-2)] hover:text-fg disabled:opacity-40"
                 >
                   Pay from demo account instead
+                </button>
+              ) : null}
+              {offerLogin ? (
+                <button
+                  type="button"
+                  onClick={wallet.login}
+                  disabled={busy !== null || wallet.connecting}
+                  className="mt-2 w-full rounded-lg border border-[var(--line)] px-4 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-[var(--line-2)] hover:text-fg disabled:opacity-40"
+                >
+                  {wallet.mode === "privy" ? "Log in to pay from your own wallet" : "Connect a wallet to pay from it"}
                 </button>
               ) : null}
 
