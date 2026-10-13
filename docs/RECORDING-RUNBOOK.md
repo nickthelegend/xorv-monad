@@ -39,6 +39,8 @@ The existing cut, [docs/demo/xorv-demo.mp4](demo/xorv-demo.mp4) (2:02), follows 
 | 12 | 1:58–2:16 | CRE refund tab | Transaction: Transfer from XorvEscrow back to the buyer, **JobRefunded**, **KeeperRefunded**, **ReportProcessed** from the "Chainlink forwarder (CRE simulation)" | If the work never comes, a Chainlink CRE workflow finds the expired job in the Envio index and refunds the buyer. No one at Xorv has to act. |
 | 13 | 2:16–2:26 | Home tab | Recent jobs, with the new job at the top | Built on Monad with Privy, Kimi, Chainlink CRE and Data Feeds, Envio, Nansen, Agora AUSD and ERC-8004. |
 
+**Optional shot 9b, the strongest trust beat (about 15 s, about 0.15 MON):** a fail → refund. Ask for something the verifier will fail, e.g. *"Reply with only the word banana."* to a prompt that demands an essay. Kimi scores it low, the timeline shows **"Refunded: the work failed verification"**, and the refund tx returns the USDC to the buyer. That gives a public fail → refund pair to cite.
+
 For the **automated** re-take, run `node e2e/web/record-demo.mjs .env` from the repo root:
 - shots 5–6 become "an MCP agent pays from its Privy server wallet", and the job starts by itself;
 - the captions are burned in, and the MP4 and SRT land in `docs/demo/`.

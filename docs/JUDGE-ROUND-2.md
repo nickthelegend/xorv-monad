@@ -80,3 +80,96 @@ The trust story is weaker than the pitch. Releasing money is decided by one wall
 5. Fix the inaccurate wording: say "Verified on Monad Sourcify (BlockVision)", remove the "buyer to provider directly" line and the Hunyuan/Qwen claims, and fix "5 stars from 0 ratings".
 
 The judge's one paid job: `job_4bqsF7v5GZI-`, payment `0x7cd2a01897f99f395449da7a5b14d5e26f5625d4dd6dd60290ee37168b7fb90f`.
+
+---
+
+## Fixes after round 1 (13 Oct, 20:10–20:30 IST)
+
+**Claims:**
+- Sourcify wording: the contracts are verified on Monad's instance, run by BlockVision.
+- CRE: labelled as a simulation through the MockKeystoneForwarder, both in the app and in the portal copy.
+- The release rule is the broker attester's.
+- README: escrow is the default path; Hunyuan and Qwen act only with keys.
+- Nansen is conditional on the recording.
+- Privy policy evidence: `docs/evidence/`.
+
+**UI:**
+- 427 px home overflow fixed.
+- "Pay from demo account (no login)" is the primary button.
+- Quote card wraps.
+- "5 stars from 0 ratings" fixed.
+- "To be released on delivery".
+- Hero mark in brand colors.
+- Larger chips and fine print.
+- A finished job's log starts folded.
+- The browser falls back across public RPCs.
+
+**Trust:** release now waits for the verdict's on-chain ERC-8004 feedback transaction (`b1888e4`).
+
+## Round 2 verdict (verbatim, fresh judge, no payment)
+
+**Weighted total: 6.6 / 10.**
+
+| Criterion | Score | Reason |
+|---|---|---|
+| Product quality | 7 | Clean, fast UI that you understand in 30 seconds. Getting a quote takes one keystroke and the quote card is clear. Job pages are excellent. No overflow at 1440 or 390. |
+| Technical excellence | 6 | A real escrow, an x402 facilitator, three contracts fully verified on Sourcify, CI green. But the escrow's verifier gate, which the whole pitch rests on, doesn't hold in the team's own data. |
+| Monad integration | 8 | `eth_sendRawTransactionSync` speed receipts, `monadNewHeads` pipeline, validator set from the staking precompile, reserve-aware gas payers, measured finality around 1 s. Genuinely Monad-specific. |
+| Track fit | 6 | ERC-8004 identity and reputation plus escrow fits "trust infra". But on-chain verdicts exist for only 4 of 12 jobs, and the Network page shows 0 receipts and 0 ratings published. |
+| Innovation | 6 | Per-job AI marketplace with a verifier-gated escrow is a good combination, though each piece (x402, 8004, escrow) is known. |
+
+| Bounty | Total | Reason |
+|---|---|---|
+| Privy | 77 | Fund tx and rating are real; that the payer is a policy-bound Privy *server* wallet is asserted only in docs. |
+| CRE | 73 | 0xa85c2f does refund through the keeper and forwarder; it is a `simulate --broadcast` with a mock forwarder, not a DON deploy. |
+| Kimi | 62 | Kimi verdicts are real, but "release only on Kimi's pass" is false on their own records. |
+| Nansen (with recording) | 52 | Off live; makes sense only if judges watch the recording. |
+| Envio (if deployed) | 48 | `indexer: null`; don't submit until deployed. |
+| CVI (fork evidence) | 50 | Fork-only; the live escrow has no identity gate. |
+
+**Claims it could not verify:**
+- The flagship "verdict tx, then release tx": release 0x8ab899 is in block 70661072, and its feedback 0x7a0677 is in 70661073.
+- Verdict-before-release holds for only the 2 newest of 12 jobs.
+- `job_5lI4IqeDWek9` scored 25/100 (pass: false) and was released.
+- The README said verification "never blocks the job".
+- The Privy ids can't be checked on chain.
+
+**Broken or confusing:**
+- A 429 from the public RPC on the phone.
+- The Network counters read "0 receipts / 0 ratings" beside 12 completed jobs.
+- Screener, router and wallet intelligence show "off".
+- The quote card's "You sign once" sits under the demo button.
+- Repetitive recent jobs.
+- The README cites the old ledger on monadscan.
+
+**Dense:**
+- Network page at 390 px is 4,145 px tall, with truncated hashes.
+- The speed-receipt row truncates.
+
+**The reason it would vote no:** "the central trust promise … is falsified by the team's own public data … For a Trust-track entry, that's disqualifying-level overclaim."
+
+**What would most raise the score:**
+1. Enforce verdict-before-release and cite a correct pair.
+2. Show a fail → refund transaction.
+3. Make the Network counters cumulative.
+4. Cut or switch on the "off" features.
+5. Unify the README with the portal.
+
+## Fixes after round 2 (20:35–20:50 IST)
+
+1. **The gate's history.** The portal, README and SUBMISSION now cite `job_qYHL9A_f9aGZ`: ERC-8004 feedback `0x09cee4…`, then release `0x158573…`, in block 70663304, feedback first. They state when each gate applied:
+   - none before 16:15 IST 13 Oct, which explains `job_5lI4IqeDWek9`;
+   - the verdict from 16:15;
+   - the on-chain verdict from 20:25 (`b1888e4`).
+
+   The README's Kimi section and its proven table are corrected.
+2. **Counters.** They are labelled "written since the broker's last restart". An empty ratings feed explains the recent-block RPC window.
+3. **Wrapping.** `Row` values wrap instead of truncating, which fixes the speed receipt and the settlement table.
+4. **Quote fine print.** It names "the payer" on the demo path.
+
+**Not fixable without the user, MON or keys:**
+- A live fail → refund transaction: about 0.15 MON. It is added to the recording runbook as a shot.
+- A CRE DON deploy (needs CRE deploy access).
+- Envio Cloud.
+- Nansen live (shared credits; recording only).
+- The Qwen and Hunyuan keys.
