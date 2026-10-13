@@ -202,7 +202,7 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="shrink-0 text-[12.5px] text-fg-4">{label}</span>
-      <span className="min-w-0 truncate text-right text-[12.5px] text-fg-2">{children}</span>
+      <span className="min-w-0 break-words text-right text-[12.5px] text-fg-2">{children}</span>
     </div>
   );
 }

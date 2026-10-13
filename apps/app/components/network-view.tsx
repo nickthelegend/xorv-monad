@@ -213,7 +213,7 @@ export function NetworkView() {
           </Row>
           {info
             ? (["registrations", "heartbeats", "receipts", "ratings"] as const).map((kind) => (
-                <Row key={kind} label={`${kind} published`}>
+                <Row key={kind} label={`${kind} written since the broker's last restart`}>
                   <span className="tnum">{info.published?.[kind] ?? 0}</span>
                 </Row>
               ))
@@ -308,7 +308,14 @@ export function NetworkView() {
         {!ratings ? (
           <Skeleton rows={2} />
         ) : ratings.events.length === 0 ? (
-          <Empty title="No ratings yet" hint="A buyer's rating is one gasless signature, relayed into ERC-8004 reputation." />
+          <Empty
+            title={ratings.source === "rpc" ? "No ratings in recent blocks" : "No ratings yet"}
+            hint={
+              ratings.source === "rpc"
+                ? "Without the Envio index this feed scans only about the last 100 minutes of blocks; older ratings are on the provider's ERC-8004 record. A rating is one gasless signature, relayed into ERC-8004 reputation."
+                : "A buyer's rating is one gasless signature, relayed into ERC-8004 reputation."
+            }
+          />
         ) : (
           <ul className="border-t border-[var(--line)]">
             {ratings.events.map((event) => (

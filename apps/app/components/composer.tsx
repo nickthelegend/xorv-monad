@@ -521,8 +521,8 @@ export function Composer() {
 
               <p className="mt-2.5 text-center text-[12.5px] leading-relaxed text-fg-3">
                 {quote.escrow
-                  ? `You sign once, for exactly ${quote.priceLabel} into XorvEscrow. It goes to this provider only when the job delivers, and comes back to you in full if it doesn't; after ${new Date(quote.escrow.deadline * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} anyone can refund it. The facilitator pays the gas.`
-                  : `You sign once, for exactly ${quote.priceLabel} to this provider. The facilitator pays the gas.`}
+                  ? `${demoFirst ? "The payer" : "You"} sign${demoFirst ? "s" : ""} once, for exactly ${quote.priceLabel} into XorvEscrow. It goes to this provider only when the job delivers, and comes back to the payer in full if it doesn't; after ${new Date(quote.escrow.deadline * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} anyone can refund it. The facilitator pays the gas.`
+                  : `${demoFirst ? "The payer signs" : "You sign"} once, for exactly ${quote.priceLabel} to this provider. The facilitator pays the gas.`}
               </p>
 
               <button
