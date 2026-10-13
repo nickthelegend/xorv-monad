@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createPublicClient, formatEther, http, type PublicClient } from "viem";
+import { createPublicClient, formatEther, type PublicClient } from "viem";
 import { explorerAddress, readStaking, shortHex, viemChain, type StakingSnapshot } from "@xorv/protocol/web";
-import { CHAIN_CONFIG, IS_LOCAL_CHAIN, NETWORK, NETWORK_LABEL } from "@/lib/network";
+import { IS_LOCAL_CHAIN, NETWORK, NETWORK_LABEL, browserTransport } from "@/lib/network";
 import { Ext, Panel, Row } from "@/components/ui";
 
 /**
@@ -18,7 +18,7 @@ export function StakingPanel() {
 
   useEffect(() => {
     // The network's own public RPC, never a fork's: staking lives only on Monad.
-    const client = createPublicClient({ chain: viemChain(NETWORK), transport: http(CHAIN_CONFIG.rpcUrl) }) as PublicClient;
+    const client = createPublicClient({ chain: viemChain(NETWORK), transport: browserTransport() }) as PublicClient;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const load = async (): Promise<void> => {

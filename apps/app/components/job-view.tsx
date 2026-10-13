@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { explorerAddress, explorerAgent, explorerTx, formatUsdc, publicClientFor, shortHex } from "@xorv/protocol/web";
 import { EASE, useEntrance } from "@/lib/motion";
 import { BROKER_URL, api, formatDuration, formatUsd, type Job, type JobEvent } from "@/lib/api";
-import { NETWORK, NETWORK_LABEL, PUBLIC_RPC_URL } from "@/lib/network";
+import { NETWORK, NETWORK_LABEL, browserTransport } from "@/lib/network";
 import { useNetworkInfo } from "@/lib/hooks";
 import { Button, Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { ResultMarkdown } from "@/components/result-markdown";
@@ -429,7 +429,7 @@ function useReceiptCheck(
   useEffect(() => {
     if (!txHash || !ledger || !key) return;
     let alive = true;
-    const client = publicClientFor(NETWORK, { rpcUrl: PUBLIC_RPC_URL }) as unknown as ReceiptReader;
+    const client = publicClientFor(NETWORK, { transport: browserTransport() }) as unknown as ReceiptReader;
     void checkResultAgainstReceipt({ client, txHash, ledger, jobId, result }).then((check) => {
       if (alive) setState({ key, check });
     });

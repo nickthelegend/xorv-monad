@@ -26,7 +26,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { toViemAccount, useExportWallet, usePrivy, useWallets, type ConnectedWallet } from "@privy-io/react-auth";
 import { createWalletClient, custom, getAddress, type Address, type EIP1193Provider, type PublicClient } from "viem";
 import { fetchBalances, publicClientFor, sameAddress, type AccountBalances } from "@xorv/protocol/web";
-import { APP_CHAIN, NETWORK, PUBLIC_RPC_URL } from "@/lib/network";
+import { APP_CHAIN, NETWORK, browserTransport } from "@/lib/network";
 import { errorMessage, isUserRejection } from "@/lib/errors";
 import { jsonSafeSigner } from "@/lib/typed-data";
 import type { PaymentSigner } from "@/lib/x402-pay";
@@ -100,7 +100,7 @@ function useBalances(address: Address | null) {
   const refresh = useCallback(async (): Promise<AccountBalances | null> => {
     if (!address) return null;
     try {
-      client.current ??= publicClientFor(NETWORK, { rpcUrl: PUBLIC_RPC_URL });
+      client.current ??= publicClientFor(NETWORK, { transport: browserTransport() });
       const balances = await fetchBalances(NETWORK, address, { client: client.current });
       setState({ address, balances, error: false });
       return balances;

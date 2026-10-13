@@ -7,7 +7,7 @@ import { ERC20_ABI, formatUsdc, publicClientFor, shortHex } from "@xorv/protocol
 import { api, formatAgo, type Job, type NetworkInfo } from "@/lib/api";
 import { decodeLogs, type DecodedLog } from "@/lib/chain-viewer";
 import { useNetworkInfo } from "@/lib/hooks";
-import { IS_LOCAL_CHAIN, NETWORK, NETWORK_LABEL, PUBLIC_RPC_URL } from "@/lib/network";
+import { IS_LOCAL_CHAIN, NETWORK, NETWORK_LABEL, PUBLIC_RPC_URL, browserTransport } from "@/lib/network";
 import { Empty, Panel, Row, Skeleton } from "@/components/ui";
 import { TxBadge } from "@/components/tx-badge";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
  */
 
 function useClient(): PublicClient {
-  return useMemo(() => publicClientFor(NETWORK, { rpcUrl: PUBLIC_RPC_URL }) as unknown as PublicClient, []);
+  return useMemo(() => publicClientFor(NETWORK, { transport: browserTransport() }) as unknown as PublicClient, []);
 }
 
 /** Known addresses → names, from the broker's own description of its contracts. */

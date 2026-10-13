@@ -13,7 +13,7 @@
  * come back `undefined` in the browser.
  */
 
-import { defineChain, type Chain } from "viem";
+import { defineChain, fallback, http, type Chain, type Transport } from "viem";
 import { viewerPath } from "@/lib/chain-viewer";
 import {
   DEFAULT_NETWORK,
@@ -55,6 +55,20 @@ export const IS_TESTNET = CHAIN_CONFIG.label === "testnet";
  * here keeps the header honest without touching the broker's.
  */
 export const PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_XORV_RPC_URL?.trim() || CHAIN_CONFIG.rpcUrl;
+
+/**
+ * Other public Monad testnet endpoints, tried in turn when the main one
+ * rate-limits (it answers 429 under a burst of tabs). Reads only: wallets
+ * still sign against APP_CHAIN.
+ */
+const TESTNET_BACKUP_RPCS = ["https://rpc-testnet.monadinfra.com", "https://monad-testnet.drpc.org", "https://rpc.ankr.com/monad_testnet"];
+
+/** The browser's read transport: the configured RPC, then the public backups on testnet. */
+export function browserTransport(): Transport {
+  const primary = http(PUBLIC_RPC_URL, { retryCount: 1, timeout: 10_000 });
+  if (IS_LOCAL_CHAIN || CHAIN_CONFIG.label !== "testnet") return primary;
+  return fallback([primary, ...TESTNET_BACKUP_RPCS.map((url) => http(url, { retryCount: 1, timeout: 10_000 }))]);
+}
 
 /**
  * The viem chain wallets are asked to switch to and sign on: protocol's
