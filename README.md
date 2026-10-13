@@ -82,7 +82,7 @@ layer, not a consumer app:
 
 1. Open <https://xorv-monad-app.vercel.app> on Monad testnet. The hero and the model picker show what is on sale right now: a hosted provider node selling **Kimi K3** at $0.02 a job.
 2. Type a prompt and press ⌘↵. The quote card freezes the price, the provider and XorvEscrow before anything is paid.
-3. **Log in to pay** (Privy, Google or email). The new wallet needs test USDC: the wallet menu links Circle's faucet ("Monad Testnet"). It needs **no MON**, because the facilitator pays the gas.
+3. **Pay from demo account** to buy without logging in: the app pays from a testnet account it holds (at most $0.03 a job and $0.60 a day). Or **Log in to pay** with Privy (Google or email). That new wallet needs test USDC, and the wallet menu links Circle's faucet ("Monad Testnet"). Neither way needs **MON**, because the facilitator pays the gas.
 4. Watch the job page: the payment enters XorvEscrow, the job runs, and the escrow releases on delivery. Each step links its Monad transaction, and the speed receipt shows "executed X ms · final Y ms".
 5. **Network** shows Monad's live consensus pipeline and validator set. **Chain** reads any transaction straight from the RPC.
 
