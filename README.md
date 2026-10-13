@@ -699,6 +699,8 @@ executed in 177 ms and was final in 855 ms.
 
 **Release on the verifier's verdict (13 Oct):** with `XORV_RELEASE_ON_VERDICT=on`, the hosted broker held `job_4o0BmILtuvz5` in escrow until Kimi passed it (95/100). It then released [`0x8ab899…1e2b`](https://testnet.monadvision.com/tx/0x8ab89925367b418d559959e845ffbd8f1e4e1917e1bcf7a13ce262b3286b1e2b), 3.9 s after delivery, and wrote the verdict as ERC-8004 feedback [`0x7a0677…eeb2`](https://testnet.monadvision.com/tx/0x7a0677caa130295ab9e78fdc3c4715ea2784d743cb82c3eb57b9ae056780eeb2). A failed verdict refunds the buyer instead.
 
+**A browser purchase with no login (13 Oct):** on the hosted app, "Pay from demo account" paid $0.02 into XorvEscrow for `job_qYHL9A_f9aGZ` ([`0x8922a3…28dd`](https://testnet.monadvision.com/tx/0x8922a3a27429753fc04634bbbbed437ec7711f4a3fef6af9dde16c798a9628dd)). The payment was final in 1.02 s, Kimi passed the work (95/100), and the escrow released to agent #2252.
+
 **First CRE refund (13 Oct):** a $0.001 escrowed job was funded from the Privy wallet and left undelivered
 ([fund `0x7f1cfd…0a9c`](https://testnet.monadvision.com/tx/0x7f1cfd8d1a61f3276274912a8c364b8e8b0d371b98f5de50ffc091d0add80a9c)).
 After its deadline, `cre workflow simulate refund-keeper --broadcast` read it from the Envio index as

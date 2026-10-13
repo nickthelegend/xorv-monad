@@ -36,14 +36,14 @@ Written 13 Oct 2026 as an unbiased Metropolis judge would read it. I used the li
 ## Top 5 weaknesses
 
 1. **One live seller.** A marketplace with a single hosted Kimi node, run by the team, is a demo of the rails rather than proof of a market.
-2. **The human buyer path is unproven live.** Privy login, then faucet USDC, then paying from the embedded wallet works in code and on the local fork, but no person has done it on the hosted app. The recorded cut shows the agent path instead.
+2. **A person paying from their own wallet is unproven live.** *Narrowed during judge mode:* the hosted app's "Pay from demo account" is now configured (at most $0.03 a job, $0.60 a day, rate-limited). A browser purchase with no login ran end to end on 13 Oct: `job_qYHL9A_f9aGZ`, payment [`0x8922a3…28dd`](https://testnet.monadvision.com/tx/0x8922a3a27429753fc04634bbbbed437ec7711f4a3fef6af9dde16c798a9628dd), Kimi 95/100, released. The Privy-login path still needs a person.
 3. **The escrow trusts the broker's attester.** Release is still signed by Xorv's facilitator. *Narrowed during judge mode:* with `XORV_RELEASE_ON_VERDICT=on` (live on the hosted broker), a delivered job is released only after Kimi passes it, and refunded at the provider's fault if Kimi fails it. Refunds stay trustless after the deadline (CRE, or anyone). What remains is trust in the attester and the verifier, not a contract-enforced proof.
 4. **Envio is not hosted.** The leaderboard and the CRE keeper's index run locally, and the hosted broker reads its feeds from RPC.
 5. **Breadth over depth in the sponsor list.** Qwen and Hunyuan show "not configured" in the UI, and the MetaMask plugin and Mera's cross-device flow are tested but not shown live.
 
 ## What would make a judge say no
 
-- "I couldn't buy a job": no faucet USDC, or the only provider offline. *Mitigated:* the provider runs on Railway with a persisted daily cap and now survives broker restarts, and the README walks a judge through the faucet step.
+- "I couldn't buy a job": *fixed.* "Pay from demo account" buys without a login or faucet USDC. *Mitigated:* the provider runs on Railway with a persisted daily cap and now survives broker restarts, and the README walks a judge through the faucet step.
 - "It says Claude, but it's an API key resold under someone else's terms": *fixed*, since the hero names the live model.
 - "Release is centralized": narrowed, since release now needs the verifier's pass, but still signed by the broker's attester.
 

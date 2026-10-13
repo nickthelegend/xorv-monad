@@ -60,7 +60,7 @@ export function SpeedReceipt({ job }: { job: Job }) {
         {monUsd && !local ? (
           <Row label="gas in dollars">
             <span className="tnum" title={`Chainlink MON/USD on Monad mainnet (${monUsd.feed}); testnet MON has no market price`}>
-              ≈ {formatUsdTiny(monToUsd(BigInt(timing.gasPaidWei), monUsd))} at Chainlink MON/USD ${monUsd.price.toFixed(4)}
+              ≈ {formatUsdTiny(monToUsd(BigInt(timing.gasPaidWei), monUsd))} · Chainlink MON ${monUsd.price.toFixed(4)}
             </span>
           </Row>
         ) : null}
