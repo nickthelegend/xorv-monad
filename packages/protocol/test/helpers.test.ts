@@ -172,6 +172,8 @@ describe("entry points", () => {
         "@noble/hashes/hkdf.js",
         "@noble/hashes/sha2.js",
         "@noble/hashes/utils.js",
+        // Passkeys checked on Monad's P256 precompile: key recovery and local verification (p256.ts).
+        "@noble/curves/nist.js",
       ].sort(),
     );
   });

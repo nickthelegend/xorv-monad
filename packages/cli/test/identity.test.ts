@@ -213,7 +213,7 @@ describe("registerAgent", () => {
     const node = chain({ revert: true });
     await expect(
       registerAgent({ network: NETWORK, account, agentURI: URI, gas: 282_900n, client: { transport: node.transport } }),
-    ).rejects.toThrow(/reverted.*testnet\.monadscan\.com\/tx\/0x/);
+    ).rejects.toThrow(/reverted.*testnet\.monadvision\.com\/tx\/0x/);
   });
 });
 
@@ -257,8 +257,8 @@ describe("walletRows", () => {
 
   it("links the address and the USDC token on the explorer, and the testnet faucets", () => {
     const r = rows();
-    expect(r.explorer).toBe(`https://testnet.monadscan.com/address/${PAYOUT}`);
-    expect(r.token).toContain("https://testnet.monadscan.com/token/0x534b2f3A21130d7a60830c2Df862319e593943A3");
+    expect(r.explorer).toBe(`https://testnet.monadvision.com/address/${PAYOUT}`);
+    expect(r.token).toContain("https://testnet.monadvision.com/token/0x534b2f3A21130d7a60830c2Df862319e593943A3");
     expect(r.faucets).toContain("https://faucet.circle.com");
     expect(r.faucets).toContain("https://faucet.monad.xyz");
   });

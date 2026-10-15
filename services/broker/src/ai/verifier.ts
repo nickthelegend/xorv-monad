@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * The result verifier — Moonshot Kimi K3 (kimi-k3, reasoning_effort "low").
  *
@@ -132,8 +133,17 @@ export class KimiVerifier {
    * Score one finished job; null when it isn't verifiable or the verifier
    * failed (the job simply goes without a verification).
    */
+  /**
+   * Verdicts by content (prompt, result): the same work is never scored, and paid for, twice.
+   * Bounded; oldest first out.
+   */
+  private readonly cache = new Map<string, VerificationRecord>();
+
   async verify(job: StoredJob): Promise<VerificationRecord | null> {
     if (!verifiable(job)) return null;
+    const key = createHash("sha256").update(`${job.request.title ?? ""}\u0000${job.request.prompt}\u0000${job.result ?? ""}`).digest("hex");
+    const cached = this.cache.get(key);
+    if (cached) return { ...cached, at: Date.now(), feedbackTxHash: null };
     try {
       const { data, model, ms } = await this.client.json({
         system: SYSTEM,
@@ -144,7 +154,7 @@ export class KimiVerifier {
         schemaHint: SCHEMA_HINT,
         validate: parseVerification,
       });
-      return {
+      const record: VerificationRecord = {
         by: this.client.preset.kind,
         model,
         score: data.score,
@@ -155,6 +165,9 @@ export class KimiVerifier {
         at: Date.now(),
         feedbackTxHash: null,
       };
+      this.cache.set(key, record);
+      if (this.cache.size > 500) this.cache.delete(this.cache.keys().next().value!);
+      return record;
     } catch (err) {
       const failure = err instanceof AiRoleError ? err : new AiRoleError("error", String(err));
       this.log(`[broker] result verifier skipped job ${job.id}: ${failure.kind}: ${failure.message}`);

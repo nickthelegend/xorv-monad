@@ -133,7 +133,7 @@ describe("payForQuote: the 402 must match the vetted quote", () => {
     const paid = await promise;
     expect(paid.response.jobId).toBe("job_TestJob0001");
     expect(paid.settlement.txHash).toMatch(/^0x(ab){32}$/);
-    expect(paid.settlement.explorerUrl).toBe(`https://testnet.monadscan.com/tx/${paid.settlement.txHash}`);
+    expect(paid.settlement.explorerUrl).toBe(`https://testnet.monadvision.com/tx/${paid.settlement.txHash}`);
     expect(mm.requests).toHaveLength(1);
     expect(broker.payments).toHaveLength(1);
     const paidRequests = broker.seen.filter((s) => s.method === "POST" && s.path.startsWith("/api/jobs/"));

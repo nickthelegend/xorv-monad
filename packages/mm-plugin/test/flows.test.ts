@@ -93,7 +93,7 @@ describe("runJob after payment", () => {
       ),
     ).rejects.toMatchObject({
       code: "XORV_JOB_TIMEOUT",
-      message: expect.stringContaining(`https://testnet.monadscan.com/tx/${SETTLE_TX}`),
+      message: expect.stringContaining(`https://testnet.monadvision.com/tx/${SETTLE_TX}`),
       hint: expect.stringContaining(`mm xorv job ${JOB_ID}`),
     });
     expect(broker.payments).toHaveLength(1);

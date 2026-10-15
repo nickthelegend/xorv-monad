@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { api, type NetworkInfo } from "@/lib/api";
+import { utcTime } from "@/lib/payment-timeline";
 
 /**
  * Polling, not sockets.
@@ -106,3 +107,25 @@ const demoOnce = once(
 export function useDemoPayer(): DemoPayerInfo | null {
   return useOnce(demoOnce);
 }
+
+/**
+ * A clock time that renders the same on the server and in the browser: UTC
+ * first (the server has no idea of the viewer's zone), then the viewer's local
+ * time once mounted. Formatting it straight in render made the server's UTC
+ * text and the browser's local text disagree, a React hydration error.
+ */
+export function useLocalTime(ms: number | null | undefined): string {
+  const format = useTimeFormat();
+  return ms == null ? "" : format(ms);
+}
+
+/** The formatter behind `useLocalTime`, for code that builds sentences around a time. */
+export function useTimeFormat(): (ms: number) => string {
+  // false while hydrating (the server snapshot), true after: no effect needed.
+  const mounted = useSyncExternalStore(noSubscribe, () => true, () => false);
+  return mounted ? localTime : utcTime;
+}
+
+const localTime = (ms: number): string => new Date(ms).toLocaleTimeString();
+
+const noSubscribe = (): (() => void) => () => {};

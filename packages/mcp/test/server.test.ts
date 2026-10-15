@@ -295,8 +295,8 @@ describe("buying and rating against a mock broker", () => {
     const out = textOf(run);
     expect(run.result?.isError, out).toBeFalsy();
     expect(out.startsWith("4")).toBe(true);
-    expect(out).toContain(`https://testnet.monadscan.com/tx/${SETTLE_TX}`);
-    expect(out).toContain(`https://testnet.monadscan.com/tx/${RECEIPT_TX}`);
+    expect(out).toContain(`https://testnet.monadvision.com/tx/${SETTLE_TX}`);
+    expect(out).toContain(`https://testnet.monadvision.com/tx/${RECEIPT_TX}`);
     expect(out).toContain(BUYER_ADDRESS);
     expect(out).toMatch(/xorv_rate_job/);
     expect(out).toMatch(/\$0\.0100 of \$0\.5000 session budget spent/);
@@ -304,11 +304,11 @@ describe("buying and rating against a mock broker", () => {
 
     const rate = await client.call(3, "xorv_rate_job", { job_id: "job_test1", value: 90 });
     expect(rate.result?.isError, textOf(rate)).toBeFalsy();
-    expect(textOf(rate)).toContain(`https://testnet.monadscan.com/tx/${RATE_TX}`);
+    expect(textOf(rate)).toContain(`https://testnet.monadvision.com/tx/${RATE_TX}`);
     expect(broker.ratings).toEqual([expect.objectContaining({ value: 90, valid: true })]);
 
     const job = await client.call(4, "xorv_get_job", { job_id: "job_test1" });
-    expect(textOf(job)).toContain(`Payment: https://testnet.monadscan.com/tx/${SETTLE_TX}`);
+    expect(textOf(job)).toContain(`Payment: https://testnet.monadvision.com/tx/${SETTLE_TX}`);
     expect(textOf(job)).toMatch(/Verified by kimi/);
     expect(client.garbage).toEqual([]);
   }, 60_000);

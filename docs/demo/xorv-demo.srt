@@ -1,0 +1,63 @@
+1
+00:00:00,489 --> 00:00:06,988
+Xorv on Monad: A marketplace for AI work. Pay one job at a time in USDC, held in escrow until the work is delivered. Recorded live on Monad testnet.
+
+2
+00:00:06,988 --> 00:00:13,046
+Monad testnet, live: Every block, as Monad's consensus advances it: proposed, voted, finalized, verified. These are this browser's own timings.
+
+3
+00:00:13,046 --> 00:00:21,572
+Monad testnet, live: Voted in about 295 ms and final in about 580 ms. Xorv settles every payment on this, so a job's money is final in about a second.
+
+4
+00:00:21,572 --> 00:00:26,785
+Who secures the payments: The validator set finalizing those blocks, read live from Monad's staking precompile.
+
+5
+00:00:26,785 --> 00:00:31,543
+Ask the network: A buyer describes the job. The broker picks a live provider and freezes the price, the provider and the escrow before anything is paid.
+
+6
+00:00:31,544 --> 00:00:40,553
+The quote: Kimi K3 on a hosted provider node, $0.02. XorvEscrow holds the money and pays the provider only on delivery. A person logs in with Privy (Google) and pays from an embedded wallet; the buyer needs no MON.
+
+7
+00:00:40,553 --> 00:00:44,480
+An AI agent buys a job: Now an AI agent pays instead: an MCP server with a Privy server wallet. Its policy lets it sign only USDC payments of $0.05 or less, and only to Xorv's escrow or to providers.
+
+8
+00:00:44,480 --> 00:00:57,398
+The money, live: The agent's USDC goes into XorvEscrow on Monad. The provider runs the job, and on delivery the escrow releases the money with the result's hash, then the receipt lands on XorvLedger.
+
+9
+00:00:57,398 --> 00:01:07,918
+Settled on Monad: Payment executed in 309 ms and final in 1,105 ms. Release executed in 332 ms and final in 893 ms. Each receipt came back in the send itself (eth_sendRawTransactionSync).
+
+10
+00:01:07,918 --> 00:01:17,094
+Kimi verifies the work: Kimi K3 reads the prompt and the answer and scores it 95/100. A low score would count against the provider's reputation.
+
+11
+00:01:17,094 --> 00:01:24,547
+Check it on chain: The release transaction, read straight from Monad: USDC from XorvEscrow to the provider, finalized. The buyer paid no gas; Xorv's facilitator did.
+
+12
+00:01:24,547 --> 00:01:31,072
+The provider's side: Each payout links to its Monad transaction. This node runs on Railway, sells Kimi K3, and has a persisted daily cap so free testnet USDC can't drain its model credit.
+
+13
+00:01:31,072 --> 00:01:39,187
+Trust from Nansen: Nansen profiles the provider's payout wallet: who funded it, its related wallets, and how old it is. The broker uses this to stop a provider rating itself through wallets it controls.
+
+14
+00:01:39,187 --> 00:01:46,697
+If the work never comes, the buyer gets the money back: Here an escrowed job expired undelivered. A Chainlink CRE workflow found it in the Envio index, XorvEscrow confirmed it was refundable, and the report went through the forwarder to XorvRefundKeeper.
+
+15
+00:01:46,697 --> 00:01:54,119
+Refunded on Monad: The escrow refunded the buyer in full. No one at Xorv had to act, and no one could keep the money.
+
+16
+00:01:54,119 --> 00:02:01,142
+Xorv on Monad: Pay per job in USDC with a second to finality, escrow with refunds, receipts on XorvLedger and reputation in ERC-8004. Built with Privy, Kimi, Envio, Nansen and Chainlink CRE.

@@ -1,6 +1,15 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { explorerHref } from "@/lib/network";
+
+const LOCAL_ONLY = "On the local fork: no public explorer has this transaction";
+
+/** Drop a trailing "↗" from link text that isn't a link any more. */
+function withoutArrow(children: ReactNode): ReactNode {
+  const strip = (part: ReactNode): ReactNode => (typeof part === "string" ? part.replace(/\s*↗\s*$/, "") : part);
+  return Array.isArray(children) ? children.map(strip) : strip(children);
+}
 
 /* ---------------------------------------------------------------------------
    The app's component vocabulary.
@@ -38,6 +47,22 @@ export function Button({
   external?: boolean;
 } & Omit<ComponentProps<"button">, "ref">) {
   const cls = cn(base, variants[variant], className);
+  const target = href && external ? explorerHref(href) : href;
+  if (href && external && target === null) {
+    return (
+      <span className={cn(cls, "pointer-events-none opacity-50")} title={LOCAL_ONLY}>
+        {children} · local fork
+      </span>
+    );
+  }
+  if (target && target.startsWith("/")) {
+    // A fork's transaction, opened in the app's own chain viewer.
+    return (
+      <Link href={target} className={cls}>
+        {children}
+      </Link>
+    );
+  }
   if (href) {
     return (
       <Link
@@ -143,7 +168,23 @@ export function Skeleton({ rows = 3, className }: { rows?: number; className?: s
   );
 }
 
-export function Ext({ href, children }: { href: string; children: ReactNode }) {
+/** An outside link. An explorer link to a local fork's state renders as text; `live` marks a real-network link. */
+export function Ext({ href, children, live }: { href: string; children: ReactNode; live?: boolean }) {
+  const target = explorerHref(href, live);
+  if (target !== null && target.startsWith("/")) {
+    return (
+      <Link href={target} className="underline-offset-4 transition-colors hover:text-fg hover:underline" title="On the local fork: opens the app's chain viewer">
+        {withoutArrow(children)}
+      </Link>
+    );
+  }
+  if (target === null) {
+    return (
+      <span title={LOCAL_ONLY} className="cursor-default">
+        {withoutArrow(children)}
+      </span>
+    );
+  }
   return (
     <Link
       href={href}
@@ -161,7 +202,7 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
       <span className="shrink-0 text-[12.5px] text-fg-4">{label}</span>
-      <span className="min-w-0 truncate text-right text-[12.5px] text-fg-2">{children}</span>
+      <span className="min-w-0 break-words text-right text-[12.5px] text-fg-2">{children}</span>
     </div>
   );
 }

@@ -43,7 +43,23 @@ export function offsetLabel(at: number | null, from: number | null): string | nu
   return ms < 10_000 ? `+${(ms / 1000).toFixed(1)} s` : ms < 120_000 ? `+${Math.round(ms / 1000)} s` : `+${Math.round(ms / 60_000)} min`;
 }
 
-export function paymentTimeline(job: Job): TimelineStep[] {
+/** Whether the escrow was settled through XorvRefundKeeper, the Chainlink CRE workflow's receiver. */
+export function refundedByKeeper(job: Job, keeper: string | null | undefined): boolean {
+  const via = job.payment?.escrow?.settledVia;
+  return Boolean(keeper && via && via.toLowerCase() === keeper.toLowerCase());
+}
+
+export function paymentTimeline(
+  job: Job,
+  opts: {
+    keeper?: string | null;
+    /** The broker holds a delivered job's release for the verifier's verdict. */
+    releaseOnVerdict?: boolean;
+    /** How a clock time reads. The component passes a hydration-safe one; the default is UTC. */
+    formatTime?: (ms: number) => string;
+  } = {},
+): TimelineStep[] {
+  const formatTime = opts.formatTime ?? utcTime;
   const payment = job.payment;
   const held = payment?.escrow ?? null;
   const terminal = TERMINAL.has(job.status);
@@ -105,16 +121,28 @@ export function paymentTimeline(job: Job): TimelineStep[] {
       steps.push({
         key: "settled",
         title: `Released to ${provider}`,
-        detail: `XorvEscrow paid ${amount} USDC to the provider, with the result hash on-chain${by}.`,
+        detail: `XorvEscrow paid ${amount} USDC to the provider, with the result hash on-chain${by}.${opts.releaseOnVerdict && job.verification?.pass && job.verification.feedbackTxHash ? ` The verifier's pass is recorded on chain as ERC-8004 feedback ${shortHex(job.verification.feedbackTxHash)}.` : ""}`,
         at: held.settledAt ?? null,
         tx: held.releaseTx ?? null,
+        state: "done",
+      });
+    } else if (held.state === "refunded" && refundedByKeeper(job, opts.keeper)) {
+      steps.push({
+        key: "settled",
+        title: "Refunded by the Chainlink CRE keeper",
+        detail: `The deadline passed with no delivery, so the CRE workflow's report reached XorvRefundKeeper and XorvEscrow returned the full ${amount} USDC. The broker sent nothing.`,
+        at: held.settledAt ?? null,
+        tx: held.refundTx ?? null,
         state: "done",
       });
     } else if (held.state === "refunded") {
       steps.push({
         key: "settled",
-        title: "Refunded to the buyer",
-        detail: `XorvEscrow returned the full ${amount} USDC. The provider was paid nothing${by}.`,
+        title: held.refundReason === "failed verification" ? "Refunded: the work failed verification" : "Refunded to the buyer",
+        detail:
+          held.refundReason === "failed verification"
+            ? `The verifier failed the delivered work, so XorvEscrow returned the full ${amount} USDC to the buyer, at the provider's fault.`
+            : `XorvEscrow returned the full ${amount} USDC. The provider was paid nothing${by}.`,
         at: held.settledAt ?? null,
         tx: held.refundTx ?? null,
         state: "done",
@@ -123,7 +151,11 @@ export function paymentTimeline(job: Job): TimelineStep[] {
       steps.push({
         key: "settled",
         title: job.status === "completed" ? "Releasing to the provider" : "Refunding the buyer",
-        detail: held.lastError ? `Retrying: ${held.lastError}` : null,
+        detail: held.lastError
+          ? `Retrying: ${held.lastError}`
+          : job.status === "completed" && !job.verification && opts.releaseOnVerdict
+            ? "Waiting for the verifier's verdict: released on a pass, refunded on a fail."
+            : null,
         at: null,
         tx: null,
         state: "active",
@@ -131,8 +163,8 @@ export function paymentTimeline(job: Job): TimelineStep[] {
     } else {
       steps.push({
         key: "settled",
-        title: "Released on delivery",
-        detail: `Or refunded in full if the job fails. After ${new Date(held.deadline * 1000).toLocaleTimeString()} anyone can refund it, the Chainlink CRE keeper included.`,
+        title: "To be released on delivery",
+        detail: `Or refunded in full if the job fails. After ${formatTime(held.deadline * 1000)} anyone can refund it, the Chainlink CRE keeper included.`,
         at: null,
         tx: null,
         state: "pending",
@@ -154,4 +186,9 @@ export function paymentTimeline(job: Job): TimelineStep[] {
   });
 
   return steps;
+}
+
+/** A clock time in UTC: the same on the server and in every browser. */
+export function utcTime(ms: number): string {
+  return `${new Date(ms).toISOString().slice(11, 19)} UTC`;
 }

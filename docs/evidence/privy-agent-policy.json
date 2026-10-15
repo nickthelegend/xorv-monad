@@ -1,0 +1,187 @@
+{
+  "chain_type": "ethereum",
+  "name": "xorv-agent-testnet",
+  "version": "1.0",
+  "rules": [
+    {
+      "name": "x402 USDC <= $0.0500 per payment",
+      "method": "eth_signTypedData_v4",
+      "action": "ALLOW",
+      "conditions": [
+        {
+          "field_source": "ethereum_typed_data_domain",
+          "field": "chainId",
+          "operator": "eq",
+          "value": "10143"
+        },
+        {
+          "field_source": "ethereum_typed_data_domain",
+          "field": "verifyingContract",
+          "operator": "in",
+          "value": [
+            "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+            "0x534b2f3a21130d7a60830c2df862319e593943a3"
+          ]
+        },
+        {
+          "field_source": "ethereum_typed_data_message",
+          "field": "value",
+          "operator": "lte",
+          "value": "50000",
+          "typed_data": {
+            "primary_type": "TransferWithAuthorization",
+            "types": {
+              "TransferWithAuthorization": [
+                {
+                  "name": "from",
+                  "type": "address"
+                },
+                {
+                  "name": "to",
+                  "type": "address"
+                },
+                {
+                  "name": "value",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validAfter",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validBefore",
+                  "type": "uint256"
+                },
+                {
+                  "name": "nonce",
+                  "type": "bytes32"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "x402 escrow USDC <= $0.0500 into XorvEscrow",
+      "method": "eth_signTypedData_v4",
+      "action": "ALLOW",
+      "conditions": [
+        {
+          "field_source": "ethereum_typed_data_domain",
+          "field": "chainId",
+          "operator": "eq",
+          "value": "10143"
+        },
+        {
+          "field_source": "ethereum_typed_data_domain",
+          "field": "verifyingContract",
+          "operator": "in",
+          "value": [
+            "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+            "0x534b2f3a21130d7a60830c2df862319e593943a3"
+          ]
+        },
+        {
+          "field_source": "ethereum_typed_data_message",
+          "field": "value",
+          "operator": "lte",
+          "value": "50000",
+          "typed_data": {
+            "primary_type": "ReceiveWithAuthorization",
+            "types": {
+              "ReceiveWithAuthorization": [
+                {
+                  "name": "from",
+                  "type": "address"
+                },
+                {
+                  "name": "to",
+                  "type": "address"
+                },
+                {
+                  "name": "value",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validAfter",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validBefore",
+                  "type": "uint256"
+                },
+                {
+                  "name": "nonce",
+                  "type": "bytes32"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "field_source": "ethereum_typed_data_message",
+          "field": "to",
+          "operator": "in",
+          "value": [
+            "0x87d57e81b71d3eF5172156b5f3c6D01f5b74Df91",
+            "0x87d57e81b71d3ef5172156b5f3c6d01f5b74df91"
+          ],
+          "typed_data": {
+            "primary_type": "ReceiveWithAuthorization",
+            "types": {
+              "ReceiveWithAuthorization": [
+                {
+                  "name": "from",
+                  "type": "address"
+                },
+                {
+                  "name": "to",
+                  "type": "address"
+                },
+                {
+                  "name": "value",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validAfter",
+                  "type": "uint256"
+                },
+                {
+                  "name": "validBefore",
+                  "type": "uint256"
+                },
+                {
+                  "name": "nonce",
+                  "type": "bytes32"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "XorvLedger job ratings",
+      "method": "eth_signTypedData_v4",
+      "action": "ALLOW",
+      "conditions": [
+        {
+          "field_source": "ethereum_typed_data_domain",
+          "field": "chainId",
+          "operator": "eq",
+          "value": "10143"
+        },
+        {
+          "field_source": "ethereum_typed_data_domain",
+          "field": "verifyingContract",
+          "operator": "in",
+          "value": [
+            "0x40918C2fEc752B3b8C30bB121779011132668408",
+            "0x40918c2fec752b3b8c30bb121779011132668408"
+          ]
+        }
+      ]
+    }
+  ]
+}

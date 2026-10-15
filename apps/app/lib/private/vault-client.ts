@@ -183,12 +183,14 @@ export class VaultClient {
     } catch (err) {
       throw new VaultError(`couldn't reach the broker: ${err instanceof Error ? err.message : err}`, "network");
     }
-    if (res.status === 404) {
+    if (!res.ok && res.status !== 404) throw new VaultError(`the broker answered ${res.status}`, "network");
+    const body = res.status === 404 ? { exists: false } : ((await res.json()) as Partial<VaultCiphertext> & { updatedAt?: number; exists?: boolean });
+    // No vault yet: a 200 with exists: false (an older broker answered 404).
+    if (body.exists === false) {
       if (seen > 0) throw new VaultError("the broker no longer has this vault", "rollback");
       return { vault: emptyVault(), version: 0, updatedAt: null };
     }
-    if (!res.ok) throw new VaultError(`the broker answered ${res.status}`, "network");
-    const blob = (await res.json()) as VaultCiphertext & { updatedAt?: number };
+    const blob = body as VaultCiphertext & { updatedAt?: number };
     if (blob.version < seen) {
       throw new VaultError(`the broker served version ${blob.version} after this device saw ${seen}`, "rollback");
     }

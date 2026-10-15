@@ -150,7 +150,7 @@ describe("rpcChecks", () => {
 describe("payoutChecks", () => {
   it("links the payout address on the explorer", () => {
     const checks = payoutChecks("eip155:10143", PAYOUT, { monWei: "0", usdcUnits: "1250000" });
-    expect(find(checks, "payout")?.detail).toContain(`https://testnet.monadscan.com/address/${PAYOUT}`);
+    expect(find(checks, "payout")?.detail).toContain(`https://testnet.monadvision.com/address/${PAYOUT}`);
   });
 
   it("does not treat a zero MON balance as a problem", () => {

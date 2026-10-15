@@ -135,6 +135,21 @@ export interface JobRequest {
    * skipped for private jobs.
    */
   encryptTo?: string | null;
+  /**
+   * The agent session that bought this job, as the buying agent declared it
+   * (the MCP server tags its quotes): a random session id, the agent's name,
+   * and its session budget. Self-reported; it groups jobs, it proves nothing.
+   */
+  agent?: AgentSessionTag | null;
+}
+
+export interface AgentSessionTag {
+  /** Random per agent process (unpadded base64url / alphanumeric, 8–64 chars). */
+  session: string;
+  name: string;
+  /** The agent's own session budget in micro-USD; null when it runs without one. */
+  budgetUsdMicros: number | null;
+  client: "mcp";
 }
 
 /** A single streamed step from the provider while the job runs. */
@@ -175,8 +190,22 @@ export interface PaymentRecord {
  * broker's clock, and the block, gas and gas payer read from that receipt.
  */
 export interface ChainTiming {
-  /** Milliseconds from submission to the confirmed receipt; null when it wasn't measured. */
+  /**
+   * Milliseconds from submission to holding the receipt: the transaction has
+   * executed in a proposed block (speculatively final on Monad). Null when it
+   * wasn't measured.
+   */
   confirmMs: number | null;
+  /**
+   * Milliseconds from submission until the RPC's `finalized` head reached the
+   * transaction's block with the same hash (irreversible on Monad, about two
+   * slots after proposal). Null when it wasn't observed.
+   */
+  finalMs?: number | null;
+  /** "sync": the receipt came back in the send's own response (eth_sendRawTransactionSync); "async": it was polled. */
+  sendMode?: "sync" | "async" | null;
+  /** Where it was measured: a Monad network, or a local chain (a fork), whose timings are not Monad's. */
+  chain?: "monad" | "local";
   blockNumber: number;
   /** Gas used, as an integer string. */
   gasUsed: string;
@@ -202,6 +231,8 @@ export interface EscrowRecord {
   provider: string;
   releaseTx?: string;
   refundTx?: string;
+  /** Why the broker refunded rather than released, when it was not a failed job (e.g. "failed verification"). */
+  refundReason?: string;
   reassignTxs?: string[];
   /** SHA-256 of the result, recorded on chain with the release. */
   resultHash?: string;
@@ -209,6 +240,8 @@ export interface EscrowRecord {
   settledAt?: number;
   /** The release's or refund's speed and cost. */
   settleTiming?: ChainTiming;
+  /** The contract the settling transaction called, e.g. XorvRefundKeeper when the Chainlink CRE keeper refunded it. */
+  settledVia?: string;
   /** Who settled it, when it wasn't this broker (a keeper's refund, a buyer's own release). */
   settledBy?: string;
   /** The last settlement attempt's error, while it is still being retried. */
@@ -327,6 +360,11 @@ export interface HeartbeatRequest {
   uptimeSeconds: number;
   /** Per-capability availability, so a busy adapter can be skipped. */
   available: Record<string, boolean>;
+  /**
+   * Why the node is taking no jobs, when it says (e.g. its daily model budget is
+   * spent). The broker passes it to buyers instead of a bare "no provider".
+   */
+  unavailableReason?: string | null;
 }
 
 export interface HeartbeatResponse {
@@ -511,6 +549,8 @@ export interface PublicJob {
   screening: JobScreening | null;
   verification: JobVerification | null;
   rating: JobRating | null;
+  /** The agent session that bought it, when an agent did (self-reported by the agent). */
+  agent?: AgentSessionTag | null;
   eventCount: number;
   /** Present only on the single-job route. */
   events?: JobEvent[];
@@ -612,14 +652,40 @@ export interface NetworkInfo {
     releaseMedianMs?: number | null;
     /** How many recent settlements the medians are over. */
     timingSamples?: number;
+    /** Where those timings were measured: a Monad network, or a local chain whose timings are not Monad's. */
+    timingChain?: "monad" | "local";
   };
   heartbeatIntervalMs: number;
+  /** Chainlink Data Feeds the broker reads: USDC/USD (testnet), MON/USD (mainnet). Null when off. */
+  prices?: {
+    source: "Chainlink Data Feeds";
+    usdcUsd: import("./price-feeds.js").FeedReading | null;
+    monUsd: import("./price-feeds.js").FeedReading | null;
+    lastError: string | null;
+  } | null;
+  /** Monad's 10 MON reserve, against the accounts that pay this broker's gas. */
+  gas?: {
+    reserveWei: string;
+    chain: "monad" | "local";
+    payers: {
+      address: string;
+      roles: string[];
+      url: string;
+      balanceWei: string | null;
+      aboveReserve: boolean | null;
+      shortfallWei?: string;
+    }[];
+  };
   /** XorvEscrow, when jobs are paid into escrow; null pays providers directly. */
   escrow?: {
     address: string;
     url: string;
     /** Seconds from quote until anyone (a keeper) may refund the buyer. */
     deadlineSeconds: number;
+    /** Delivered jobs are released only once the verifier passes them (refunded on a fail). */
+    releaseOnVerdict?: boolean;
+    /** XorvRefundKeeper, which the Chainlink CRE workflow reports to; null when this broker doesn't know it. */
+    keeper?: string | null;
     /** Cleanverse CVI: when set, only active A-Pass holders can fund the escrow or be paid by it. */
     identityGate: { address: string; kind: "cleanverse"; apass: string | null; validator: string | null; pool: string | null } | null;
   } | null;

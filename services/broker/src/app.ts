@@ -41,7 +41,7 @@ import type {
 } from "@x402/core/server";
 import type { Network, PaymentPayload, PaymentRequirements, SettleResponse } from "@x402/core/types";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
-import { erc20Abi, isHex, parseEventLogs, verifyTypedData, type Hex } from "viem";
+import { erc20Abi, isAddress, isHex, parseEventLogs, verifyTypedData, type Hex } from "viem";
 import {
   HEARTBEAT_INTERVAL_MS,
   JOB_TIMEOUT_MS,
@@ -63,7 +63,13 @@ import {
   isVaultId,
   jobIdHash,
   logPaymentRejections,
+  isLocalRpc,
   networkConfig,
+  sendModeOf,
+  readTxStatus,
+  reserveStanding,
+  MONAD_RESERVE_WEI,
+  formatMon,
   normalizeAddress,
   parseSealedResult,
   publicClientFor,
@@ -86,6 +92,9 @@ import {
   type LedgerEventKind,
   type NetworkInfo,
   type ChainTiming,
+  type TxStatus,
+  type ReserveStanding,
+  type AgentSessionTag,
   type PaymentRecord,
   type QuoteResponse,
   type RegisterRequest,
@@ -110,6 +119,7 @@ import { resolveFacilitator } from "./facilitator.js";
 import { chainEscrow, type EscrowOps } from "./escrow.js";
 import { IdentityBook, chainIdentity, type IdentitySource } from "./identity.js";
 import { createLedgerReader, type LedgerReader } from "./ledger-reader.js";
+import { createPriceFeeds, type PriceFeeds } from "./prices.js";
 import { hookDeadline, withHookTimeout, type AiHooks, type JobVerifier } from "./ai-hooks.js";
 import { VERIFIED_TAG1, verificationFeedback, type FeedbackSink } from "./ai/feedback.js";
 import { verifiable } from "./ai/verifier.js";
@@ -137,6 +147,8 @@ import {
 } from "./public.js";
 
 /** How long registration waits for its ledger write before answering without it. */
+/** How long an escrow release waits for the verifier's verdict before releasing without it. */
+const VERDICT_GRACE_MS = 120_000;
 const REGISTRATION_WAIT_MS = 2_500;
 /** How long registration waits on the Identity Registry to verify a claimed agent id. */
 const AGENT_CHECK_TIMEOUT_MS = 4_000;
@@ -195,7 +207,17 @@ export interface AppDeps {
    * A confirmed transaction's block, gas used, gas paid and gas payer, for the
    * job's speed receipt. Defaults to reading the receipt over RPC; tests stub it.
    */
-  txFacts?: (txHash: string) => Promise<Omit<ChainTiming, "confirmMs"> | null>;
+  txFacts?: (txHash: string) => Promise<TxFacts | null>;
+  /**
+   * When the chain's `finalized` head reached `blockNumber` with `blockHash`
+   * (ms since epoch), or null if it didn't within the wait. Defaults to
+   * polling the RPC's `finalized` tag; tests stub it.
+   */
+  finalizedAt?: (blockNumber: number, blockHash: string) => Promise<number | null>;
+  /** An account's MON balance, for the reserve check on the broker's gas payers. Defaults to the RPC; tests stub it. */
+  monBalance?: (address: string) => Promise<bigint>;
+  /** Where a transaction stands (txpool, or its consensus state from the block tags). Defaults to the RPC; tests stub it. */
+  txStatus?: (txHash: string) => Promise<TxStatus>;
   /** The AI roles, when installed — see ai-hooks.ts and src/ai/. */
   ai?: AiHooks;
   /**
@@ -211,6 +233,8 @@ export interface AppDeps {
    * a fixture-backed one.
    */
   trust?: NansenTrust;
+  /** Chainlink Data Feeds; null turns them off. Defaults to live reads when config.priceFeeds is on. */
+  prices?: PriceFeeds | null;
   /** XorvEscrow operations. Defaults to the chain when XORV_ESCROW_ADDRESS is set; `null` pays providers directly. */
   escrow?: EscrowOps | null;
   /** The escrow's Cleanverse identity gate. Defaults to reading it off the escrow; `null` turns it off. */
@@ -224,6 +248,11 @@ export function createApp(deps: AppDeps) {
   const vaults = deps.vaults ?? new VaultStore();
   const trust =
     deps.trust ?? createNansenTrust(config.nansen, { log: (line) => console.log(`[broker] ${line}`) });
+  const prices: PriceFeeds | null =
+    deps.prices !== undefined ? deps.prices : config.priceFeeds ? createPriceFeeds({ log: (line) => console.log(`[broker] ${line}`) }) : null;
+  // Warm the cache so the first quote and the network page don't wait on it.
+  void prices?.usdcUsd();
+  void prices?.monUsd();
   // The matcher breaks price ties on reliability nudged by wallet trust…
   registry.setTrustScorer((address) => trust.matchScore(address));
   // …and by reputation: buyer ratings and verifier scores from the Envio
@@ -252,6 +281,44 @@ export function createApp(deps: AppDeps) {
    * "completed" one: its result and errors are ignored until the cancel lands.
    */
   const cancelling = new Set<string>();
+  /**
+   * The broker's gas payers against Monad's 10 MON reserve: the facilitator
+   * (settlements, escrow writes) and the operator (receipts, rating relays).
+   * Refreshed at most once a minute; a payer below the reserve is logged
+   * loudly, because its in-flight gas is then no longer covered.
+   */
+  const gasPayers = new Map<string, { roles: string[]; standing: ReserveStanding | null; checkedAt: number }>();
+  let gasCheckedAt = 0;
+  async function refreshGasPayers(): Promise<void> {
+    if (Date.now() - gasCheckedAt < 60_000) return;
+    gasCheckedAt = Date.now();
+    const wanted = new Map<string, string[]>();
+    const add = (address: string | null | undefined, role: string) => {
+      if (!address) return;
+      const key = normalizeAddress(address);
+      wanted.set(key, [...(wanted.get(key) ?? []), role]);
+    };
+    add(settlement.address, escrow ? "facilitator · escrow attester" : "facilitator");
+    add(config.operator?.address, "operator");
+    for (const [address, roles] of wanted) {
+      try {
+        const balance = await (deps.monBalance ?? ((a: string) => publicClientFor(config.network).getBalance({ address: a as Hex })))(address);
+        const standing = reserveStanding(balance);
+        const was = gasPayers.get(address)?.standing;
+        if (!standing.aboveReserve && (was === undefined || was === null || was.aboveReserve)) {
+          console.warn(
+            `[broker] ⚠ ${roles.join(", ")} ${address} holds ${formatMon(balance)}, below Monad's 10 MON reserve: its in-flight gas is no longer covered. Top it up.`,
+          );
+        }
+        gasPayers.set(address, { roles, standing, checkedAt: Date.now() });
+      } catch {
+        gasPayers.set(address, { roles, standing: gasPayers.get(address)?.standing ?? null, checkedAt: Date.now() });
+      }
+    }
+  }
+
+  /** Whether this broker's chain is a Monad network or a local one (a fork), for every timing it reports. */
+  const chainKind: "monad" | "local" = isLocalRpc(networkConfig(config.network).rpcUrl) ? "local" : "monad";
   /** When each quote's settlement was submitted, for its speed receipt. */
   const settleStarted = new Map<string, number>();
   /**
@@ -385,6 +452,8 @@ export function createApp(deps: AppDeps) {
     );
   }
   const escrowDeadlineSeconds = config.escrowDeadlineSeconds ?? 1_800;
+  // The gas payers are known now; check them against Monad's reserve once at boot (then from the sweep).
+  void refreshGasPayers();
 
   /** Cleanverse CVI standing, when the escrow has an identity gate. */
   const identitySource: IdentitySource | null =
@@ -502,8 +571,7 @@ export function createApp(deps: AppDeps) {
       }
       // The speed receipt: how long the settlement took on this broker's clock, then its
       // block and gas from the receipt. Off the request path; a failed read just leaves it out.
-      const confirmMs = started === undefined ? null : Date.now() - started;
-      void chainTiming(record.txHash, confirmMs).then((timing) => {
+      void chainTiming(record.txHash, started ?? null, Date.now()).then((timing) => {
         if (!timing) return;
         record.timing = timing;
         const jobId = jobs.getQuote(quoteId)?.jobId;
@@ -716,9 +784,23 @@ export function createApp(deps: AppDeps) {
             address: escrow.address,
             url: explorerAddress(config.network, escrow.address),
             deadlineSeconds: escrowDeadlineSeconds,
+            keeper: config.refundKeeperAddress ?? null,
             identityGate: identity?.gate() ?? null,
+            // Delivered jobs wait for the verifier: released on a pass, refunded on a fail.
+            releaseOnVerdict: Boolean(config.releaseOnVerdict && deps.ai?.verifier),
           }
         : null,
+      // Monad's reserve rule, for the accounts that pay this broker's gas.
+      gas: {
+        reserveWei: MONAD_RESERVE_WEI.toString(),
+        chain: chainKind,
+        payers: [...gasPayers.entries()].map(([address, p]) => ({
+          address,
+          roles: p.roles,
+          url: explorerAddress(config.network, address),
+          ...(p.standing ?? { balanceWei: null, aboveReserve: null }),
+        })),
+      },
       published: chain.counts(),
       pendingReceipts: chain.pendingReceipts(),
       lastPublishError: chain.lastPublishError(),
@@ -747,10 +829,30 @@ export function createApp(deps: AppDeps) {
         heldUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "funded")),
         refundedUsdMicros: sumPrice(settled.filter((j) => j.payment?.escrow?.state === "refunded")),
         ...speedStats(settled),
+        timingChain: chainKind,
       },
       heartbeatIntervalMs: HEARTBEAT_INTERVAL_MS,
+      // Chainlink Data Feeds: the last readings (refreshed in the background, at most once a minute).
+      prices: prices ? priceInfo(prices) : null,
     };
     return c.json(body);
+  });
+
+  // Read-only gate standing for provider and buyer badges. No absent gate
+  // or failed read may be presented as identity verification.
+  app.get("/api/identity/:address", async (c) => {
+    const address = c.req.param("address");
+    if (!isAddress(address)) return c.json({ error: "invalid_address" }, 400);
+    if (!identitySource) return c.json({ gate: null, verified: null, checkedAt: null });
+    try {
+      const gate = await identitySource.gate();
+      if (!gate) return c.json({ gate: null, verified: null, checkedAt: null });
+      const [verified] = await identitySource.verified([address]);
+      if (typeof verified !== "boolean") return c.json({ error: "identity_unavailable" }, 503);
+      return c.json({ gate, verified, checkedAt: Date.now() });
+    } catch {
+      return c.json({ error: "identity_unavailable" }, 503);
+    }
   });
 
   app.get("/api/providers", (c) => {
@@ -897,6 +999,7 @@ export function createApp(deps: AppDeps) {
       activeJobs: body.activeJobs ?? 0,
       uptimeSeconds: body.uptimeSeconds ?? 0,
       available: body.available ?? {},
+      unavailableReason: typeof body.unavailableReason === "string" ? body.unavailableReason : null,
     });
     if (!updated) return c.json({ error: "unknown provider" }, 404);
 
@@ -977,6 +1080,7 @@ export function createApp(deps: AppDeps) {
     // else the caller sent (up to the body limit) in every quote and job.
     const title = typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, 200) : null;
     const deadlineAt = typeof body.deadlineAt === "number" && Number.isFinite(body.deadlineAt) ? body.deadlineAt : null;
+    const agent = agentTag(body.agent);
     const request: JobRequest = {
       prompt: body.prompt,
       // "auto" (or nothing) is how a buyer says "you choose" — the router's cue.
@@ -985,6 +1089,7 @@ export function createApp(deps: AppDeps) {
       ...(title ? { title } : {}),
       ...(deadlineAt !== null ? { deadlineAt } : {}),
       ...(encryptTo ? { encryptTo } : {}),
+      ...(agent ? { agent } : {}),
     };
 
     // 1. The safety screen, before any provider could see the prompt and
@@ -1015,7 +1120,11 @@ export function createApp(deps: AppDeps) {
       }
     }
 
-    // 2. Everything that could take the job right now, in matcher order.
+    // 2. Chainlink USDC/USD: jobs are sold in USDC as dollars, so not while USDC is off its peg.
+    const depeg = prices ? await prices.quoteBlocker() : null;
+    if (depeg) return c.json({ error: `not quoting right now: ${depeg}` }, 503);
+
+    // 3. Everything that could take the job right now, in matcher order.
     const candidates = registry.candidates({
       adapter: request.adapter ?? null,
       maxPriceUsdMicros: maxPrice,
@@ -1024,19 +1133,24 @@ export function createApp(deps: AppDeps) {
     });
     if (candidates.length === 0) {
       const live = registry.live().length;
+      // A node that said why it is taking no jobs (its daily budget is spent)
+      // gets its reason passed on, rather than a bare "no match".
+      const reason = registry.live().map((p) => p.unavailableReason).find((r) => typeof r === "string" && r.length > 0);
       return c.json(
         {
           error:
             live === 0
               ? "no providers are online right now — start one with `xorv start`"
-              : `no online provider matches that request under ${formatUsd(maxPrice)}`,
+              : reason
+                ? `no online provider can take a job right now: ${reason}`
+                : `no online provider matches that request under ${formatUsd(maxPrice)}`,
           providersLive: live,
         },
         503,
       );
     }
 
-    // 3. The router, when the buyer left the adapter open and there is a real
+    // 4. The router, when the buyer left the adapter open and there is a real
     //    choice to make: Qwen reads the candidates' on-chain reputation,
     //    receipts, indexer stats and wallet trust with its tools and picks a
     //    provider. The pick is checked against the live candidates (all under
@@ -1493,6 +1607,79 @@ export function createApp(deps: AppDeps) {
     return c.json({ jobs: jobs.list({ limit, providerId }).map((job) => publicJob(job)) });
   });
 
+  /**
+   * Where one transaction stands on this broker's chain: pending in Monad's
+   * txpool, or mined and Proposed, Voted or Finalized (from the latest, safe
+   * and finalized heads). Read-only; cached for half a second per hash so a
+   * page polling it can't multiply RPC load. `chain` says whether the answer
+   * is Monad's or a local fork's.
+   */
+  const txStatusCache = new Map<string, { at: number; value: Promise<TxStatus> }>();
+  app.get("/api/tx/:hash", async (c) => {
+    const hash = c.req.param("hash").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(hash)) return c.json({ error: "not a transaction hash" }, 400);
+    const cached = txStatusCache.get(hash);
+    let value: Promise<TxStatus>;
+    if (cached && Date.now() - cached.at < 500) {
+      value = cached.value;
+    } else {
+      value = (deps.txStatus ?? ((h: string) => readTxStatus(publicClientFor(config.network), h as Hex)))(hash);
+      txStatusCache.set(hash, { at: Date.now(), value });
+      if (txStatusCache.size > 1000) txStatusCache.delete(txStatusCache.keys().next().value!);
+    }
+    try {
+      return c.json({ ...(await value), chain: chainKind });
+    } catch (err) {
+      txStatusCache.delete(hash);
+      return c.json({ error: `could not read the chain: ${err instanceof Error ? err.message.split("\n")[0] : err}` }, 502);
+    }
+  });
+
+  /**
+   * Agent sessions: the jobs one buying agent (an MCP server process) bought,
+   * grouped by the session tag it sent with its quotes, with its spend against
+   * the budget it declared. The tag is self-reported; the money is not: every
+   * figure is a sum of payment records that hold their on-chain transactions.
+   */
+  const sessionsOf = () => {
+    const sessions = new Map<string, StoredJob[]>();
+    for (const job of jobs.list({ limit: 1_000 })) {
+      const tag = job.request.agent;
+      if (!tag) continue;
+      sessions.set(tag.session, [...(sessions.get(tag.session) ?? []), job]);
+    }
+    return sessions;
+  };
+  const summarizeSession = (session: string, list: StoredJob[]) => {
+    const tag = list[0]!.request.agent!;
+    const paid = list.filter((j) => j.payment);
+    const sum = (f: (j: StoredJob) => boolean) => sumPrice(paid.filter(f));
+    const payers = [...new Set(paid.map((j) => j.payment!.payer))];
+    return {
+      session,
+      name: tag.name,
+      client: tag.client,
+      budgetUsdMicros: tag.budgetUsdMicros,
+      payers,
+      jobs: list.length,
+      completed: list.filter((j) => j.status === "completed").length,
+      spentUsdMicros: sum((j) => !j.payment!.escrow || j.payment!.escrow.state === "released"),
+      heldUsdMicros: sum((j) => j.payment!.escrow?.state === "funded"),
+      refundedUsdMicros: sum((j) => j.payment!.escrow?.state === "refunded"),
+      firstAt: Math.min(...list.map((j) => j.createdAt)),
+      lastAt: Math.max(...list.map((j) => j.createdAt)),
+    };
+  };
+  app.get("/api/agents", (c) => {
+    const sessions = [...sessionsOf()].map(([id, list]) => summarizeSession(id, list)).sort((a, b) => b.lastAt - a.lastAt);
+    return c.json({ sessions: sessions.slice(0, 50) });
+  });
+  app.get("/api/agents/:session", (c) => {
+    const list = sessionsOf().get(c.req.param("session"));
+    if (!list) return c.json({ error: "no jobs from this agent session" }, 404);
+    return c.json({ ...summarizeSession(c.req.param("session"), list), jobList: list.sort((a, b) => b.createdAt - a.createdAt).map((j) => publicJob(j)) });
+  });
+
   app.get("/api/jobs/:id", (c) => {
     const job = jobs.get(c.req.param("id"));
     if (!job) return c.json({ error: "not found" }, 404);
@@ -1547,7 +1734,7 @@ export function createApp(deps: AppDeps) {
         const started = Date.now();
         refundTx = await escrow.cancel(held.jobId as Hex);
         refunded = true;
-        timeEscrowSettlement(job.id, refundTx, Date.now() - started);
+        timeEscrowSettlement(job.id, refundTx, started, Date.now());
         jobs.patch(job.id, {
           payment: { ...job.payment, escrow: { ...held, state: "refunded", refundTx, settledAt: Date.now(), lastError: undefined } },
         });
@@ -1661,7 +1848,9 @@ export function createApp(deps: AppDeps) {
     const id = c.req.param("id");
     if (!isVaultId(id)) return c.json({ error: "a vault id is 64 lowercase hex characters" }, 400);
     const record = vaults.get(id);
-    if (!record) return c.json({ error: "no vault with this id yet", id, version: 0 }, 404);
+    // Not an error: a first-time buyer simply has no history yet. A 200 keeps the browser
+    // console clean on every first visit to /private.
+    if (!record) return c.json({ id, exists: false, version: 0 });
     return c.json({
       id: record.id,
       ciphertext: record.ciphertext,
@@ -2549,32 +2738,110 @@ export function createApp(deps: AppDeps) {
     jobs.patch(jobId, { payment: { ...job.payment, escrow: { ...job.payment.escrow, ...update } } });
   }
 
-  /** Read a release's or refund's block and gas, and attach them with its measured time. */
-  function timeEscrowSettlement(jobId: string, tx: string, confirmMs: number): void {
-    void chainTiming(tx, confirmMs).then((settleTiming) => {
+  /**
+   * Escrowed jobs still running whose money someone else settled: after the
+   * deadline anyone may refund the buyer, and the Chainlink CRE refund keeper
+   * does exactly that when the broker didn't. The job can't be paid any more,
+   * so it stops: the provider is told, and the job fails with the reason and
+   * the refund recorded as the keeper's. Each job is read at most every 15 s.
+   */
+  const escrowWatchedAt = new Map<string, number>();
+  async function watchHeldEscrows(): Promise<void> {
+    if (!escrow) return;
+    for (const job of jobs.list({ limit: 1_000 })) {
+      const held = job.payment?.escrow;
+      if (!held || held.state !== "funded" || isTerminal(job.status) || cancelling.has(job.id) || settling.has(job.id)) continue;
+      if (Date.now() - (escrowWatchedAt.get(job.id) ?? 0) < 15_000) continue;
+      escrowWatchedAt.set(job.id, Date.now());
+      const onChain = await escrow.read(held.jobId as Hex).catch(() => null);
+      if (!onChain || onChain.status === "funded" || onChain.status === "none") continue;
+      const settled = await escrow.settlement(held.jobId as Hex, job.payment?.txHash).catch(() => null);
+      const byKeeper = Boolean(settled?.via && config.refundKeeperAddress && sameAddress(settled.via, config.refundKeeperAddress));
+      patchEscrow(job.id, {
+        state: onChain.status,
+        ...(onChain.status === "released" ? { releaseTx: settled?.tx } : { refundTx: settled?.tx }),
+        settledBy: settled?.by,
+        settledVia: settled?.via ?? undefined,
+        settledAt: Date.now(),
+        lastError: undefined,
+      });
+      escrowWatchedAt.delete(job.id);
+      if (onChain.status === "refunded") {
+        const reason = byKeeper
+          ? "refunded on chain by the Chainlink CRE refund keeper after the escrow's deadline"
+          : "refunded on chain after the escrow's deadline";
+        if (job.providerId) {
+          deps.getHub()?.send(job.providerId, { type: "job.cancel", jobId: job.id, reason });
+          registry.jobReleased(job.providerId);
+        }
+        jobs.addEvent(job.id, { at: Date.now(), kind: "status", text: reason });
+        jobs.fail(job.id, reason);
+        console.log(`[broker] job ${job.id}: ${reason} (${settled?.tx ?? "tx unknown"})`);
+      }
+    }
+  }
+
+  /** Read a release's or refund's block and gas, and attach them with its measured times. */
+  function timeEscrowSettlement(jobId: string, tx: string, startedAt: number, receiptAt: number): void {
+    void chainTiming(tx, startedAt, receiptAt).then((settleTiming) => {
       if (settleTiming) patchEscrow(jobId, { settleTiming });
     });
   }
 
-  /** A transaction's speed receipt: `confirmMs` as measured, plus what its receipt says. */
-  async function chainTiming(txHash: string, confirmMs: number | null): Promise<ChainTiming | null> {
+  /**
+   * A transaction's speed receipt, with two honest timers: executed (submission
+   * to receipt) and final (submission until the `finalized` head holds its
+   * block). Both on this broker's clock, both labelled with the chain they were
+   * measured on: a local fork's timings are never Monad's.
+   */
+  async function chainTiming(txHash: string, startedAt: number | null, receiptAt: number): Promise<ChainTiming | null> {
     try {
       const facts = await (deps.txFacts ?? readTxFacts)(txHash);
-      return facts ? { confirmMs, ...facts } : null;
+      if (!facts) return null;
+      // A local chain has no consensus: its `finalized` tag means nothing (anvil's trails by dozens
+      // of blocks), so finality is reported as not applicable rather than timed.
+      const finalAt =
+        chainKind === "local" ? null : await (deps.finalizedAt ?? readFinalizedAt)(facts.blockNumber, facts.blockHash).catch(() => null);
+      const { blockHash: _blockHash, ...rest } = facts;
+      return {
+        ...rest,
+        confirmMs: startedAt === null ? null : receiptAt - startedAt,
+        finalMs: startedAt === null || finalAt === null ? null : Math.max(finalAt, receiptAt) - startedAt,
+        sendMode: sendModeOf(txHash) ?? "async",
+        chain: chainKind,
+      };
     } catch (err) {
       console.warn(`[broker] speed receipt for ${txHash}: ${err instanceof Error ? err.message.split("\n")[0] : err}`);
       return null;
     }
   }
 
-  async function readTxFacts(txHash: string): Promise<Omit<ChainTiming, "confirmMs"> | null> {
+  async function readTxFacts(txHash: string): Promise<TxFacts | null> {
     const receipt = await publicClientFor(config.network).getTransactionReceipt({ hash: txHash as Hex });
     return {
       blockNumber: Number(receipt.blockNumber),
+      blockHash: receipt.blockHash,
       gasUsed: receipt.gasUsed.toString(),
       gasPaidWei: (receipt.gasUsed * receipt.effectiveGasPrice).toString(),
       gasPayer: normalizeAddress(receipt.from),
     };
+  }
+
+  /** Poll the `finalized` tag until it reaches `blockNumber`, then check that block's hash is ours. */
+  async function readFinalizedAt(blockNumber: number, blockHash: string): Promise<number | null> {
+    const client = publicClientFor(config.network);
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const head = await client.getBlock({ blockTag: "finalized" }).catch(() => null);
+      if (head && Number(head.number) >= blockNumber) {
+        const at = Date.now();
+        const block = Number(head.number) === blockNumber ? head : await client.getBlock({ blockNumber: BigInt(blockNumber) }).catch(() => null);
+        // A different hash at that height: the transaction landed in another proposal; don't time this one.
+        return block && sameHash(block.hash ?? "", blockHash) ? at : null;
+      }
+      await sleep(100);
+    }
+    return null;
   }
 
   /** Point a funded escrow at the provider now running the job. */
@@ -2606,18 +2873,28 @@ export function createApp(deps: AppDeps) {
     if (!escrow || !job || !held || held.state !== "funded" || !isTerminal(job.status) || settling.has(jobId) || cancelling.has(jobId)) return;
     settling.add(jobId);
     try {
+      const verdict = job.status === "completed" && job.resultHash ? releaseVerdict(job) : null;
+      if (verdict === "wait") return;
+      if (verdict === "refund") {
+        // The verifier failed the delivered work: the buyer gets the money back, at the provider's fault.
+        const started = Date.now();
+        const tx = await escrow.refund(held.jobId as Hex);
+        patchEscrow(jobId, { state: "refunded", refundTx: tx, settledAt: Date.now(), lastError: undefined, refundReason: "failed verification" });
+        timeEscrowSettlement(jobId, tx, started, Date.now());
+        return;
+      }
       if (job.status === "completed" && job.resultHash) {
         const finisher = job.providerId ? registry.get(job.providerId)?.address : undefined;
         if (finisher && !(await repointEscrow(jobId, finisher))) return;
         const started = Date.now();
         const tx = await escrow.release(held.jobId as Hex, job.resultHash);
         patchEscrow(jobId, { state: "released", releaseTx: tx, resultHash: job.resultHash, settledAt: Date.now(), lastError: undefined });
-        timeEscrowSettlement(jobId, tx, Date.now() - started);
+        timeEscrowSettlement(jobId, tx, started, Date.now());
       } else {
         const started = Date.now();
         const tx = await escrow.refund(held.jobId as Hex);
         patchEscrow(jobId, { state: "refunded", refundTx: tx, settledAt: Date.now(), lastError: undefined });
-        timeEscrowSettlement(jobId, tx, Date.now() - started);
+        timeEscrowSettlement(jobId, tx, started, Date.now());
       }
     } catch (err) {
       const message = err instanceof Error ? err.message.split("\n")[0] : String(err);
@@ -2630,6 +2907,7 @@ export function createApp(deps: AppDeps) {
           settledAt: Date.now(),
           ...(onChain.status === "released" ? { releaseTx: settled?.tx } : { refundTx: settled?.tx }),
           settledBy: settled?.by,
+          settledVia: settled?.via ?? undefined,
           lastError: undefined,
         });
       } else {
@@ -2639,6 +2917,34 @@ export function createApp(deps: AppDeps) {
     } finally {
       settling.delete(jobId);
     }
+  }
+
+  /**
+   * With XORV_RELEASE_ON_VERDICT on, a delivered job's escrow follows the
+   * verifier: release on pass, refund on fail, and wait while the verdict is
+   * pending. A verdict that never comes (verifier down, or past its timeout)
+   * must not freeze the provider's money, so after a grace period the job is
+   * released as it would be without the gate. Jobs the verifier can't read
+   * (private ones) and brokers without a verifier release as before.
+   */
+  function releaseVerdict(job: StoredJob): "release" | "refund" | "wait" {
+    if (!config.releaseOnVerdict || !deps.ai?.verifier || !verifiable(job)) return "release";
+    const since = job.completedAt ?? Date.now();
+    const withinGrace = Date.now() - since < (config.verdictGraceMs ?? VERDICT_GRACE_MS);
+    const v = job.verification;
+    if (v) {
+      // When the verdict is going on chain (ERC-8004 feedback), the money moves
+      // only after it lands, so anyone can check the release followed a recorded
+      // pass. A write that failed, or is refused, is recorded on the job and
+      // doesn't hold the money; neither does one stuck past the grace period.
+      const sink = deps.ai?.verifier?.feedback ?? null;
+      const onChain = sink !== null && !("skip" in verificationTarget(job, sink));
+      if (onChain && !v.feedbackTxHash && !v.feedbackError && withinGrace) return "wait";
+      return v.pass ? "release" : "refund";
+    }
+    if (withinGrace) return "wait";
+    console.warn(`[broker] no verdict for ${job.id} within the grace period; releasing without one`);
+    return "release";
   }
 
   // -------------------------------------------------------------------------
@@ -2700,6 +3006,8 @@ export function createApp(deps: AppDeps) {
     },
     /** Timers' work: fail overdue jobs, reap silent providers, retry receipts. */
     sweep(): void {
+      void refreshGasPayers();
+      void watchHeldEscrows();
       for (const job of jobs.overdue()) {
         const providerId = job.providerId ?? "";
         // Tell the node to stop: its result would be ignored now anyway.
@@ -2863,6 +3171,20 @@ function quoteIdFromTransport(transport: unknown): string | undefined {
   return path ? lastSegment(path) : undefined;
 }
 
+/** An agent's self-declared session tag, validated, or null for anything malformed. */
+function agentTag(raw: unknown): AgentSessionTag | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.session !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(r.session)) return null;
+  const name = typeof r.name === "string" && r.name.trim() ? r.name.trim().slice(0, 60) : "agent";
+  const budget = r.budgetUsdMicros === null ? null : Number(r.budgetUsdMicros);
+  if (budget !== null && (!Number.isSafeInteger(budget) || budget <= 0)) return null;
+  return { session: r.session, name, budgetUsdMicros: budget, client: "mcp" };
+}
+
+/** What the broker reads back from a confirmed transaction's receipt. */
+type TxFacts = Omit<ChainTiming, "confirmMs" | "finalMs" | "sendMode" | "chain"> & { blockHash: string };
+
 /** Medians of the measured settlement and release times, over the 50 most recent paid jobs. */
 function speedStats(jobs: readonly { createdAt: number; payment?: PaymentRecord | null }[]): {
   settleMedianMs: number | null;
@@ -2918,3 +3240,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
 }
 
 export type { AdapterKind, JobRequest };
+
+function priceInfo(prices: PriceFeeds) {
+  void prices.usdcUsd();
+  void prices.monUsd();
+  const { usdcUsd, monUsd, lastError } = prices.snapshot();
+  return { source: "Chainlink Data Feeds" as const, usdcUsd, monUsd, lastError };
+}

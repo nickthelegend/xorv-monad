@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { JobView } from "@/components/job-view";
 import { PageHeader } from "@/components/ui";
 import { api, type Job } from "@/lib/api";
@@ -31,6 +32,15 @@ export default async function JobPage({
   return (
     <>
       <PageHeader title="Job" sub={initial?.providerLabel ? `Ran on ${initial.providerLabel}.` : undefined} />
+      {initial?.agent ? (
+        <p className="-mt-5 mb-6 text-[12.5px] text-fg-3">
+          Bought by an AI agent:{" "}
+          <Link href={`/agents/${initial.agent.session}`} className="text-fg-2 underline-offset-4 hover:text-fg hover:underline">
+            {initial.agent.name}
+          </Link>{" "}
+          ({initial.agent.client.toUpperCase()} session)
+        </p>
+      ) : null}
       <JobView jobId={id} initial={initial} settlementTx={tx} />
     </>
   );

@@ -38,7 +38,7 @@ export interface EscrowOps {
    * The transaction that released or refunded a job, whoever sent it: a
    * buyer's own release, or a keeper's (Chainlink CRE) refund after the deadline.
    */
-  settlement(jobId: Hex, fromTx?: string): Promise<{ tx: string; by: string } | null>;
+  settlement(jobId: Hex, fromTx?: string): Promise<{ tx: string; by: string; via: string | null } | null>;
 }
 
 const RELEASED = parseAbiItem(
@@ -82,7 +82,8 @@ export function chainEscrow(network: string, address: string, account: Account):
         const hit = [...(released ?? []), ...(refunded ?? [])][0];
         if (hit) {
           const tx = await pub.getTransaction({ hash: hit.transactionHash });
-          return { tx: hit.transactionHash, by: tx.from };
+          // `by` sent it; `via` is the contract it called (XorvRefundKeeper, when the CRE keeper refunded it).
+          return { tx: hit.transactionHash, by: tx.from, via: tx.to ?? null };
         }
       }
       return null;
@@ -139,22 +140,22 @@ export class MemoryEscrow implements EscrowOps {
     return this.hash();
   }
 
-  async settlement(jobId: Hex): Promise<{ tx: string; by: string } | null> {
+  async settlement(jobId: Hex): Promise<{ tx: string; by: string; via: string | null } | null> {
     const job = this.jobs.get(jobId.toLowerCase());
     if (!job || job.status === "funded" || job.status === "none") return null;
-    return this.external.get(jobId.toLowerCase()) ?? { tx: this.hash(), by: this.address };
+    return this.external.get(jobId.toLowerCase()) ?? { tx: this.hash(), by: this.address, via: this.address };
   }
 
   /** Settlements made by someone other than the broker, keyed by job id. */
-  readonly external = new Map<string, { tx: string; by: string }>();
+  readonly external = new Map<string, { tx: string; by: string; via: string | null }>();
 
-  /** What a third party's on-chain refund after the deadline does. */
-  refundExternally(jobId: string, by: string): string {
+  /** What a third party's on-chain refund after the deadline does (`via`: the contract it called, e.g. the CRE keeper). */
+  refundExternally(jobId: string, by: string, via: string | null = null): string {
     const job = this.jobs.get(jobId.toLowerCase());
     if (!job || job.status !== "funded") throw new Error("not funded");
     job.status = "refunded";
     const tx = this.hash();
-    this.external.set(jobId.toLowerCase(), { tx, by });
+    this.external.set(jobId.toLowerCase(), { tx, by, via });
     return tx;
   }
 

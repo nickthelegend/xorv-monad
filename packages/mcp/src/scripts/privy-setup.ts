@@ -39,7 +39,7 @@ import {
   networkConfig,
   normalizeAddress,
 } from "@xorv/protocol";
-import { buildAgentPolicy, parseCapUsdc, type AgentPolicy } from "../privy-policy.js";
+import { buildAgentPolicy, escrowRule, parseCapUsdc, ratingRule, type AgentPolicy, type PolicyRule } from "../privy-policy.js";
 
 const USAGE = `Usage: pnpm --filter @xorv/mcp privy:setup -- --cap-usdc <dollars> [options]
 
@@ -54,6 +54,8 @@ Options:
   --name <label>       Policy / wallet display name.
   --owner-key          Generate a P-256 owner key for the wallet and policy.
   --dry-run            Print the policy JSON and exit without calling Privy.
+  --add-to-policy <id> Extend an existing policy instead of creating one.
+  --rules <list>       With --add-to-policy: escrow (default), ratings, or escrow,ratings.
   -h, --help           Show this help.
 
 Environment: XORV_PRIVY_APP_ID and XORV_PRIVY_APP_SECRET (or PRIVY_APP_ID / PRIVY_APP_SECRET).`;
@@ -67,6 +69,12 @@ export interface SetupOptions {
   name: string | null;
   ownerKey: boolean;
   dryRun: boolean;
+  /** XorvEscrow to allow escrowed payments into (or read from --broker). */
+  escrow: string | null;
+  /** Add the escrow rule to this existing policy instead of creating a policy and a wallet. */
+  addToPolicy: string | null;
+  /** With --add-to-policy: which rules to add (escrow, ratings). */
+  addRules: string[];
 }
 
 /** Parse argv (without node and script) into options; throws with a usable message. */
@@ -84,6 +92,9 @@ export function parseSetupArgs(argv: string[], env: Record<string, string | unde
       name: { type: "string" },
       "owner-key": { type: "boolean" },
       "dry-run": { type: "boolean" },
+      escrow: { type: "string" },
+      "add-to-policy": { type: "string" },
+      rules: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -113,7 +124,21 @@ export function parseSetupArgs(argv: string[], env: Record<string, string | unde
     name: values.name ?? null,
     ownerKey: Boolean(values["owner-key"]),
     dryRun: Boolean(values["dry-run"]),
+    escrow: values.escrow ? normalizeAddress(values.escrow) : null,
+    addToPolicy: values["add-to-policy"]?.trim() || null,
+    addRules: (values.rules ?? "escrow").split(",").map((r) => r.trim()).filter(Boolean),
   };
+}
+
+/** The XorvEscrow a broker settles into, or null. */
+async function escrowFromBroker(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, "")}/api/network`, { signal: AbortSignal.timeout(10_000) });
+    const info = (await res.json()) as { escrow?: { address?: string } | null };
+    return info.escrow?.address ? normalizeAddress(info.escrow.address) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The XorvLedger address a broker advertises, or null (with the reason logged). */
@@ -155,7 +180,9 @@ export async function main(argv: string[], env: Record<string, string | undefine
 
   const cfg = networkConfig(opts.network);
   const ledger = opts.ledger ?? (opts.broker ? await ledgerFromBroker(opts.broker, err) : null);
+  const escrow = opts.escrow ?? (opts.broker ? await escrowFromBroker(opts.broker) : null);
   const policy = buildAgentPolicy({
+    escrow,
     network: cfg.caip2,
     capUnits: opts.capUnits,
     payTo: opts.payTo,
@@ -179,6 +206,36 @@ export async function main(argv: string[], env: Record<string, string | undefine
   const privy = new PrivyClient({ appId, appSecret });
   const owner = opts.ownerKey ? await generateP256KeyPair() : null;
   const ownerField = owner ? { owner: { public_key: owner.publicKey } } : {};
+
+  if (opts.addToPolicy) {
+    // A funded wallet stays bound to its policy: extend that policy rather than replace it.
+    // --rules picks what to add: escrow (the default), ratings (for a redeployed XorvLedger), or both.
+    const add: PolicyRule[] = [];
+    for (const kind of opts.addRules) {
+      if (kind === "escrow") {
+        if (!escrow) {
+          err("privy:setup: the escrow rule needs --escrow <0x…> or a --broker that has one.");
+          return 2;
+        }
+        add.push(escrowRule(cfg.caip2, opts.capUnits, escrow));
+      } else if (kind === "ratings") {
+        if (!ledger) {
+          err("privy:setup: the ratings rule needs --ledger <0x…> or a --broker that has one.");
+          return 2;
+        }
+        add.push(ratingRule(cfg.caip2, ledger));
+      } else {
+        err(`privy:setup: unknown rule "${kind}" (expected escrow or ratings)`);
+        return 2;
+      }
+    }
+    out(`Added to policy ${opts.addToPolicy}:`);
+    for (const rule of add) {
+      await privy.policies().createRule(opts.addToPolicy, rule as never);
+      out(`  - ALLOW ${rule.method}: ${rule.name}`);
+    }
+    return 0;
+  }
 
   out(`Creating a Privy policy for ${cfg.name} (${cfg.caip2})…`);
   const created = await privy.policies().create({ ...policy, ...ownerField });

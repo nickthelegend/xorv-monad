@@ -90,6 +90,8 @@ export interface BrokerConfig {
   escrowAddress?: Address | null;
   /** Seconds from quote to the point anyone (a keeper) may refund the buyer. */
   escrowDeadlineSeconds?: number;
+  /** XorvRefundKeeper, the Chainlink CRE workflow's receiver: lets the broker name a keeper refund as such. */
+  refundKeeperAddress?: Address | null;
   /** The ledger's deploy block — the floor for RPC log scans. */
   ledgerFromBlock: bigint | null;
   /** Publish one heartbeat in this many per provider (0 = never). */
@@ -109,6 +111,15 @@ export interface BrokerConfig {
   appUrl: string | null;
   /** Envio GraphQL endpoint; when set it serves feeds and the leaderboard. */
   indexerUrl: string | null;
+  /** Read Chainlink Data Feeds (USDC peg guard, MON/USD gas pricing). XORV_PRICE_FEEDS=off disables. */
+  priceFeeds?: boolean;
+  /**
+   * Hold an escrowed job's release for the verifier's verdict: release on pass, refund on fail.
+   * XORV_RELEASE_ON_VERDICT=on. Off (the default), the verdict only feeds reputation.
+   */
+  releaseOnVerdict?: boolean;
+  /** How long a release waits for a verdict that never comes, before releasing anyway. */
+  verdictGraceMs?: number;
   corsOrigins: string[];
   feeBps: number;
   /** SQLite file for durable jobs and earnings; "off" disables persistence. */
@@ -260,6 +271,15 @@ export function loadConfig(): BrokerConfig {
       throw new Error(`XORV_ESCROW_ADDRESS: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+  const keeperRaw = optional("XORV_REFUND_KEEPER_ADDRESS");
+  let refundKeeperAddress: Address | null = null;
+  if (keeperRaw) {
+    try {
+      refundKeeperAddress = normalizeAddress(keeperRaw);
+    } catch (err) {
+      throw new Error(`XORV_REFUND_KEEPER_ADDRESS: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const escrowDeadlineSeconds = nonNegativeInt("XORV_ESCROW_DEADLINE_S", 1_800);
   if (escrowDeadlineSeconds < 120) {
     // The contract refuses deadlines under a minute; under two leaves no room for a job.
@@ -285,6 +305,7 @@ export function loadConfig(): BrokerConfig {
     facilitatorMode: optional("XORV_FACILITATOR"),
     ledgerAddress,
     escrowAddress,
+    refundKeeperAddress,
     escrowDeadlineSeconds,
     ledgerFromBlock: fromBlockRaw === null ? null : BigInt(fromBlockRaw),
     heartbeatPublishEvery: nonNegativeInt("XORV_HEARTBEAT_PUBLISH_EVERY", 20),
@@ -294,6 +315,8 @@ export function loadConfig(): BrokerConfig {
     publicUrl,
     appUrl: optional("XORV_APP_URL")?.replace(/\/+$/, "") ?? null,
     indexerUrl: optional("XORV_INDEXER_URL"),
+    priceFeeds: (optional("XORV_PRICE_FEEDS") ?? "on").toLowerCase() !== "off",
+    releaseOnVerdict: (optional("XORV_RELEASE_ON_VERDICT") ?? "off").toLowerCase() === "on",
     corsOrigins: (process.env.XORV_CORS_ORIGINS ?? "")
       .split(",")
       .map((s) => s.trim())

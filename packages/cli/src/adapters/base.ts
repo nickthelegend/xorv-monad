@@ -52,6 +52,8 @@ export interface RunInput {
    * subscription bill arrives.
    */
   onCost?: (usd: number) => void;
+  /** Model tokens the job used, when the adapter knows (the hosted models do). */
+  onTokens?: (tokens: number) => void;
 }
 
 export interface JobAdapter {

@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { explorerAddress, explorerAgent, explorerTx, formatUsdc, publicClientFor, shortHex } from "@xorv/protocol/web";
 import { EASE, useEntrance } from "@/lib/motion";
 import { BROKER_URL, api, formatDuration, formatUsd, type Job, type JobEvent } from "@/lib/api";
-import { NETWORK, NETWORK_LABEL, PUBLIC_RPC_URL } from "@/lib/network";
+import { NETWORK, NETWORK_LABEL, browserTransport } from "@/lib/network";
 import { useNetworkInfo } from "@/lib/hooks";
 import { Button, Empty, Ext, Panel, Row, Status } from "@/components/ui";
 import { ResultMarkdown } from "@/components/result-markdown";
@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 import { RoutingTrace } from "@/components/routing-trace";
 import { PaymentTimeline } from "@/components/payment-timeline";
 import { SpeedReceipt } from "@/components/speed-receipt";
+import { IdentityBadge } from "./identity-badge";
+import { CreReplay } from "@/components/cre-replay";
 import { jobOutcome } from "@/lib/payment-timeline";
 
 /**
@@ -92,6 +94,8 @@ export function JobView({
   const logRef = useRef<HTMLDivElement | null>(null);
 
   const terminal = job ? TERMINAL.has(job.status) : false;
+  // Decided once, at load: a job watched live keeps its log open when it finishes.
+  const [logOpenAtLoad] = useState(() => !terminal);
   const now = useClock(Boolean(job?.startedAt) && !job?.completedAt && !terminal);
   const info = useNetworkInfo();
   const verifierOn = Boolean(info?.ai.verifier);
@@ -157,7 +161,7 @@ export function JobView({
   const paymentTx = job.payment?.txHash ?? settlementTx ?? null;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <div className="min-w-0 space-y-6">
         <div>
           <div className="flex items-center justify-between gap-3">
@@ -217,20 +221,26 @@ export function JobView({
           </section>
         ) : null}
 
-        {job.payment || !TERMINAL.has(job.status) ? <PaymentTimeline job={job} /> : null}
+        {job.payment || !TERMINAL.has(job.status) ? <PaymentTimeline job={job} keeper={info?.escrow?.keeper} /> : null}
+
+        <CreReplay job={job} keeper={info?.escrow?.keeper} />
 
         <AiChecks job={job} />
 
-        <section>
-          <div className="mb-2.5 flex items-center justify-between">
-            <h2 className="text-[13px] font-medium text-fg">Execution log</h2>
+        {/* Open while the job runs; a finished job's log starts folded, so the page leads with the result and the money. */}
+        <details open={logOpenAtLoad} className="group">
+          <summary className="mb-2.5 flex cursor-pointer list-none items-center justify-between">
+            <h2 className="text-[13px] font-medium text-fg">
+              Execution log{" "}
+              <span className="text-[12px] font-normal text-fg-4 group-open:hidden">· {events.length} events, tap to show</span>
+            </h2>
             {streaming ? (
               <span className="inline-flex items-center gap-1.5 text-[11.5px] text-fg-3">
                 <span className="breathe h-1.5 w-1.5 rounded-full bg-live" />
                 streaming
               </span>
             ) : null}
-          </div>
+          </summary>
           <Panel className="p-4">
             <div ref={logRef} className="mono max-h-72 space-y-1 overflow-auto text-[12px]">
               {events.length === 0 ? (
@@ -257,7 +267,7 @@ export function JobView({
               )}
             </div>
           </Panel>
-        </section>
+        </details>
       </div>
 
       <div className="space-y-6">
@@ -301,6 +311,7 @@ export function JobView({
                 <Row label="payer">
                   <Ext href={explorerAddress(NETWORK, job.payment.payer)}>{shortHex(job.payment.payer)}</Ext>
                 </Row>
+                <Row label="buyer identity now"><IdentityBadge key={job.payment.payer} address={job.payment.payer} /></Row>
                 <Row label="paid to">
                   <Ext href={explorerAddress(NETWORK, job.payment.payTo)}>{shortHex(job.payment.payTo)}</Ext>
                 </Row>
@@ -364,7 +375,7 @@ export function JobView({
         <RateJob job={job} onRated={(rating) => setJob((prev) => (prev ? { ...prev, rating } : prev))} />
 
         <Link
-          href="/"
+          href="/jobs"
           className="block text-[12.5px] text-fg-4 transition-colors hover:text-fg-2"
         >
           ← all jobs
@@ -424,7 +435,7 @@ function useReceiptCheck(
   useEffect(() => {
     if (!txHash || !ledger || !key) return;
     let alive = true;
-    const client = publicClientFor(NETWORK, { rpcUrl: PUBLIC_RPC_URL }) as unknown as ReceiptReader;
+    const client = publicClientFor(NETWORK, { transport: browserTransport() }) as unknown as ReceiptReader;
     void checkResultAgainstReceipt({ client, txHash, ledger, jobId, result }).then((check) => {
       if (alive) setState({ key, check });
     });
@@ -565,7 +576,7 @@ function EscrowRows({ escrow }: { escrow: NonNullable<NonNullable<Job["payment"]
         </Row>
       ) : escrow.state === "funded" ? (
         <Row label="refundable after">
-          <span className="tnum">{new Date(escrow.deadline * 1000).toLocaleTimeString()}</span>
+          <span className="tnum" suppressHydrationWarning>{new Date(escrow.deadline * 1000).toLocaleTimeString()}</span>
         </Row>
       ) : null}
     </>

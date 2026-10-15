@@ -29,7 +29,7 @@ export const MONAD_DEPLOYMENTS: Record<MonadDeployment["network"], MonadDeployme
     rpcUrlEnv: "MONAD_TESTNET_RPC_URL",
     identity: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
     reputation: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
-    explorerUrl: "https://testnet.monadscan.com",
+    explorerUrl: "https://testnet.monadvision.com",
   },
   monad: {
     network: "monad",
@@ -39,7 +39,7 @@ export const MONAD_DEPLOYMENTS: Record<MonadDeployment["network"], MonadDeployme
     rpcUrlEnv: "MONAD_RPC_URL",
     identity: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
     reputation: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
-    explorerUrl: "https://monadscan.com",
+    explorerUrl: "https://monadvision.com",
   },
 };
 

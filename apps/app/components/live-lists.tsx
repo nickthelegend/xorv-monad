@@ -122,7 +122,7 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
               </p>
               {detailed ? (
                 <p className="mt-1.5 text-[11.5px] text-fg-3">
-                  {rank?.avgRating != null ? (
+                  {rank?.avgRating != null && rank.ratings > 0 ? (
                     <>
                       <span className="text-fg-2">{"★".repeat(valueToStars(rank.avgRating))}</span>{" "}
                       <span className="tnum">{Math.round(rank.avgRating)}/100</span> from {rank.ratings} rating
@@ -162,7 +162,6 @@ export function ProviderList({ detailed = false }: { detailed?: boolean }) {
 export function JobList({ limit = 15 }: { limit?: number }) {
   const load = useCallback(() => api.jobs(limit), [limit]);
   const { data: jobs, error } = usePoll<Job[]>(load);
-  const animate = useEntrance();
 
   if (error) return <Empty title="Can't reach the broker" />;
   if (!jobs) return <Skeleton rows={3} />;
@@ -174,7 +173,12 @@ export function JobList({ limit = 15 }: { limit?: number }) {
       />
     );
   }
+  return <JobRows jobs={jobs} />;
+}
 
+/** Job rows: outcome, prompt (or the private tag), provider, age, how the money moved, price. */
+export function JobRows({ jobs }: { jobs: Job[] }) {
+  const animate = useEntrance();
   return (
     <ul className="border-t border-[var(--line)]">
       <AnimatePresence initial={false}>

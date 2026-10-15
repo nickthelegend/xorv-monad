@@ -31,6 +31,7 @@ import {
   parseUsd,
   sameAddress,
   usdMicrosToUsdcUnits,
+  type AgentSessionTag,
   type PaymentRecord,
   type PublicJob,
   type QuoteResponse,
@@ -130,6 +131,8 @@ export interface BuyDeps {
   jobTimeoutMs?: number;
   /** How long to wait for the batched XorvLedger receipt after a job completes. */
   receiptWaitMs?: number;
+  /** This agent session's tag, sent with the quote. */
+  agent?: AgentSessionTag | null;
 }
 
 export interface BuyArgs {
@@ -151,12 +154,13 @@ export interface BuyResult {
 /** Quote a job under a ceiling. Shared by `xorv_quote` and `xorv_run_job`. */
 export async function requestQuote(
   broker: BrokerClient,
-  args: { prompt: string; adapter?: string | null; ceilingUsdMicros: number },
+  args: { prompt: string; adapter?: string | null; ceilingUsdMicros: number; agent?: AgentSessionTag | null },
 ): Promise<QuoteResponse> {
   const reply = await broker.postJson<QuoteResponse & { error?: string }>("/api/quotes", {
     prompt: args.prompt,
     adapter: args.adapter ?? null,
     maxPriceUsdMicros: args.ceilingUsdMicros,
+    ...(args.agent ? { agent: args.agent } : {}),
   });
   if (!reply.ok) {
     throw new BuyError("quote", brokerErrorText(reply.body) ?? `No quote: broker returned ${reply.status}`);
@@ -189,7 +193,7 @@ export async function buyJob(deps: BuyDeps, args: BuyArgs): Promise<BuyResult> {
   // 1. Quote — so the price is pinned and can be refused before paying.
   let quote: QuoteResponse;
   try {
-    quote = await requestQuote(deps.broker, { prompt: args.prompt, adapter: args.adapter, ceilingUsdMicros: ceiling });
+    quote = await requestQuote(deps.broker, { prompt: args.prompt, adapter: args.adapter, ceilingUsdMicros: ceiling, agent: deps.agent });
   } catch (err) {
     if (err instanceof BuyError && remaining < deps.maxPriceUsdMicros) {
       throw new BuyError("quote", `${err.message} (only ${formatUsd(remaining)} of the session budget is left)`);

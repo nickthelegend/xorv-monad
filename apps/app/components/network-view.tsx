@@ -17,7 +17,9 @@ import { aiRoles, describeLatency, type AiRoleName } from "@/lib/ai";
 import { usePoll } from "@/lib/hooks";
 import { NETWORK } from "@/lib/network";
 import { valueToStars } from "@/lib/rating";
-import { formatMs } from "@/lib/speed";
+import { formatMon, formatMs } from "@/lib/speed";
+import { CommitPipeline } from "@/components/monad-live";
+import { StakingPanel } from "@/components/staking-panel";
 import { Empty, Ext, Panel, Row, Skeleton } from "@/components/ui";
 import { NansenPanel } from "@/components/trust";
 import { readNansenStatus } from "@/lib/trust";
@@ -50,6 +52,10 @@ export function NetworkView() {
 
   return (
     <div className="space-y-8">
+      <CommitPipeline />
+
+      <StakingPanel />
+
       {/* Facts, as a definition list. Four numbers in four boxes would say
           "we have metrics" without saying anything true. */}
       <Panel className="p-5">
@@ -73,21 +79,53 @@ export function NetworkView() {
               "—"
             )}
           </Row>
+          {(info?.gas?.payers ?? []).map((payer) => (
+            <Row key={payer.address} label={`gas: ${payer.roles.join(", ")}`}>
+              <span className="tnum">
+                <Ext href={payer.url}>{shortHex(payer.address)}</Ext>
+                {payer.balanceWei !== null ? ` · ${formatMon(payer.balanceWei)}` : ""}
+                {payer.aboveReserve === null ? null : payer.aboveReserve ? (
+                  <span className="text-live"> · above the 10 MON reserve</span>
+                ) : (
+                  <span className="text-fail"> · below the 10 MON reserve</span>
+                )}
+                {info?.gas?.chain === "local" ? <span className="text-fg-4"> (a fork doesn&rsquo;t enforce it)</span> : null}
+              </span>
+            </Row>
+          ))}
           <Row label="usdc">
             {info ? <Ext href={explorerToken(NETWORK, info.usdc.address)}>{shortHex(info.usdc.address)} ↗</Ext> : "—"}
           </Row>
-          <Row label="payment final in">
+          <Row label="usdc / usd">
+            {info?.prices?.usdcUsd ? (
+              <span className="tnum">
+                ${info.prices.usdcUsd.price.toFixed(4)}
+                <span className="text-fg-4">
+                  {" "}· Chainlink Data Feed{" "}
+                  <Ext href={explorerAddress(NETWORK, info.prices.usdcUsd.feed)}>{shortHex(info.prices.usdcUsd.feed)} ↗</Ext>
+                  {info.prices.usdcUsd.stale ? " · stale" : ""} · quoting pauses if USDC leaves its peg by 2%
+                </span>
+              </span>
+            ) : (
+              "—"
+            )}
+          </Row>
+          <Row label="payment executed in">
             {info?.stats.settleMedianMs != null ? (
               <span className="tnum">
                 {formatMs(info.stats.settleMedianMs)} median
-                <span className="text-fg-4"> · {info.stats.timingSamples} recent jobs · an Ethereum block is 12 s</span>
+                <span className="text-fg-4">
+                  {" "}
+                  · {info.stats.timingSamples} recent jobs
+                  {info.stats.timingChain === "local" ? " · measured on a local fork, not Monad" : " · an Ethereum block is 12 s"}
+                </span>
               </span>
             ) : (
               "—"
             )}
           </Row>
           {info?.stats.releaseMedianMs != null ? (
-            <Row label="escrow release final in">
+            <Row label="escrow release executed in">
               <span className="tnum">{formatMs(info.stats.releaseMedianMs)} median</span>
             </Row>
           ) : null}
@@ -175,7 +213,7 @@ export function NetworkView() {
           </Row>
           {info
             ? (["registrations", "heartbeats", "receipts", "ratings"] as const).map((kind) => (
-                <Row key={kind} label={`${kind} published`}>
+                <Row key={kind} label={`${kind} written since the broker's last restart`}>
                   <span className="tnum">{info.published?.[kind] ?? 0}</span>
                 </Row>
               ))
@@ -270,7 +308,14 @@ export function NetworkView() {
         {!ratings ? (
           <Skeleton rows={2} />
         ) : ratings.events.length === 0 ? (
-          <Empty title="No ratings yet" hint="A buyer's rating is one gasless signature, relayed into ERC-8004 reputation." />
+          <Empty
+            title={ratings.source === "rpc" ? "No ratings in recent blocks" : "No ratings yet"}
+            hint={
+              ratings.source === "rpc"
+                ? "Without the Envio index this feed scans only about the last 100 minutes of blocks; older ratings are on the provider's ERC-8004 record. A rating is one gasless signature, relayed into ERC-8004 reputation."
+                : "A buyer's rating is one gasless signature, relayed into ERC-8004 reputation."
+            }
+          />
         ) : (
           <ul className="border-t border-[var(--line)]">
             {ratings.events.map((event) => (

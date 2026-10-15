@@ -59,3 +59,5 @@ export function newId(prefix: string): string {
 }
 
 export * from "./escrow.js";
+export * from "./sync-send.js";
+export * from "./tx-status.js";

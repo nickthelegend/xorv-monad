@@ -52,7 +52,7 @@ Considered and not picked for this wave:
 
 **1. `pnpm demo`**
 - One command, after `pnpm build` and `forge build`, starts:
-  - an anvil fork of Monad testnet (0.4 s blocks, `--prune-history 300`);
+  - an anvil fork of Monad testnet (0.3 s blocks, `--prune-history 300`);
   - XorvLedger and XorvEscrow;
   - the broker (self-hosted facilitator as the escrow's attester);
   - two provider nodes;
@@ -118,8 +118,8 @@ Considered and not picked for this wave:
 | 1 | `pnpm demo` | 3ea6e93 | `f1-demo-*.png` |
 | 2 | Escrow timeline | 94abd85 | `f2-escrow-*.png` |
 | 3 | Monad speed receipt | db47247 | `f3-speed-*.png` |
-| 4 | Provider earnings dashboard | this commit | `f4-earnings-*.png` |
-| 5 | Job browse page | | |
+| 4 | Provider earnings dashboard | 7679a53 | `f4-earnings-*.png` |
+| 5 | Job browse page | this commit | `f5-browse-*.png` |
 
 ## The next 5 (after this wave)
 
@@ -128,3 +128,72 @@ Considered and not picked for this wave:
 3. A CRE refund replay: show a job refunded by the Chainlink keeper after its deadline, from the job page.
 4. Agent buyer view: an MCP agent's session, its budget and every job it bought, on one page.
 5. A Cleanverse "verified" badge on providers and buyers, read from the gate.
+
+## Monad-native coverage
+
+The user asked for all eight Monad-native items (`../../METROPOLIS-ORCHESTRATION.md`, "MONAD TECH";
+research in `MONAD-TECH.md`). One line per item. Each item says where it runs: **live-read** (real
+Monad testnet, read-only), **fork** (the local anvil fork), **built** (code and tests, runs wherever
+the deployment runs), or **awaiting testnet go** (needs MON).
+
+| # | Item | Status | Where in the code | Screens |
+|---|---|---|---|---|
+| 1 | Live commit-state strip (`monadNewHeads`, `monadLogs`) | **live-read**: every Monad testnet block goes Proposed → Voted → Finalized → Verified with measured ms, and XorvLedger and ERC-8004 events stream with their commit state. Works while payments run on a fork, and is labelled as the real network | `apps/app/lib/{commit-states,use-monad-live}.ts`, `components/monad-live.tsx` | `m1-commit-*.png` |
+| 2 | Two-timer receipts (executed, final) | **built; fork-timed now, Monad-timed at testnet go**. Escrow writes (fund, release, refund, cancel) go out with `eth_sendRawTransactionSync`: the receipt comes back in the send itself, with a plain send if the node lacks the method. The broker times executed (submit → receipt) and final (submit → the `finalized` head holds the block, hash checked). On a local chain finality is n/a and every figure is labelled "local fork, not Monad's timing" | `packages/protocol/src/sync-send.ts`, `services/broker/src/app.ts` (`chainTiming`), `apps/app/components/speed-receipt.tsx` | `m2-timers-*.png` |
+| 3 | Transaction status (`txpool_statusByHash`) | **built + live-read**. `readTxStatus` asks Monad's txpool about a transaction not yet in a block (pending / dropped / unknown), and places a mined one in consensus from the `latest` / `safe` / `finalized` heads (Proposed / Voted / Finalized). The broker serves it at `GET /api/tx/:hash`, cached per hash, and every transaction in a job's timeline carries a live badge that polls until final. Checked read-only against Monad testnet: Xorv's live settlement `0x5792…02d7` reads `finalized`. On a fork it reads "mined · local fork" | `packages/protocol/src/tx-status.ts`, `services/broker/src/app.ts` (`/api/tx/:hash`), `apps/app/components/tx-badge.tsx` | `m3-txstatus-*.png` |
+| 4 | Passkeys on chain (P256 `0x0100`) | **built + live-read, wired into the app (wave 2)**. `verifyPasskeyAssertion` checks a WebAuthn assertion on P256VERIFY; tested on anvil's precompile and on testnet's. The app runs Mera's ceremonies through its own WebAuthn client, which keeps the passkey's public key (from creation, or recovered from two unlock signatures) and each unlock's assertion, in tab memory only. *Verify my last unlock on Monad* asks testnet's `0x0100` with a read-only eth_call. Checked in Chrome with a PRF virtual authenticator: verified at testnet block #69,069,105 | `packages/protocol/src/p256.ts`, `apps/app/lib/private/passkey-onchain.ts`, `components/passkey-onchain.tsx` | `wave2/w2-passkey-*.png` |
+| 5 | Native staking (`0x1000`) | **live-read**. The Network page reads Monad's staking precompile on the real network every 30 s: epoch and delay period, the validator proposing now (auth address, stake, commission), and the consensus set size (paginated). Checked against testnet: epoch 1381, proposer #172 with about 11M MON at 10%, 199 validators. ABI from Monad's `@monad-crypto/viem`. Delegate/undelegate: **not applicable**. Xorv holds no MON to stake (buyers pay USDC, and the gas payers keep a working balance) | `packages/protocol/src/staking.ts`, `apps/app/components/staking-panel.tsx` | `m5-m6-network-*.png` |
+| 6 | Monad gas correctness (limit billing, reserve balance, 128 KB, MIP-8) | **built**. Explicit limits (estimate × 1.15; a reverting estimate is never sent). The broker checks its gas payers (facilitator/attester, operator) against the 10 MON reserve, logs when one drops below, and shows it on the Network page; `keepsReserve` encodes the rule. The escrow guard moved to transient storage (EIP-1153), so no global slot is written per call; each job is one struct under one key (one MIP-8 page). Contracts are 1–10 KB, far under 128 KB. `0x1001` is not applicable (the contracts move USDC, never MON). Documented in `docs/MONAD-GAS.md` | `packages/protocol/src/reserve.ts`, `services/broker/src/app.ts` (`refreshGasPayers`), `contracts/src/XorvEscrow.sol`, `docs/MONAD-GAS.md` | `m5-m6-network-*.png` (gas payer rows) |
+| 7 | Monad-native payments (x402 facilitator, MPP) | **built + live on testnet since 28 Sep**. With no facilitator key, the broker settles `exact` payments through Monad's own hosted x402 facilitator (`x402-facilitator.molandak.org`, the default); a live testnet job settled through it (`0x5792…02d7`, gas paid by the facilitator). Its `/supported` lists `exact`, `upto` and `batch-settlement` on 10143 and 143 (checked 7 Oct). Escrowed jobs use Xorv's own `escrow` x402 scheme on a self-hosted facilitator, because the escrow's attester must sign them. MPP (`@monad-crypto/mpp`): **not applicable for now**. All of Xorv's buyers (web, CLI, MCP, MetaMask) speak x402, and a second payment protocol would split the quote-binding checks that protect buyers | `packages/protocol/src/{x402,chains}.ts`, `services/broker/src/facilitator.ts` | — |
+| 8 | Canonical contracts, Sourcify, linked hashes | **built + live**. Every hash and address links to MonadVision (Sourcify-verified XorvLedger shows its source there). On a local fork, links to fork state render as plain text instead of dead links, while the live pipeline still links real testnet blocks. Multicall3 (`0xcA11…CA11`, viem's stale pre-reset creation block dropped) batches the escrow verify's 4 reads and the gate's identity reads into one `eth_call`. Canonical ERC-8004 registries, Circle USDC and Monad's x402 facilitator were already in use | `packages/protocol/src/{chains,evm,escrow}.ts`, `apps/app/lib/network.ts` (`explorerHref`), `components/ui.tsx` | `m3-txstatus-*.png` (fork hashes as plain text; checked: 0 dead links, 12 plain hashes on a job page) |
+
+## Wave 2 (8 Oct): the next 5
+
+The previous wave's "next 5", minus #1 (deploy, which waits for the testnet go), plus one next-best
+item that needs no keys or MON. Before running it, `pnpm e2e:escrow` was re-run after the sync-send
+and transient-guard changes: 31/31.
+
+| # | Feature | Status | Commit | Screens |
+|---|---|---|---|---|
+| 1 | ~~Deploy~~ | skipped: needs the testnet go and MON | | |
+| 2 | Passkeys verified on Monad's P256 precompile, from the app | done | 42695b7 | `wave2/w2-passkey-*.png` |
+| 3 | In-app viewer for fork transactions | done: `/chain`, `/chain/tx/:hash`, `/chain/address/:address`, `/chain/block/:n` read the app's own RPC and decode USDC, XorvEscrow, XorvLedger and ERC-8004 events with named addresses. On a fork every explorer link opens here instead of turning into text (11 viewer links, 0 dead ones on a job page). The fee row says what anvil charged and what Monad would charge (the limit) | 0621846 | `wave2/w2-chain-*.png` |
+| 4 | CRE refund replay on the job page | done. `pnpm demo` deploys XorvRefundKeeper and runs a provider whose model stalls. Two minutes in (the escrow deadline), it replays the CRE workflow: isRefundable, then the report `abi.encode(bytes32[] jobIds)` delivered to `XorvRefundKeeper.onReport` by a local key standing in for the KeystoneForwarder. The broker now watches running escrowed jobs on chain, notices the refund, stops the job and names the keeper (`settledVia`). The job page shows the keeper's five steps with the real refund tx, and for a job still held, the keeper as the buyer's backstop with the deadline | fe15a51 | `wave2/w2-cre-*.png` |
+| 5 | Agent-buyer session page | done. The MCP server tags its quotes with a per-process session (random id, `XORV_AGENT_NAME`, its session budget). The broker groups those jobs (`GET /api/agents`, `/api/agents/:session`). `/agents` shows each agent's spend, escrow held and refunds against its budget, who paid and what it bought; job pages link to their agent. `pnpm demo` runs a real MCP agent over stdio with a $0.003 budget: three jobs bought, the fourth refused by its own budget check before signing | this commit | `wave2/w2-agents-*.png` |
+| + | Next-best: | | | |
+
+
+## Codex continuation · 8 Oct: Cleanverse badges
+
+The remaining next-five identity badge is built for provider detail pages and
+buyers on job receipts. `GET /api/identity/:address` reads the configured gate
+and its current A-Pass standing without submitting a transaction. The badge
+links to the gate and distinguishes verified, no active pass, no configured
+gate, checking, stale and unavailable. It describes identity **now**, not at
+the historical payment. Failed or absent gate reads never create a verified
+claim.
+
+Validation: two broker HTTP integration regressions and two badge-state tests
+pass; broker and app typechecks pass. Single-worker production app build passes. Production browser/live gate verification
+is UNTESTED pending a configured real Cleanverse gate, registered validator pool
+and A-Passes. Existing deployment/testnet holds remain in effect. No new chain
+transaction or hosting action was performed.
+
+## Wave 3 (9 Oct): build-out
+
+| # | Item | Status |
+|---|---|---|
+| 1 | Settlement evidence: trust a facilitator's tx hash only once its receipt proves this authorization paid this job | parked in a git stash. The draft also requires durable payment persistence: without a durable store it answers 503, and 36 broker tests time out. It needs a design pass, not a patch |
+| 2 | First visit to /private: the vault lookup answers 200 `{exists: false}` instead of a 404, so the console stays clean (older brokers' 404 is still handled) | done |
+| 3 | Demo with the Cleanverse gate on and real A-Passes, so the badges show verified and unverified side by side | done. `pnpm demo` deploys CleanverseGate over the A-Pass contract cloned onto the fork and issues A-Passes (impersonating Cleanverse's validator) to everyone except borealis. All seeding still passes through the gate, and borealis is never quoted. Running it for real found and fixed a badge bug: every fresh check read as stale. Screens: `wave2/w3-apass-*.png` |
+
+## Shared keys (12 Oct)
+
+Installed in gitignored env files (mode 600; never printed or committed): Moonshot (Kimi), the shared
+Privy app, Envio. Nansen is deliberately not installed until the demo is recorded, and with no Qwen
+key the router stays "not configured".
+- **Privy:** `privy:setup` made a policy (`u89ezf36ig9fp8uei9o61s31`: x402 USDC ≤ $0.05 per payment,
+  plus XorvLedger ratings) and an MCP agent server wallet `0x6613490F1A424e7595149D26cF4e274C9C0a40fB`.
+  It needs test USDC from faucet.circle.com.
+- **Kimi:** the verifier now caps output at 1,200 tokens and caches verdicts by content, so the
+  same work is never paid for twice. One live call: kimi-k3 scored a test haiku 92/100 in 4.8 s.

@@ -14,7 +14,7 @@
  * hundred `eth_getLogs` calls per refresh.
  */
 
-import { readLedgerEvents, type LedgerEvent, type LedgerEventKind } from "@xorv/protocol";
+import { publicClientFor, readLedgerEvents, type LedgerEvent, type LedgerEventKind } from "@xorv/protocol";
 import {
   indexerServes,
   readIndexerEvents,
@@ -47,6 +47,60 @@ export interface LedgerReaderOptions {
   /** Injected for tests; defaults to the protocol's bounded RPC scan. */
   readRpc?: (kind: LedgerEventKind, limit: number) => Promise<LedgerEvent[]>;
   cacheMs?: number;
+  /** Injected for tests: the incremental scan's chain head and windowed read. */
+  tail?: RpcTailSource;
+}
+
+export interface RpcTailSource {
+  head(): Promise<bigint>;
+  scan(kind: LedgerEventKind, limit: number, fromBlock: bigint | null): Promise<LedgerEvent[]>;
+}
+
+/** Newest events kept per feed by the incremental scan; every page asks for fewer. */
+export const TAIL_KEEP = 200;
+
+/**
+ * An RPC feed that scans each block once.
+ *
+ * A full backward scan costs one `eth_getLogs` per 100 blocks, and the network
+ * page asks for several feeds at once. On the public RPC that got rate-limited
+ * into a 502 for every visitor. This one backfills once, then on each refresh
+ * reads only the blocks since its last scan and merges them in front. If a
+ * refresh fails after the first success, the last good feed is served instead
+ * of an error.
+ */
+export function createRpcTail(source: RpcTailSource, deployFloor: bigint | null) {
+  const tails = new Map<LedgerEventKind, { events: LedgerEvent[]; scannedTo: bigint | null; inflight: Promise<LedgerEvent[]> | null }>();
+  return async function read(kind: LedgerEventKind, limit: number): Promise<LedgerEvent[]> {
+    let tail = tails.get(kind);
+    if (!tail) {
+      tail = { events: [], scannedTo: null, inflight: null };
+      tails.set(kind, tail);
+    }
+    const t = tail;
+    if (!t.inflight) {
+      t.inflight = (async () => {
+        try {
+          const head = await source.head();
+          const from = t.scannedTo === null ? deployFloor : t.scannedTo + 1n;
+          if (from !== null && from > head) return t.events;
+          const fresh = await source.scan(kind, TAIL_KEEP, from);
+          const seen = new Set(fresh.map((e) => e.id));
+          t.events = [...fresh, ...t.events.filter((e) => !seen.has(e.id))]
+            .sort((a, b) => b.blockNumber - a.blockNumber || (a.id < b.id ? 1 : -1))
+            .slice(0, TAIL_KEEP);
+          t.scannedTo = head;
+          return t.events;
+        } catch (err) {
+          if (t.scannedTo === null) throw err;
+          return t.events;
+        } finally {
+          t.inflight = null;
+        }
+      })();
+    }
+    return (await t.inflight).slice(0, limit);
+  };
 }
 
 export const LEDGER_CACHE_MS = 5_000;
@@ -54,10 +108,18 @@ export const LEDGER_CACHE_MS = 5_000;
 export function createLedgerReader(opts: LedgerReaderOptions): LedgerReader {
   const cacheMs = opts.cacheMs ?? LEDGER_CACHE_MS;
   const indexer: IndexerOptions | null = opts.indexerUrl ? { url: opts.indexerUrl, fetch: opts.fetch } : null;
+  let headClient: ReturnType<typeof publicClientFor> | undefined;
   const readRpc =
     opts.readRpc ??
-    ((kind: LedgerEventKind, limit: number) =>
-      readLedgerEvents(opts.network, opts.ledgerAddress ?? "", { kind, limit, fromBlock: opts.fromBlock }));
+    createRpcTail(
+      opts.tail ?? {
+        head: () => (headClient ??= publicClientFor(opts.network)).getBlockNumber(),
+        // Two windows at a time: several feeds backfill at once after a restart, and the public RPC
+        // rate-limits anything faster into a 502 for the page that asked.
+        scan: (kind, limit, fromBlock) => readLedgerEvents(opts.network, opts.ledgerAddress ?? "", { kind, limit, fromBlock, concurrency: 2 }),
+      },
+      opts.fromBlock,
+    );
 
   const cache = new Map<string, { at: number; value: Promise<unknown> }>();
   function cached<T>(key: string, load: () => Promise<T>): Promise<T> {

@@ -17,6 +17,7 @@
 
 import { DEFAULT_NETWORK, formatUsd, isSupportedNetwork, parseUsd, type MonadNetwork } from "@xorv/protocol";
 import { resolveSignerConfig, type SignerConfig } from "./signer.js";
+import { randomBytes } from "node:crypto";
 
 export type Env = Record<string, string | undefined>;
 
@@ -49,6 +50,13 @@ export interface McpConfig {
    * authorizations x402 uses. So the cumulative cap lives here.
    */
   sessionBudgetUsdMicros: number | null;
+  /**
+   * This process's agent session: a random id, and the agent's name
+   * (`XORV_AGENT_NAME`). Sent with every quote so the broker can show one page
+   * per agent session (what it bought, against its budget). It identifies a
+   * session; it authorizes nothing.
+   */
+  session: { id: string; name: string };
   signer: SignerConfig;
   /** Fundamental misconfiguration; every tool refuses with these until fixed. */
   problems: string[];
@@ -113,6 +121,7 @@ export function loadConfig(env: Env): McpConfig {
     network,
     maxPriceUsdMicros,
     sessionBudgetUsdMicros,
+    session: { id: randomBytes(12).toString("base64url"), name: readVar(env, "XORV_AGENT_NAME")?.slice(0, 60) || "MCP agent" },
     signer: resolveSignerConfig(env),
     problems,
   };

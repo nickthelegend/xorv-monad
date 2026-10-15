@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Connect } from "@/components/connect";
 import { api, type NetworkInfo } from "@/lib/api";
-import { NETWORK, NETWORK_LABEL } from "@/lib/network";
 import { cn } from "@/lib/utils";
+import { LiveHeartbeat, MonadLiveProvider } from "@/components/monad-live";
 
 /**
  * The app shell.
@@ -20,8 +20,11 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Jobs" },
+  { href: "/jobs", label: "Browse" },
   { href: "/providers", label: "Providers" },
+  { href: "/agents", label: "Agents" },
   { href: "/network", label: "Network" },
+  { href: "/chain", label: "Chain" },
   { href: "/private", label: "Private" },
 ];
 
@@ -35,6 +38,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const setOpen = (next: boolean): void => setOpenAt(next ? pathname : null);
 
   return (
+    <MonadLiveProvider>
     <div className="flex min-h-dvh">
       {/* Mobile scrim */}
       {open ? (
@@ -65,7 +69,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             {NAV.map((item) => {
               const active =
                 item.href === "/"
-                  ? pathname === "/" || pathname.startsWith("/jobs")
+                  ? pathname === "/"
                   : pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <li key={item.href}>
@@ -104,7 +108,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </span>
           </button>
           <span className="text-[13.5px] text-fg-3">
-            {pathname.startsWith("/jobs")
+            {pathname.startsWith("/jobs/")
               ? "Job"
               : pathname.startsWith("/providers/")
                 ? "Provider"
@@ -126,6 +130,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 lg:px-8 lg:py-10">{children}</main>
       </div>
     </div>
+    </MonadLiveProvider>
   );
 }
 
@@ -167,9 +172,7 @@ function NetworkFoot() {
           {down ? "broker offline" : info ? `${info.stats.providersLive} provider(s) live` : "connecting…"}
         </span>
       </div>
-      <p className="mono mt-1.5 text-[11px] text-fg-4">
-        {info ? `Monad ${info.label} · ${info.network}` : `${NETWORK_LABEL} · ${NETWORK}`}
-      </p>
+      <LiveHeartbeat />
     </div>
   );
 }

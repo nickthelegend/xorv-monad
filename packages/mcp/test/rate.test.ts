@@ -34,7 +34,7 @@ describe("rateJob", () => {
     const { broker, deps } = await setup();
     const result = await rateJob(deps, { jobId: "job_test1", value: 87 });
     expect(result.txHash).toBe(RATE_TX);
-    expect(result.explorerUrl).toBe(`https://testnet.monadscan.com/tx/${RATE_TX}`);
+    expect(result.explorerUrl).toBe(`https://testnet.monadvision.com/tx/${RATE_TX}`);
     expect(result.offer.agentId).toBe("7");
     expect(broker.ratings).toEqual([expect.objectContaining({ value: 87, valid: true })]);
     expect(broker.hits).toEqual(["GET /api/jobs/job_test1/rating", "POST /api/jobs/job_test1/rate"]);

@@ -1,5 +1,6 @@
-# Build context for the broker image (Dockerfile). An allowlist: the image
-# needs the workspace manifests, the lockfile and two packages, nothing else.
+# Build context for the broker image (Dockerfile) and the hosted provider node
+# (Dockerfile.provider). An allowlist: the images need the workspace manifests,
+# the lockfile and three packages, nothing else.
 #
 # Without this file the whole checkout is sent to the daemon — every
 # node_modules (gigabytes, and on Windows full of junctions that don't survive
@@ -14,6 +15,7 @@
 !tsconfig.base.json
 !packages/protocol/
 !services/broker/
+!packages/cli/
 
 # Re-excluded inside the allowed packages: host installs and builds (the image
 # makes its own), tests, and anything that looks like a secret or local state.

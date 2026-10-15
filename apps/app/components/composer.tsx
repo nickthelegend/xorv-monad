@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { explorerAddress, shortHex } from "@xorv/protocol/web";
+import { Ext } from "@/components/ui";
 import { ModelPicker, type ModelOption } from "./model-picker";
 import { useWallet } from "@/components/wallet-provider";
 import { api, BROKER_URL, type Quote } from "@/lib/api";
-import { useDemoPayer, useNetworkInfo } from "@/lib/hooks";
+import { useDemoPayer, useNetworkInfo, usePoll } from "@/lib/hooks";
 import { CHAIN_CONFIG, IS_TESTNET, NETWORK } from "@/lib/network";
 import { PaymentError, classifyPaymentError, payQuote, payableQuote, type PaymentFailureKind } from "@/lib/x402-pay";
 import { EASE, useEntrance } from "@/lib/motion";
@@ -96,10 +97,21 @@ export function Composer() {
   // cheapest live provider, best-rated on a tie, when it doesn't. The hint
   // says which.
   const aiRouter = info?.ai.router ?? null;
+  // What is actually on sale right now: adapters some online provider sells.
+  // They lead the picker and name the hero; the rest are marked, so nobody
+  // picks one and meets "no provider matches" after typing a prompt.
+  const { data: providers } = usePoll(useCallback(() => api.providers(), []), 15_000);
+  const live = new Set(
+    (providers ?? [])
+      .filter((p) => p.status === "online")
+      .flatMap((p) => p.capabilities.map((c) => c.adapter as string)),
+  );
   const models: ModelOption[] = [
     { id: "", label: "Auto", hint: aiRouter ? `${roleLabel(aiRouter) ?? aiRouter.model} routes` : "cheapest" },
-    ...ADAPTERS,
+    ...ADAPTERS.filter((a) => live.has(a.id)).map((a) => ({ ...a, hint: a.hint ? `${a.hint} · online` : "online" })),
+    ...ADAPTERS.filter((a) => !live.has(a.id)).map((a) => ({ ...a, hint: "no provider online" })),
   ];
+  const heroModel = ADAPTERS.find((a) => live.has(a.id) && a.id !== "echo")?.label ?? "AI";
 
   // Grow with the content rather than scrolling inside a fixed box — a prompt
   // you can't see all of is a prompt you can't check before paying for it.
@@ -263,7 +275,12 @@ export function Composer() {
   // The primary button says whose money moves. Never a generic "Pay": with a
   // wallet it names the wallet, and the demo path is labelled as the demo's.
   let primary: { label: string; onClick: () => void; disabled?: boolean };
-  if (walletAddress) {
+  // A visitor with no wallet yet sees the one-click path first: the demo
+  // account (labelled as such), with logging in as the second choice.
+  const demoFirst = demoReady && !walletAddress && !wallet.creatingWallet;
+  if (demoFirst) {
+    primary = { label: `Pay ${quote?.priceLabel ?? ""} from demo account (no login)`, onClick: () => void payFromDemo() };
+  } else if (walletAddress) {
     const whose = wallet.kind === "embedded" ? "your Privy wallet" : shortHex(walletAddress);
     primary = { label: `Pay ${quote?.priceLabel ?? ""} USDC from ${whose}`, onClick: () => void payFromWallet() };
   } else if (wallet.available && !wallet.creatingWallet) {
@@ -279,7 +296,8 @@ export function Composer() {
   } else {
     primary = { label: "No wallet available", onClick: () => {}, disabled: true };
   }
-  const offerDemo = demoReady && (walletAddress !== null || wallet.available);
+  const offerDemo = demoReady && walletAddress !== null;
+  const offerLogin = demoFirst && wallet.available;
 
   return (
     <div className="mx-auto max-w-2xl text-center">
@@ -302,7 +320,7 @@ export function Composer() {
       >
         Run a job on someone else&rsquo;s{" "}
         <span className="inline-flex translate-y-[2px] items-center gap-1.5 rounded-lg border border-[var(--line-2)] px-2.5 py-0.5 align-baseline text-[22px] sm:text-[27px]">
-          Claude
+          {heroModel}
         </span>
       </motion.h1>
 
@@ -413,35 +431,25 @@ export function Composer() {
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[14.5px] font-medium text-fg">{quote.provider.label}</p>
-                  <p className="mt-0.5 truncate text-[12.5px] text-fg-3">
+                  <p className="mt-0.5 break-words text-[12.5px] text-fg-3">
                     {quote.provider.capability}
                     {quote.provider.model ? ` · ${quote.provider.model}` : ""} ·{" "}
                     {quote.provider.stats.jobsCompleted} done
                     {quote.provider.agentId ? ` · agent #${quote.provider.agentId}` : ""}
                   </p>
-                  <p className="mono mt-1.5 truncate text-[11.5px] text-fg-4">
+                  <p className="mono mt-1.5 break-words text-[11.5px] leading-relaxed text-fg-4">
                     {quote.escrow ? (
                       <>
-                        <a
-                          href={quote.escrow.explorerUrl || explorerAddress(NETWORK, quote.escrow.address)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="underline-offset-4 hover:text-fg-2 hover:underline"
-                        >
+                        <Ext href={quote.escrow.explorerUrl || explorerAddress(NETWORK, quote.escrow.address)}>
                           XorvEscrow {shortHex(quote.escrow.address)}
-                        </a>{" "}
+                        </Ext>{" "}
                         holds it →{" "}
                       </>
                     ) : null}
                     pays →{" "}
-                    <a
-                      href={quote.provider.addressUrl || explorerAddress(NETWORK, quote.provider.address)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline-offset-4 hover:text-fg-2 hover:underline"
-                    >
+                    <Ext href={quote.provider.addressUrl || explorerAddress(NETWORK, quote.provider.address)}>
                       {shortHex(quote.provider.address)}
-                    </a>{" "}
+                    </Ext>{" "}
                     {quote.escrow ? " on delivery" : " · the provider, never the broker"}
                   </p>
                 </div>
@@ -500,11 +508,21 @@ export function Composer() {
                   Pay from demo account instead
                 </button>
               ) : null}
+              {offerLogin ? (
+                <button
+                  type="button"
+                  onClick={wallet.login}
+                  disabled={busy !== null || wallet.connecting}
+                  className="mt-2 w-full rounded-lg border border-[var(--line)] px-4 py-2 text-[12.5px] text-fg-2 transition-colors hover:border-[var(--line-2)] hover:text-fg disabled:opacity-40"
+                >
+                  {wallet.mode === "privy" ? "Log in to pay from your own wallet" : "Connect a wallet to pay from it"}
+                </button>
+              ) : null}
 
-              <p className="mt-2.5 text-center text-[11.5px] leading-relaxed text-fg-4">
+              <p className="mt-2.5 text-center text-[12.5px] leading-relaxed text-fg-3">
                 {quote.escrow
-                  ? `You sign once, for exactly ${quote.priceLabel} into XorvEscrow. It goes to this provider only when the job delivers, and comes back to you in full if it doesn't; after ${new Date(quote.escrow.deadline * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} anyone can refund it. The facilitator pays the gas.`
-                  : `You sign once, for exactly ${quote.priceLabel} to this provider. The facilitator pays the gas.`}
+                  ? `${demoFirst ? "The payer" : "You"} sign${demoFirst ? "s" : ""} once, for exactly ${quote.priceLabel} into XorvEscrow. It goes to this provider only when the job delivers, and comes back to the payer in full if it doesn't; after ${new Date(quote.escrow.deadline * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} anyone can refund it. The facilitator pays the gas.`
+                  : `${demoFirst ? "The payer signs" : "You sign"} once, for exactly ${quote.priceLabel} to this provider. The facilitator pays the gas.`}
               </p>
 
               <button
@@ -652,8 +670,16 @@ function Disc() {
     <div aria-hidden className="relative h-[68px] w-[68px]">
       <div className="absolute inset-0 rounded-full border border-[var(--line-2)]" />
       <div className="absolute inset-[9px] rounded-full border border-[var(--line)]" />
-      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full p-[19px] text-fg">
-        <g stroke="currentColor" strokeWidth="7" strokeLinecap="round" fill="none">
+      {/* The Xorv mark in its brand gradient: drawn in plain white, a judge read it as a close button. */}
+      <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full p-[19px]">
+        <defs>
+          <linearGradient id="disc-beam" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#7C5CFF" />
+            <stop offset="0.5" stopColor="#4C9BFF" />
+            <stop offset="1" stopColor="#3DDCFF" />
+          </linearGradient>
+        </defs>
+        <g stroke="url(#disc-beam)" strokeWidth="7" strokeLinecap="round" fill="none">
           <path d="M14 14 L27 27" />
           <path d="M37 37 L50 50" />
           <path d="M50 14 L37 27" />
@@ -666,7 +692,7 @@ function Disc() {
           height="8.8"
           rx="2.2"
           transform="rotate(45 32 32)"
-          fill="currentColor"
+          fill="url(#disc-beam)"
         />
       </svg>
     </div>

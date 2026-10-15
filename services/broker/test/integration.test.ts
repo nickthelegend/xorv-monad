@@ -54,6 +54,7 @@ import type { LeashCheck } from "../src/leash.js";
 import { JobStore } from "../src/jobs.js";
 import { Registry } from "../src/registry.js";
 import { NANSEN_OFF, createNansenTrust, type NansenTrust } from "../src/trust/index.js";
+import { createPriceFeeds, type PriceFeeds } from "../src/prices.js";
 
 /** Response bodies are asserted on, not typed: the tests are what pin their shape. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,7 +112,7 @@ class StubChain implements ChainLike {
   private result(): PublishResult {
     this.tx += 1;
     const txHash = `0x${this.tx.toString(16).padStart(64, "0")}`;
-    return { contract: LEDGER, txHash, explorerUrl: `https://testnet.monadscan.com/tx/${txHash}`, blockNumber: "1" };
+    return { contract: LEDGER, txHash, explorerUrl: `https://testnet.monadvision.com/tx/${txHash}`, blockNumber: "1" };
   }
   async registerProvider(provider: { id: string; address: string; agentId: string | null }) {
     this.registrations.push({ id: provider.id, address: provider.address, agentId: provider.agentId });
@@ -308,6 +309,9 @@ interface Harness {
   stop(): Promise<void>;
 }
 
+/** What the stubbed RPC says every gas payer holds; tests change it. */
+let stubMonBalance = 25n * 10n ** 18n;
+
 /** The gas payer the stubbed receipts name (the facilitator's EOA in a real run). */
 const FACILITATOR_ADDRESS = "0xfac1f4c1fac1f4c1fac1f4c1fac1f4c1fac1f4c1";
 
@@ -322,6 +326,7 @@ async function boot(
     escrow?: MemoryEscrow;
     identity?: IdentitySource;
     leash?: LeashCheck;
+    prices?: PriceFeeds;
   } = {},
 ): Promise<Harness> {
   // Every confirmed transaction "landed" in block 4242 for 84,213 gas at 50 gwei, paid by the facilitator.
@@ -343,6 +348,7 @@ async function boot(
     jobs,
     getHub: () => hub,
     facilitator: opts.injectFacilitator === false ? undefined : stubFacilitator(control),
+    ...(opts.prices ? { prices: opts.prices } : {}),
     ledgerReader: reader,
     agentWallet: async (agentId) => {
       if (agentId === "999") throw new Error("rpc unreachable");
@@ -350,7 +356,11 @@ async function boot(
     },
     agentAuthorizes: async (agentId, spender) => authorized.has(`${agentId}:${spender.toLowerCase()}`),
     settlementStatus: async () => settle.status,
-    txFacts: async () => ({ blockNumber: 4242, gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
+    txFacts: async () => ({ blockNumber: 4242, blockHash: "0xb10c", gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS }),
+    // The finalized head reaches the block 600 ms after the receipt (two Monad slots).
+    finalizedAt: async () => Date.now() + 600,
+    monBalance: async () => stubMonBalance,
+    txStatus: async (hash) => ({ hash, state: "voted", blockNumber: 4242, pool: null, heads: { latest: 4243, safe: 4242, finalized: 4241 } }),
     ai: opts.ai,
     trust: opts.trust,
     escrow: opts.escrow ?? null,
@@ -572,7 +582,7 @@ describe("registration", () => {
     const listed = await (await fetch(`${h.base}/api/providers`)).json();
     expect(listed.providers).toHaveLength(1);
     expect(listed.providers[0].connected).toBe(true);
-    expect(listed.providers[0].addressUrl).toContain("testnet.monadscan.com/address/");
+    expect(listed.providers[0].addressUrl).toContain("testnet.monadvision.com/address/");
     provider.close();
   });
 
@@ -745,6 +755,40 @@ describe("quoting", () => {
     provider.close();
   });
 
+  it("passes on a node's own reason for taking no jobs (its daily budget is spent)", async () => {
+    const provider = await connectProvider(h);
+    const beat = await fetch(`${h.base}/api/providers/${provider.providerId}/heartbeat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.token}` },
+      body: JSON.stringify({ activeJobs: 0, uptimeSeconds: 5, available: { echo: false }, unavailableReason: "daily capacity reached: try again after 00:00 UTC" }),
+    });
+    expect(beat.status).toBe(200);
+    const { status, body } = await quote(h);
+    expect(status).toBe(503);
+    expect(String(body.error)).toBe("no online provider can take a job right now: daily capacity reached: try again after 00:00 UTC");
+    expect(await (await fetch(`${h.base}/api/providers`)).text()).not.toContain(provider.token);
+    provider.close();
+  });
+
+  it("stops quoting while Chainlink says USDC is off its peg, and quotes again once it isn't", async () => {
+    let price = 0.95;
+    const prices = createPriceFeeds({
+      cacheMs: 0,
+      read: async (spec) => ({ pair: spec.pair, network: spec.network, feed: spec.address, price, updatedAt: Date.now(), stale: false, readAt: Date.now() }),
+    });
+    const hp = await boot({ prices });
+    const provider = await connectProvider(hp);
+    const refused = await quote(hp);
+    expect(refused.status).toBe(503);
+    expect(String(refused.body.error)).toMatch(/^not quoting right now: USDC is off its peg: Chainlink USDC\/USD reads \$0\.9500/);
+    price = 0.9998;
+    expect((await quote(hp)).status).toBe(200);
+    const net = await (await fetch(`${hp.base}/api/network`)).json();
+    expect(net.prices).toMatchObject({ source: "Chainlink Data Feeds", usdcUsd: { pair: "USDC/USD", price: 0.9998 } });
+    provider.close();
+    await hp.stop();
+  });
+
   it("refuses to match above the buyer's ceiling", async () => {
     const provider = await connectProvider(h, { price: 20_000 });
     const { status } = await quote(h, "hi", 5_000);
@@ -840,7 +884,7 @@ describe("the paid path", () => {
     expect(done.payment.payer).toBe(h.buyer.address);
     expect(done.payment.asset).toBe("usdc");
     expect(done.payment.assetAddress).toBe(USDC);
-    expect(done.payment.explorerUrl).toBe(`https://testnet.monadscan.com/tx/${settle.transaction}`);
+    expect(done.payment.explorerUrl).toBe(`https://testnet.monadvision.com/tx/${settle.transaction}`);
     expect(done.events.length).toBeGreaterThan(0);
 
     // The receipt was queued once the job was terminal and paid, carrying the
@@ -1759,7 +1803,7 @@ describe("public surface", () => {
       network: NETWORK,
       chainId: 10143,
       label: "testnet",
-      explorerUrl: "https://testnet.monadscan.com",
+      explorerUrl: "https://testnet.monadvision.com",
       usdc: { address: USDC, symbol: "USDC", decimals: 6 },
       facilitator: { mode: "self", available: true },
       ledger: { address: LEDGER, mode: "write" },
@@ -1851,7 +1895,7 @@ describe("public surface", () => {
     expect(ledger.events[0]).toMatchObject({
       id: "900:1",
       brokerJobId: paid.jobId,
-      explorerUrl: `https://testnet.monadscan.com/tx/${tx}`,
+      explorerUrl: `https://testnet.monadvision.com/tx/${tx}`,
     });
     expect((await fetch(`${h.base}/api/ledger?kind=registrations`)).status).toBe(200);
     expect((await fetch(`${h.base}/api/ledger?kind=bogus`)).status).toBe(400);
@@ -1944,11 +1988,14 @@ class StubFeedback implements FeedbackSink {
   readonly reputationRegistry = "0x8004B663056A597Dffe9eCcC1965A193B7388713";
   readonly writes: GiveFeedbackInput[] = [];
   fail = false;
+  /** Milliseconds each write takes, to show what waits on it. */
+  delayMs = 0;
   async giveFeedback(input: GiveFeedbackInput) {
+    if (this.delayMs) await new Promise((r) => setTimeout(r, this.delayMs));
     if (this.fail) throw new Error("insufficient funds for gas");
     this.writes.push(input);
     const txHash = `0x${"fb".repeat(31)}${this.writes.length.toString(16).padStart(2, "0")}`;
-    return { contract: this.reputationRegistry, txHash, explorerUrl: `https://testnet.monadscan.com/tx/${txHash}`, blockNumber: "1" };
+    return { contract: this.reputationRegistry, txHash, explorerUrl: `https://testnet.monadvision.com/tx/${txHash}`, blockNumber: "1" };
   }
   counts() {
     return { published: this.writes.length, failed: 0, lastError: null };
@@ -2214,6 +2261,75 @@ describe("AI roles", () => {
     expect(s.calls.route).toHaveLength(0);
     cheap.close();
     kimi.close();
+  });
+
+  describe("with XORV_RELEASE_ON_VERDICT", () => {
+    async function escrowedJob(verify: Json | null, config: Partial<BrokerConfig> = {}) {
+      const s = scriptedAi({ screen: ALLOW, ...(verify ? { verify } : {}) });
+      const escrow = new MemoryEscrow();
+      ai = await boot({ ai: s.ai, escrow, config: { releaseOnVerdict: true, ...config } });
+      const provider = await connectProvider(ai);
+      const { body: q } = await quoteWith(ai, { prompt: "explain x402 in one line" });
+      const { body: paid } = await pay(ai, q.quoteId);
+      await provider.completeNextJob("x402 is HTTP 402 plus a signed payment.");
+      return { s, escrow, provider, jobId: paid.jobId as string };
+    }
+    const settled = (jobId: string) =>
+      waitFor(async () => {
+        const j = await getJob(ai, jobId);
+        const state = ((j.payment as Json)?.escrow as Json | undefined)?.state;
+        return state === "released" || state === "refunded" ? j : undefined;
+      }, 6_000);
+
+    it("releases the escrow once the verifier passes the work", async () => {
+      const { provider, jobId } = await escrowedJob({ score: 91, pass: true, rationale: "Correct.", flags: [] });
+      const job = await settled(jobId);
+      expect(job.verification).toMatchObject({ pass: true });
+      expect((job.payment as Json).escrow).toMatchObject({ state: "released" });
+      provider.close();
+    });
+
+    it("refunds the buyer, at the provider's fault, when the verifier fails the work", async () => {
+      const { provider, jobId } = await escrowedJob({ score: 20, pass: false, rationale: "Off topic.", flags: ["off_topic"] });
+      const job = await settled(jobId);
+      expect(job.status).toBe("completed");
+      expect((job.payment as Json).escrow).toMatchObject({ state: "refunded", refundReason: "failed verification" });
+      expect(((job.payment as Json).escrow as Json).refundTx).toMatch(/^0x[0-9a-f]{64}$/);
+      provider.close();
+    });
+
+    it("releases only after the verdict is on chain when the provider has an ERC-8004 identity", async () => {
+      const s = scriptedAi({ screen: ALLOW, verify: { score: 93, pass: true, rationale: "Correct.", flags: [] } });
+      s.feedback.delayMs = 600;
+      const escrow = new MemoryEscrow();
+      ai = await boot({ ai: s.ai, escrow, config: { releaseOnVerdict: true } });
+      ai.agentWallets.set("7", PAYEE_A);
+      const provider = await connectProvider(ai, { agentId: "7" });
+      const { body: q } = await quoteWith(ai, { prompt: "explain x402 in one line" });
+      const { body: paid } = await pay(ai, q.quoteId);
+      await provider.completeNextJob("x402 is HTTP 402 plus a signed payment.");
+      // The verdict is in, but its feedback write is still in flight: the money stays put.
+      const judged = await waitFor(async () => {
+        const j = await getJob(ai, paid.jobId);
+        return j.verification?.pass ? j : undefined;
+      });
+      expect(((judged.payment as Json).escrow as Json).state).toBe("funded");
+      const job = await settled(paid.jobId);
+      expect((job.payment as Json).escrow).toMatchObject({ state: "released" });
+      expect(job.verification.feedbackTxHash).toMatch(/^0x/);
+      expect(escrow.calls.map((c) => c.op)).toContain("release");
+      provider.close();
+    });
+
+    it("releases without a verdict once the grace period runs out", async () => {
+      const { provider, jobId } = await escrowedJob({ broken: true } as Json, { verdictGraceMs: 300 });
+      // A malformed verdict is no verdict; the sweep releases after the grace.
+      await new Promise((r) => setTimeout(r, 400));
+      ai.sweep();
+      const job = await settled(jobId);
+      expect((job.payment as Json).escrow).toMatchObject({ state: "released" });
+      provider.close();
+    });
   });
 
   it("never sends a private job's sealed result to the verifier", async () => {
@@ -2568,6 +2684,77 @@ describe("Nansen trust", () => {
 });
 
 
+describe("Monad's 10 MON reserve on the broker's gas payers", () => {
+  afterEach(() => {
+    stubMonBalance = 25n * 10n ** 18n;
+  });
+
+  it("reports each gas payer's standing against the reserve, and flags one below it", async () => {
+    stubMonBalance = 3n * 10n ** 18n;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    h = await boot();
+    const gas = await waitFor(async () => {
+      const g = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).gas as Json;
+      return (g.payers as Json[]).length ? g : undefined;
+    });
+    expect(gas).toMatchObject({ reserveWei: (10n * 10n ** 18n).toString(), chain: "monad" });
+    expect((gas.payers as Json[])[0]).toMatchObject({
+      roles: expect.arrayContaining(["operator"]),
+      balanceWei: (3n * 10n ** 18n).toString(),
+      aboveReserve: false,
+      shortfallWei: (7n * 10n ** 18n).toString(),
+    });
+    expect(warn.mock.calls.some(([m]) => String(m).includes("below Monad's 10 MON reserve"))).toBe(true);
+    warn.mockRestore();
+  });
+
+  it("is quiet about a payer comfortably above it", async () => {
+    h = await boot();
+    const payer = await waitFor(async () => {
+      const g = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).gas as Json;
+      return (g.payers as Json[])[0];
+    });
+    expect(payer).toMatchObject({ aboveReserve: true, shortfallWei: "0" });
+  });
+});
+
+describe("agent sessions", () => {
+  it("groups the jobs an agent bought under its session tag, with its spend against its declared budget", async () => {
+    h = await boot();
+    const provider = await connectProvider(h);
+    const agent = { session: "sess_Abc123xyz", name: "research-agent", budgetUsdMicros: 20_000, client: "mcp" };
+    for (const prompt of ["first", "second"]) {
+      const { body: q } = await quoteWith(h, { prompt, agent });
+      const { body: paid } = await pay(h, q.quoteId as string);
+      await provider.completeNextJob(`answer to ${prompt}`);
+      await waitFor(async () => ((await getJob(h, paid.jobId as string)).status === "completed" ? true : undefined));
+      provider.dispatched.shift();
+    }
+    // An untagged job and a malformed tag don't join the session.
+    await quoteWith(h, { prompt: "untagged" });
+    expect((await quoteWith(h, { prompt: "bad tag", agent: { session: "no spaces allowed!", name: "x" } })).status).toBe(200);
+
+    const one = (await (await fetch(`${h.base}/api/agents/sess_Abc123xyz`)).json()) as Json;
+    expect(one).toMatchObject({ name: "research-agent", client: "mcp", budgetUsdMicros: 20_000, jobs: 2, completed: 2, spentUsdMicros: 2_000 });
+    expect((one.jobList as Json[]).map((j) => (j.agent as Json).session)).toEqual(["sess_Abc123xyz", "sess_Abc123xyz"]);
+    expect((one.payers as string[]).length).toBe(1);
+    const all = (await (await fetch(`${h.base}/api/agents`)).json()) as Json;
+    expect((all.sessions as Json[]).map((x) => x.session)).toEqual(["sess_Abc123xyz"]);
+    expect((await fetch(`${h.base}/api/agents/sess_nobody_here`)).status).toBe(404);
+    provider.close();
+  });
+});
+
+describe("transaction status", () => {
+  it("reports where a transaction stands in Monad's consensus, and refuses anything that isn't a hash", async () => {
+    h = await boot();
+    const hash = `0x${"ab".repeat(32)}`;
+    const ok = (await (await fetch(`${h.base}/api/tx/${hash}`)).json()) as Json;
+    expect(ok).toMatchObject({ hash, state: "voted", blockNumber: 4242, chain: "monad" });
+    expect((await fetch(`${h.base}/api/tx/0x1234`)).status).toBe(400);
+  });
+});
+
 describe("XorvEscrow: the money waits until the job delivers", () => {
   const GATE: GateInfo = {
     address: "0x00000000000000000000000000000000000Ca7e5",
@@ -2586,6 +2773,26 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
       return addresses.map((a) => this.valid.has(a.toLowerCase()));
     }
   }
+
+  it("reads current Cleanverse standing for buyers as well as providers without making payments", async () => {
+    const apass = new MemoryAPass();
+    apass.valid.add(PAYEE_B.toLowerCase());
+    h = await boot({ escrow: new MemoryEscrow(), identity: apass });
+    const checked = async (address: string) => (await (await fetch(`${h.base}/api/identity/${address}`)).json()) as Json;
+    expect(await checked(PAYEE_B)).toMatchObject({ gate: GATE, verified: true, checkedAt: expect.any(Number) });
+    expect(await checked(PAYEE_A)).toMatchObject({ gate: GATE, verified: false });
+    apass.valid.delete(PAYEE_B.toLowerCase());
+    expect(await checked(PAYEE_B)).toMatchObject({ verified: false });
+    expect((await fetch(`${h.base}/api/identity/not-an-address`)).status).toBe(400);
+  });
+
+  it("does not invent Cleanverse verification without a gate or when the gate cannot be read", async () => {
+    h = await boot();
+    expect(await (await fetch(`${h.base}/api/identity/${PAYEE_B}`)).json()).toEqual({ gate: null, verified: null, checkedAt: null });
+    await h.stop();
+    h = await boot({ identity: { gate: async () => { throw new Error("unavailable"); }, verified: async () => [true] } });
+    expect((await fetch(`${h.base}/api/identity/${PAYEE_B}`)).status).toBe(503);
+  });
 
   it("quotes escrow first, with the terms frozen on the quote", async () => {
     const escrow = new MemoryEscrow();
@@ -2633,6 +2840,11 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
       expect(timing).toMatchObject({ blockNumber: 4242, gasUsed: "84213", gasPaidWei: "4210650000000000", gasPayer: FACILITATOR_ADDRESS });
       expect(timing.confirmMs).toEqual(expect.any(Number));
       expect(timing.confirmMs as number).toBeGreaterThanOrEqual(0);
+      // Two timers: executed (receipt) and final (the finalized head holds the block).
+      expect(timing.finalMs as number).toBeGreaterThanOrEqual((timing.confirmMs as number) + 600);
+      // Where it was measured, and how it was sent (the in-memory escrow polls nothing, so "async").
+      expect(timing).toMatchObject({ chain: "monad", sendMode: "async" });
+      expect(timing).not.toHaveProperty("blockHash");
     }
     const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
     expect(stats).toMatchObject({ timingSamples: 1, settleMedianMs: (timed.timing as Json).confirmMs, releaseMedianMs: ((timed.escrow as Json).settleTiming as Json).confirmMs });
@@ -2641,6 +2853,27 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     const receipt = await waitFor(() => h.chain.receipts.find((r) => r.jobId === job.id));
     expect(receipt).toMatchObject({ payTo: provider.address, paymentTx: held.releaseTx, ok: true });
     provider.close();
+  });
+
+  it("labels timings measured on a local chain as local, and never times a fork's 'finality'", async () => {
+    const previous = process.env.XORV_RPC_URL;
+    process.env.XORV_RPC_URL = "http://127.0.0.1:8650";
+    try {
+      const escrow = new MemoryEscrow();
+      h = await boot({ escrow });
+      const provider = await connectProvider(h);
+      const { body: q } = await quote(h);
+      const { body: paid } = await pay(h, q.quoteId as string);
+      await provider.completeNextJob("local answer");
+      const timing = await waitFor(async () => ((await getJob(h, paid.jobId as string)).payment as Json).timing as Json | undefined);
+      expect(timing).toMatchObject({ chain: "local", finalMs: null });
+      const stats = ((await (await fetch(`${h.base}/api/network`)).json()) as Json).stats as Json;
+      expect(stats.timingChain).toBe("local");
+      provider.close();
+    } finally {
+      if (previous === undefined) delete process.env.XORV_RPC_URL;
+      else process.env.XORV_RPC_URL = previous;
+    }
   });
 
   it("refunds the buyer when the job fails and nobody else can take it", async () => {
@@ -2728,6 +2961,32 @@ describe("XorvEscrow: the money waits until the job delivers", () => {
     expect(job).toMatchObject({ status: "failed", error: "cancelled by the buyer", result: null });
     expect(((job.payment as Json).escrow as Json).state).toBe("refunded");
     expect(escrow.calls.map((c) => c.op)).toEqual(["cancel"]);
+    provider.close();
+  });
+
+  it("stops a running job whose escrow the Chainlink CRE keeper refunded, and names the keeper", async () => {
+    const KEEPER = "0x00000000000000000000000000000000000c4e00";
+    const FORWARDER = "0x00000000000000000000000000000000000f0f00";
+    const escrow = new MemoryEscrow();
+    h = await boot({ escrow, config: { refundKeeperAddress: KEEPER } });
+    const provider = await connectProvider(h);
+    const { body: q } = await quote(h);
+    const { body: paid } = await pay(h, q.quoteId as string);
+    await waitFor(() => provider.dispatched[0], 4_000);
+    const held = ((await getJob(h, paid.jobId as string)).payment as Json).escrow as Json;
+    expect(((await (await fetch(`${h.base}/api/network`)).json()) as Json).escrow).toMatchObject({ keeper: KEEPER });
+    // The provider never answers; past the deadline the keeper's report refunds the buyer.
+    const tx = escrow.refundExternally(held.jobId as string, FORWARDER, KEEPER);
+    h.sweep();
+    const job = await waitFor(async () => {
+      const j = await getJob(h, paid.jobId as string);
+      return j.status === "failed" ? j : undefined;
+    });
+    expect(job.error).toMatch(/Chainlink CRE refund keeper/);
+    expect((job.payment as Json).escrow).toMatchObject({ state: "refunded", refundTx: tx, settledBy: FORWARDER, settledVia: KEEPER });
+    // The provider is told to stop; the broker sent nothing itself.
+    expect(provider.cancelled).toContain(paid.jobId);
+    expect(escrow.calls).toEqual([]);
     provider.close();
   });
 
